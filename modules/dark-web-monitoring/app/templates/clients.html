@@ -1,18 +1,28 @@
-{% extends "base.html" %}{% block body %}
-<h1>Clients</h1>
-<div class="panel">
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
 <form class="row" method="post" action="/clients">
-  <label>Name <input name="name" required></label>
-  <label>Case or contract ref <input name="case_ref" placeholder="VCD-IR-2026-7xx or MSSP ref"></label>
-  <label>Type <select name="kind"><option value="managed">Managed services</option><option value="ir">IR matter</option></select></label>
-  <button class="primary">Add client</button>
+  <label class="field">Client name<input name="name" required style="min-width:220px"></label>
+  <label class="field">Case or contract ref<input name="case_ref" placeholder="VCD-IR-2026-7xx or MSSP ref"></label>
+  <label class="field">Type<select name="kind"><option value="managed">Managed services</option><option value="ir">IR matter</option></select></label>
+  <button class="btn btn-primary">Add client</button>
 </form>
 </div>
-<div class="panel">
-<table><tr><th>Client</th><th>Type</th><th>Ref</th><th>Terms</th><th>Status</th></tr>
-{% for c in clients %}<tr>
-  <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td><td>{{ c.kind }}</td><td class="mono">{{ c.case_ref }}</td>
-  <td>{{ c.terms|length }}</td><td>{% if c.active %}<span class="ok">active</span>{% else %}<span class="muted">paused</span>{% endif %}</td>
-</tr>{% endfor %}</table>
-</div>
+<div class="panel"><div class="table-wrap">
+{% if clients %}
+<table>
+  <thead><tr><th>Client</th><th>Type</th><th>Reference</th><th>Industry</th><th>Terms</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for c in clients %}<tr>
+    <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+    <td><span class="chip">{{ c.kind }}</span></td>
+    <td class="mono faint">{{ c.case_ref }}</td>
+    <td>{{ c.industry or '' }}</td>
+    <td class="num">{{ c.terms|length }}</td>
+    <td>{% if c.active %}<span class="ok-txt">active</span>{% else %}<span class="faint">paused</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No clients yet</h3><p>Add your first client above, then give it watch terms and a business profile so monitoring can start.</p></div>{% endif %}
+</div></div>
 {% endblock %}

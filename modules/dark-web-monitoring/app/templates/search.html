@@ -1,22 +1,27 @@
-{% extends "base.html" %}{% block body %}
-<h1>Search collected data</h1>
-<div class="panel">
+{% extends "base.html" %}{% block title %}Search{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
 <form class="row" method="get" action="/search">
-  <label>Query <input name="q" value="{{ q }}" style="min-width:360px" placeholder='acme OR "acme corp"   (use * for wildcard: acme*)'></label>
-  <label>Kind <select name="kind"><option value="">any</option>{% for k in ['victim','post','page','thread','message','paste','breach','stealer','credential','cert'] %}<option {{ 'selected' if k==kind }}>{{ k }}</option>{% endfor %}</select></label>
-  <label>Days <input name="days" type="number" value="{{ days }}" style="width:80px"></label>
-  <button class="primary">Search</button>
+  <label class="field">Query<input name="q" value="{{ q }}" style="min-width:340px" placeholder='acme   or   "acme corp"   or   acme*'></label>
+  <label class="field">Kind<select name="kind"><option value="">Any</option>{% for k in ['victim','post','page','thread','message','paste','breach','stealer','credential','cert'] %}<option {{ 'selected' if k==kind }}>{{ k }}</option>{% endfor %}</select></label>
+  <label class="field">Days back<input name="days" type="number" value="{{ days }}" style="width:92px"></label>
+  <button class="btn btn-primary">Search</button>
 </form>
-<p class="muted">Full text search over every victim post, crawled leak-site page, paste, breach record, infostealer log, certificate and Telegram message collected. Useful during IR scoping: search a prospect or new client before onboarding to see prior exposure.</p>
+<p class="page-intro" style="margin:12px 0 0">Full text search across every victim post, crawled leak-site page, forum thread, paste, breach record, infostealer log and certificate collected. Use it to scope a prospect or new client for prior exposure before onboarding.</p>
 </div>
-{% if q %}<div class="panel">
-<p class="muted">{{ items|length }} result(s)</p>
-<table><tr><th>Kind</th><th>Group</th><th>Title</th><th>Published</th><th>Collected</th></tr>
+{% if q %}
+<div class="section-head"><h2>Results</h2><span class="count">{{ items|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+{% if items %}
+<table><thead><tr><th>Kind</th><th>Group</th><th>Title</th><th>Published</th><th>Collected</th></tr></thead><tbody>
 {% for i in items %}<tr>
-  <td><span class="tag">{{ i.kind }}</span></td><td>{{ i.group_name }}</td>
-  <td><a href="/items/{{ i.id }}" class="trunc">{{ i.title }}</a></td>
-  <td class="muted">{{ i.published_at.strftime('%Y-%m-%d') if i.published_at else '' }}</td>
-  <td class="muted">{{ i.collected_at.strftime('%Y-%m-%d %H:%M') }}</td>
-</tr>{% endfor %}</table>
-</div>{% endif %}
+  <td><span class="chip">{{ i.kind }}</span></td><td class="nowrap">{{ i.group_name }}</td>
+  <td><a href="/items/{{ i.id }}" class="trunc" style="max-width:520px; display:inline-block; vertical-align:bottom">{{ i.title }}</a></td>
+  <td class="nowrap faint">{{ i.published_at.strftime('%Y-%m-%d') if i.published_at else '' }}</td>
+  <td class="nowrap faint">{{ i.collected_at.strftime('%b %d %H:%M') }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No matches</h3><p>Try a broader term, a longer window, or a wildcard like acme* to widen the search.</p></div>{% endif %}
+</div></div>
+{% endif %}
 {% endblock %}

@@ -1,35 +1,58 @@
-{% extends "base.html" %}{% block body %}
-<h1><span class="sev sev-{{ hit.severity }}">{{ hit.severity }}</span> <span class="tag">{{ hit.reason }}</span> {{ hit.item.title }}</h1>
-{% if hit.reason == 'iab' %}<div class="panel"><p class="muted">Initial access broker candidate. This was matched on the client's business profile, not its name, so it is a lead for an analyst to confirm against the post, not a confirmed exposure.</p></div>{% endif %}
-{% if hit.reason == 'credential' %}<div class="panel"><p class="muted">Credential exposure. Secrets in the stored content are masked. To obtain the full record for this matter, use Preserve below, which captures the raw source to the evidence bucket under chain of custody.</p></div>{% endif %}
-<div class="panel">
-  <p><b>Client:</b> <a href="/clients/{{ hit.client_id }}">{{ hit.client.name }}</a> {% if hit.client.case_ref %}<span class="mono muted">{{ hit.client.case_ref }}</span>{% endif %}<br>
-  <b>Watch term:</b> <span class="mono">{{ hit.term.term if hit.term else '' }}</span> ({{ hit.term.kind if hit.term else '' }}) &nbsp; <b>Matched:</b> <span class="mono">{{ hit.matched_text }}</span><br>
-  <b>Item:</b> <span class="tag">{{ hit.item.kind }}</span> {{ hit.item.group_name }} &nbsp; <b>Published:</b> {{ hit.item.published_at or 'unknown' }} &nbsp; <b>Collected:</b> {{ hit.item.collected_at }}<br>
-  <b>URL:</b> <span class="mono">{{ hit.item.url or 'n/a' }}</span><br>
-  <b>Alerts:</b> <span class="mono">{{ hit.alert_refs }}</span> {% if hit.alerted_at %}<span class="muted">at {{ hit.alerted_at }}</span>{% endif %}</p>
-  <form class="inline" method="post" action="/hits/{{ hit.id }}/preserve"><button class="small">Preserve page as evidence now</button></form>
-  <form class="inline" method="post" action="/hits/{{ hit.id }}/realert"><button class="small">Re-send alerts</button></form>
-  <form class="inline" method="post" action="/hits/{{ hit.id }}/escalate"><button class="small">Escalate to IR case (VERDICT)</button></form>
-  <a href="/items/{{ hit.item_id }}" class="small">full item</a>
+{% extends "base.html" %}{% block title %}Hit detail{% endblock %}
+{% block body %}
+<div class="title-row">
+  <span class="sev sev-{{ hit.severity }}">{{ hit.severity }}</span>
+  <span class="reason reason-{{ hit.reason }}">{{ hit.reason }}</span>
+  <h1>{{ hit.item.title }}</h1>
 </div>
 
-<div class="panel">
-<form method="post" action="/hits/{{ hit.id }}">
-  <label>Status <select name="status">{% for s in ['new','reviewing','confirmed','false_positive','closed'] %}<option {{ 'selected' if s==hit.status }}>{{ s }}</option>{% endfor %}</select></label>
-  <p><textarea name="analyst_notes" placeholder="Analyst notes">{{ hit.analyst_notes }}</textarea></p>
-  <button class="primary">Save</button>
-</form>
-</div>
+{% if hit.reason == 'iab' %}
+<div class="banner banner-iab">Initial access broker candidate, matched on this client's business profile rather than its name. Treat as a lead to confirm against the post, not a confirmed exposure.</div>
+{% elif hit.reason == 'credential' %}
+<div class="banner banner-credential">Credential exposure. Secrets in the stored content are masked. To obtain the full record for this matter, use Preserve, which captures the raw source to the evidence store with chain of custody.</div>
+{% endif %}
 
-<h2>Content</h2>
-<pre>{{ hit.item.body }}</pre>
+<div class="detail-grid">
+  <div>
+    <div class="panel pad">
+      <dl class="kv">
+        <dt>Client</dt><dd><a href="/clients/{{ hit.client_id }}">{{ hit.client.name }}</a> {% if hit.client.case_ref %}<span class="mono faint">{{ hit.client.case_ref }}</span>{% endif %}</dd>
+        <dt>Watch term</dt><dd>{% if hit.term %}<span class="mono">{{ hit.term.term }}</span> <span class="chip">{{ hit.term.kind }}</span>{% else %}<span class="faint">profile match</span>{% endif %}</dd>
+        <dt>Matched</dt><dd class="mono">{{ hit.matched_text }}</dd>
+        <dt>Source</dt><dd><span class="chip">{{ hit.item.kind }}</span> {{ hit.item.group_name or 'n/a' }}</dd>
+        <dt>Published</dt><dd class="faint">{{ hit.item.published_at or 'unknown' }}</dd>
+        <dt>Collected</dt><dd class="faint">{{ hit.item.collected_at }}</dd>
+        <dt>URL</dt><dd class="mono trunc" style="max-width:420px">{{ hit.item.url or 'n/a' }}</dd>
+        <dt>Alerts</dt><dd class="mono faint">{{ hit.alert_refs or 'none' }}</dd>
+      </dl>
+      <div class="actions">
+        <form class="inline" method="post" action="/hits/{{ hit.id }}/preserve"><button class="btn btn-sm">Preserve as evidence</button></form>
+        <form class="inline" method="post" action="/hits/{{ hit.id }}/escalate"><button class="btn btn-sm">Escalate to IR case</button></form>
+        <form class="inline" method="post" action="/hits/{{ hit.id }}/realert"><button class="btn btn-sm btn-ghost">Re-send alerts</button></form>
+        <a href="/items/{{ hit.item_id }}" class="btn btn-sm btn-ghost">Full item</a>
+      </div>
+    </div>
+    <div class="section-head"><h2>Content</h2></div>
+    <pre class="body">{{ hit.item.body }}</pre>
+  </div>
 
-<h2>Evidence captures of this item</h2>
-<div class="panel">
-{% if evidence %}<table><tr><th>Captured</th><th>By</th><th>SHA-256</th><th>Bytes</th><th>HTTP</th><th></th></tr>
-{% for e in evidence %}<tr><td class="muted">{{ e.captured_at }}</td><td>{{ e.captured_by }}</td><td class="mono">{{ e.sha256 }}</td><td>{{ e.size_bytes }}</td><td>{{ e.http_status }}</td>
-<td><a href="/evidence/{{ e.id }}/download">download</a> &middot; <a href="/evidence/{{ e.id }}/verify">verify</a></td></tr>{% endfor %}</table>
-{% else %}<p class="muted">None yet.</p>{% endif %}
+  <div>
+    <div class="panel pad">
+      <form method="post" action="/hits/{{ hit.id }}">
+        <label class="field">Status<select name="status">{% for s in ['new','reviewing','confirmed','false_positive','closed'] %}<option {{ 'selected' if s==hit.status }}>{{ s.replace('_',' ') }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:12px">Analyst notes<textarea name="analyst_notes" placeholder="What did you verify, and what is the recommended action for the client?">{{ hit.analyst_notes }}</textarea></label>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save triage</button></div>
+      </form>
+    </div>
+    <div class="section-head"><h2>Evidence captures</h2></div>
+    <div class="panel">
+    {% if evidence %}<div class="table-wrap"><table>
+      <thead><tr><th>Captured</th><th>By</th><th>SHA-256</th></tr></thead><tbody>
+      {% for e in evidence %}<tr><td class="nowrap faint">{{ e.captured_at.strftime('%b %d %H:%M') }}</td><td>{{ e.captured_by }}</td>
+      <td><a class="mono" href="/evidence/{{ e.id }}/download">{{ e.sha256[:14] }}</a></td></tr>{% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="empty"><p>No captures yet. Preserve the source to create a hashed, timestamped record.</p></div>{% endif %}
+    </div>
+  </div>
 </div>
 {% endblock %}

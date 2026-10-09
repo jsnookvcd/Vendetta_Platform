@@ -1,25 +1,35 @@
-{% extends "base.html" %}{% block body %}
-<h1>Hits</h1>
-<div class="panel">
+{% extends "base.html" %}{% block title %}Hits{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
 <form class="row" method="get" action="/hits">
-  <label>Status <select name="status">{% for s in ['open','new','reviewing','confirmed','false_positive','closed','all'] %}<option value="{{ s }}" {{ 'selected' if s==status }}>{{ s }}</option>{% endfor %}</select></label>
-  <label>Client <select name="client_id"><option value="">all</option>{% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if c.id==client_id }}>{{ c.name }}</option>{% endfor %}</select></label>
-  <label>Severity <select name="severity"><option value="">all</option>{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s==severity }}>{{ s }}</option>{% endfor %}</select></label>
-  <label>Reason <select name="reason"><option value="">all</option>{% for s in ['term','credential','iab'] %}<option {{ 'selected' if s==reason }}>{{ s }}</option>{% endfor %}</select></label>
-  <button>Filter</button>
+  <label class="field">Status<select name="status">{% for s in ['open','new','reviewing','confirmed','false_positive','closed','all'] %}<option value="{{ s }}" {{ 'selected' if s==status }}>{{ s.replace('_',' ') }}</option>{% endfor %}</select></label>
+  <label class="field">Client<select name="client_id"><option value="">All clients</option>{% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if c.id==client_id }}>{{ c.name }}</option>{% endfor %}</select></label>
+  <label class="field">Severity<select name="severity"><option value="">Any</option>{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s==severity }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Reason<select name="reason"><option value="">Any</option>{% for s in ['term','credential','iab'] %}<option {{ 'selected' if s==reason }}>{{ s }}</option>{% endfor %}</select></label>
+  <button class="btn">Apply filters</button>
 </form>
 </div>
-<div class="panel">
-<table><tr><th>Sev</th><th>Reason</th><th>Status</th><th>Client</th><th>Term / match</th><th>Item</th><th>Group</th><th>Alerted</th><th>Seen</th></tr>
-{% for h in hits %}<tr>
-  <td><span class="sev sev-{{ h.severity }}">{{ h.severity }}</span></td>
-  <td><span class="tag">{{ h.reason }}</span></td><td>{{ h.status }}</td>
-  <td><a href="/clients/{{ h.client_id }}">{{ h.client.name }}</a></td>
-  <td class="mono">{{ h.term.term if h.term else h.matched_text[:50] }}</td>
-  <td><a href="/hits/{{ h.id }}" class="trunc">{{ h.item.title }}</a> <span class="tag">{{ h.item.kind }}</span></td>
-  <td>{{ h.item.group_name }}</td>
-  <td class="mono muted">{{ h.alert_refs.get('jira','') }}{{ ' teams' if h.alert_refs.get('teams') }}{{ ' sns' if h.alert_refs.get('sns') }}</td>
-  <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-</tr>{% endfor %}</table>
-</div>
+
+<div class="panel"><div class="table-wrap">
+{% if hits %}
+<table>
+  <thead><tr><th>Severity</th><th>Reason</th><th>Status</th><th>Client</th><th>Match</th><th>Item</th><th>Group</th><th>Alerted</th><th>Seen</th></tr></thead>
+  <tbody>
+  {% for h in hits %}<tr>
+    <td class="nowrap"><span class="sev sev-{{ h.severity }}">{{ h.severity }}</span></td>
+    <td><span class="reason reason-{{ h.reason }}">{{ h.reason }}</span></td>
+    <td class="nowrap"><span class="state state-{{ h.status }}">{{ h.status.replace('_',' ') }}</span></td>
+    <td class="nowrap"><a href="/clients/{{ h.client_id }}">{{ h.client.name }}</a></td>
+    <td class="mono trunc" style="max-width:190px">{{ h.term.term if h.term else h.matched_text }}</td>
+    <td><a href="/hits/{{ h.id }}" class="trunc" style="max-width:300px; display:inline-block; vertical-align:bottom">{{ h.item.title }}</a> <span class="chip">{{ h.item.kind }}</span></td>
+    <td class="nowrap">{{ h.item.group_name }}</td>
+    <td class="nowrap faint mono">{{ h.alert_refs.get('verdict_case','') }}{{ ' teams' if h.alert_refs.get('teams') }}{{ ' sns' if h.alert_refs.get('sns') }}</td>
+    <td class="nowrap faint">{{ h.created_at.strftime('%b %d %H:%M') }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty"><h3>No hits match these filters</h3><p>Widen the status to all, or clear the client and severity filters, to see historical hits.</p></div>
+{% endif %}
+</div></div>
 {% endblock %}

@@ -1,22 +1,28 @@
-{% extends "base.html" %}{% block body %}
-<h1>Settings</h1>
-<div class="panel">
-  <p>Configuration is read from the environment (SSM Parameter Store in AWS). Values shown here are status only.</p>
-  <p><b>Alert threshold:</b> {{ cfg.alert_min_severity }}<br>
-  <b>SNS (email/SMS):</b> {{ 'configured' if cfg.sns else 'off' }}<br>
-  <b>Teams webhook:</b> {{ 'configured' if cfg.teams else 'off' }}<br>
-  <b>Jira Service Management:</b> {{ 'configured, project ' ~ cfg.jira_project if cfg.jira else 'off' }}<br>
-  <b>Have I Been Pwned:</b> {{ 'configured' if cfg.hibp else 'off' }}<br>
-  <b>Telegram:</b> {{ 'configured' if cfg.telegram else 'off' }}<br>
-  <b>Evidence storage:</b> <span class="mono">{{ cfg.evidence_bucket }}</span><br>
-  <b>VERDICT hub:</b> <span class="mono">{{ cfg.verdict_hub }}</span></p>
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Configuration</h2><span class="count">read from the environment / SSM Parameter Store</span></div>
+<div class="panel pad">
+  <dl class="kv">
+    <dt>Alert threshold</dt><dd>{{ cfg.alert_min_severity }}</dd>
+    <dt>SNS (email / SMS)</dt><dd>{{ 'configured' if cfg.sns else 'off' }}</dd>
+    <dt>Teams webhook</dt><dd>{{ 'configured' if cfg.teams else 'off' }}</dd>
+    <dt>Jira Service Management</dt><dd>{{ 'configured, project ' ~ cfg.jira_project if cfg.jira else 'off' }}</dd>
+    <dt>Have I Been Pwned</dt><dd>{{ 'configured' if cfg.hibp else 'off' }}</dd>
+    <dt>Telegram</dt><dd>{{ 'configured' if cfg.telegram else 'off' }}</dd>
+    <dt>Evidence storage</dt><dd class="mono">{{ cfg.evidence_bucket }}</dd>
+    <dt>VERDICT hub</dt><dd class="mono">{{ cfg.verdict_hub }}</dd>
+  </dl>
 </div>
-<div class="panel">
-  <p><b>Platform module.</b> This service is the Dark Web Monitoring module of VERDICT. The hub reads findings at <span class="mono">/api/findings</span> and the manifest at <span class="mono">/api/module</span>. Set VERDICT_HUB_URL and VERDICT_HUB_TOKEN to enable escalation of a finding into an IR case.</p>
+
+<div class="section-head"><h2>Platform module</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 10px">This service is the Dark Web Monitoring module of VERDICT. The hub reads findings at <span class="mono">/api/findings</span> and the manifest at <span class="mono">/api/module</span>. Set VERDICT_HUB_URL and VERDICT_HUB_TOKEN to enable escalation of a finding into an IR case.</p>
 </div>
-<div class="panel">
-  <p><b>API bearer token</b> (for VERDICT, Jira automations, or scripts):</p>
-  <pre class="mono">Authorization: Bearer {{ api_token }}</pre>
-  <p class="muted">Endpoints: GET /api/hits?status=open&amp;client=acme &middot; GET /api/victims?days=7 &middot; POST /api/clients/{id}/terms &middot; docs at /api/docs</p>
+
+<div class="section-head"><h2>API access</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 8px">Bearer token for VERDICT, Jira automations or scripts:</p>
+  <pre class="body" style="max-height:none">Authorization: Bearer {{ api_token }}</pre>
+  <p class="faint" style="margin:8px 0 0">Endpoints: /api/findings · /api/hits · /api/victims · /api/module · docs at /api/docs</p>
 </div>
 {% endblock %}

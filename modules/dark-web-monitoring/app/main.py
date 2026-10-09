@@ -5,8 +5,11 @@ import datetime as dt
 import io
 import logging
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
@@ -20,8 +23,10 @@ from . import alerts
 
 log = logging.getLogger(__name__)
 app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
-templates = Jinja2Templates(directory="app/templates")
+_APP_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 templates.env.globals["app_name"] = settings.app_name
+app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="static")
 
 
 @app.on_event("startup")
@@ -49,7 +54,25 @@ def _audit(db: Session, actor: str, action: str, detail: str = "") -> None:
     db.commit()
 
 
+def _shell(db: Session) -> dict:
+    """Lightweight operational status for the topbar. Cheap counts only, no network."""
+    try:
+        return {
+            "sources_ok": db.scalar(select(func.count(Source.id)).where(Source.enabled.is_(True), Source.fail_count == 0)) or 0,
+            "sources_total": db.scalar(select(func.count(Source.id)).where(Source.enabled.is_(True))) or 0,
+            "open_hits": db.scalar(select(func.count(Hit.id)).where(Hit.status.in_(("new", "reviewing")))) or 0,
+        }
+    except Exception:  # noqa: BLE001
+        return {"sources_ok": 0, "sources_total": 0, "open_hits": 0}
+
+
 def render(request: Request, name: str, **ctx):
+    if "shell" not in ctx and ctx.get("user"):
+        db = SessionLocal()
+        try:
+            ctx["shell"] = _shell(db)
+        finally:
+            db.close()
     return templates.TemplateResponse(request, name, ctx)
 
 

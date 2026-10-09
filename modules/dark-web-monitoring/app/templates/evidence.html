@@ -1,13 +1,23 @@
-{% extends "base.html" %}{% block body %}
-<h1>Evidence</h1>
-<div class="panel">
-<table><tr><th>Captured (UTC)</th><th>By</th><th>Client</th><th>URL</th><th>SHA-256</th><th>Bytes</th><th>HTTP</th><th>Storage</th><th></th></tr>
-{% for e in evidence %}<tr>
-  <td class="muted">{{ e.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ e.captured_by }}</td>
-  <td>{% if e.client_id %}<a href="/clients/{{ e.client_id }}">client</a>{% else %}<span class="muted">unassigned</span>{% endif %}</td>
-  <td class="mono trunc" style="max-width:300px">{{ e.url }}</td><td class="mono">{{ e.sha256[:24] }}</td><td>{{ e.size_bytes }}</td><td>{{ e.http_status }}</td>
-  <td class="mono trunc" style="max-width:220px">{{ e.storage_uri }}</td>
-  <td><a href="/evidence/{{ e.id }}/download">download</a> &middot; <a href="/evidence/{{ e.id }}/verify">verify</a></td>
-</tr>{% endfor %}</table>
-</div>
+{% extends "base.html" %}{% block title %}Evidence{% endblock %}
+{% block body %}
+<p class="page-intro">Every preserved capture is stored with its raw bytes, a SHA-256, a timestamp and a manifest. Verify re-hashes the stored bytes against the recorded value, so a capture's integrity is provable for an IR report or testimony.</p>
+<div class="panel"><div class="table-wrap">
+{% if evidence %}
+<table>
+  <thead><tr><th>Captured (UTC)</th><th>By</th><th>Client</th><th>URL</th><th>SHA-256</th><th>Bytes</th><th>HTTP</th><th></th></tr></thead>
+  <tbody>
+  {% for e in evidence %}<tr>
+    <td class="nowrap faint">{{ e.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+    <td class="nowrap">{{ e.captured_by }}</td>
+    <td class="nowrap">{% if e.client_id %}<a href="/clients/{{ e.client_id }}">client</a>{% else %}<span class="faint">unassigned</span>{% endif %}</td>
+    <td class="mono trunc" style="max-width:280px">{{ e.url }}</td>
+    <td class="mono">{{ e.sha256[:18] }}</td>
+    <td class="num">{{ e.size_bytes }}</td>
+    <td class="num">{{ e.http_status }}</td>
+    <td class="nowrap" style="text-align:right"><a href="/evidence/{{ e.id }}/download">Download</a> <span class="faint">·</span> <a href="/evidence/{{ e.id }}/verify">Verify</a></td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No evidence captured</h3><p>Preserve a hit or fetch a URL in the research console to create the first hashed capture.</p></div>{% endif %}
+</div></div>
 {% endblock %}

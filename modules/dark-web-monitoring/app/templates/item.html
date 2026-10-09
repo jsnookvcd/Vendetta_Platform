@@ -1,12 +1,18 @@
-{% extends "base.html" %}{% block body %}
-<h1><span class="tag">{{ item.kind }}</span> {{ item.title }}</h1>
-<div class="panel">
-  <p><b>Group/source:</b> {{ item.group_name }} &nbsp; <b>Published:</b> {{ item.published_at or 'unknown' }} &nbsp; <b>Collected:</b> {{ item.collected_at }}<br>
-  <b>URL:</b> <span class="mono">{{ item.url or 'n/a' }}</span><br>
-  <b>Content hash:</b> <span class="mono">{{ item.content_hash }}</span></p>
-  {% if item.url %}<form class="inline" method="post" action="/research"><input type="hidden" name="url" value="{{ item.url }}"><input type="hidden" name="preserve" value="true"><button class="small">Fetch and preserve URL now</button></form>{% endif %}
+{% extends "base.html" %}{% block title %}Item{% endblock %}
+{% block body %}
+<div class="title-row"><span class="chip">{{ item.kind }}</span><h1>{{ item.title }}</h1></div>
+<div class="panel pad">
+  <dl class="kv">
+    <dt>Group / source</dt><dd>{{ item.group_name or 'n/a' }}</dd>
+    <dt>Published</dt><dd class="faint">{{ item.published_at or 'unknown' }}</dd>
+    <dt>Collected</dt><dd class="faint">{{ item.collected_at }}</dd>
+    <dt>URL</dt><dd class="mono trunc" style="max-width:520px">{{ item.url or 'n/a' }}</dd>
+    <dt>Content hash</dt><dd class="mono">{{ item.content_hash }}</dd>
+  </dl>
+  {% if item.url %}<div class="actions"><form class="inline" method="post" action="/research"><input type="hidden" name="url" value="{{ item.url }}"><input type="hidden" name="preserve" value="true"><button class="btn btn-sm">Fetch and preserve URL</button></form></div>{% endif %}
 </div>
-<pre>{{ item.body }}</pre>
-<h2>Raw metadata</h2>
-<pre class="mono">{{ item.meta | tojson(indent=2) }}</pre>
+<div class="section-head"><h2>Content</h2></div>
+<pre class="body">{{ item.body }}</pre>
+<div class="section-head"><h2>Metadata</h2></div>
+<pre class="body">{{ item.meta | tojson(indent=2) }}</pre>
 {% endblock %}
