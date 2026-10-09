@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block body %}
+<h1>Evidence</h1>
+<div class="panel">
+<table><tr><th>Captured (UTC)</th><th>By</th><th>Client</th><th>URL</th><th>SHA-256</th><th>Bytes</th><th>HTTP</th><th>Storage</th><th></th></tr>
+{% for e in evidence %}<tr>
+  <td class="muted">{{ e.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ e.captured_by }}</td>
+  <td>{% if e.client_id %}<a href="/clients/{{ e.client_id }}">client</a>{% else %}<span class="muted">unassigned</span>{% endif %}</td>
+  <td class="mono trunc" style="max-width:300px">{{ e.url }}</td><td class="mono">{{ e.sha256[:24] }}</td><td>{{ e.size_bytes }}</td><td>{{ e.http_status }}</td>
+  <td class="mono trunc" style="max-width:220px">{{ e.storage_uri }}</td>
+  <td><a href="/evidence/{{ e.id }}/download">download</a> &middot; <a href="/evidence/{{ e.id }}/verify">verify</a></td>
+</tr>{% endfor %}</table>
+</div>
+{% endblock %}

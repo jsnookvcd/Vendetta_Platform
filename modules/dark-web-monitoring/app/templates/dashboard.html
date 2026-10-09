@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block body %}
+<h1>Dashboard</h1>
+<div class="grid">
+  <div class="stat"><div class="n">{{ stats.open_hits }}</div><div class="l">Open hits</div></div>
+  <div class="stat"><div class="n">{{ stats.victims_24h }}</div><div class="l">New victim posts, 24h</div></div>
+  <div class="stat"><div class="n">{{ stats.items_24h }}</div><div class="l">Items collected, 24h</div></div>
+  <div class="stat"><div class="n">{{ stats.clients }}</div><div class="l">Active clients</div></div>
+  <div class="stat"><div class="n">{{ stats.terms }}</div><div class="l">Watch terms</div></div>
+  <div class="stat"><div class="n">{{ stats.sources_ok }}<span class="muted" style="font-size:14px">/{{ stats.sources_total }}</span></div><div class="l">Sources healthy</div></div>
+</div>
+
+<h2>Open hits</h2>
+<div class="panel">
+{% if hits %}
+<table><tr><th>Sev</th><th>Client</th><th>Term</th><th>Item</th><th>Group</th><th>Seen</th></tr>
+{% for h in hits %}<tr>
+  <td><span class="sev sev-{{ h.severity }}">{{ h.severity }}</span></td>
+  <td><a href="/clients/{{ h.client_id }}">{{ h.client.name }}</a></td>
+  <td class="mono">{{ h.term.term if h.term else '' }}</td>
+  <td><a href="/hits/{{ h.id }}" class="trunc">{{ h.item.title }}</a> <span class="tag">{{ h.item.kind }}</span></td>
+  <td>{{ h.item.group_name }}</td>
+  <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+</tr>{% endfor %}</table>
+{% else %}<p class="muted">No open hits.</p>{% endif %}
+</div>
+
+<h2>Latest ransomware victim posts</h2>
+<div class="panel">
+<table><tr><th>Group</th><th>Victim</th><th>Published</th><th>Collected</th></tr>
+{% for v in victims %}<tr>
+  <td>{{ v.group_name }}</td>
+  <td><a href="/items/{{ v.id }}">{{ v.title.split(': ',1)[-1] }}</a></td>
+  <td class="muted">{{ v.published_at.strftime('%Y-%m-%d') if v.published_at else '' }}</td>
+  <td class="muted">{{ v.collected_at.strftime('%Y-%m-%d %H:%M') }}</td>
+</tr>{% endfor %}</table>
+</div>
+{% endblock %}

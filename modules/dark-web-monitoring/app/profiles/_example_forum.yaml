@@ -1,0 +1,25 @@
+# Example forum/market profile. Copy to <board>.yaml and set the source's profile
+# field to the file name. For boards your team has an account on, store a session
+# cookie on the source (Sources page) and it is sent with every request.
+kind: forum
+board: Example Forum
+# Each thread row on a board/section page
+thread_selector: "tr.thread, div.topic, li.row"
+# Link to the thread within a row
+thread_link_selector: "a.title, a"
+# Thread title within a row
+thread_title_selector: "a.title, .subject"
+# Pagination: query param appended as ?<page_param>=N, walked up to max_pages
+page_param: "page"
+max_pages: 3
+# Cap threads opened per sweep
+max_threads_per_run: 25
+# Each message within a thread page
+post_selector: "div.post, article.message, li.comment"
+author_selector: ".author, .username, a.user"
+body_selector: ".content, .message-body, .post-text"
+date_selector: ".date, time"
+# Sections (board URLs) to start from, relative to the source URL or absolute
+sections:
+  - "/index.php?board=1.0"
+  - "/index.php?board=5.0"

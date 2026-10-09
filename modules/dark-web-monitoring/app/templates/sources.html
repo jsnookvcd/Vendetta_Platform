@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block body %}
+<h1>Sources</h1>
+<div class="panel">
+<form class="row" method="post" action="/sources">
+  <label>Name <input name="name" required></label>
+  <label>Kind <select name="kind"><option value="onion">onion leak site</option><option value="forum">forum / market</option></select></label>
+  <label>URL <input name="url" style="min-width:380px" placeholder="http://....onion/" required></label>
+  <label>Group / board <input name="group_name"></label>
+  <label>Profile <input name="profile" placeholder="file in app/profiles"></label>
+  <label>Session cookie (optional) <input name="cookie" style="min-width:260px" placeholder="name=value; name2=value2"></label>
+  <button class="primary">Add source</button>
+</form>
+<p class="muted">Onion sources are seeded daily from the tracked group lists. A profile (a file in app/profiles) turns a plain crawl into per-post or per-thread parsing. For a board your team has an account on, paste the session cookie from an authenticated browser; it is sent read-only and never used to log in or post. Sites that fail five times are retried every 12 hours.</p>
+</div>
+<div class="panel">
+<table><tr><th>Kind</th><th>Name</th><th>Profile</th><th>Auth</th><th>URL</th><th>Last OK (UTC)</th><th>Fails</th><th>Last error</th><th></th></tr>
+{% for s in sources %}<tr>
+  <td><span class="tag">{{ s.kind }}</span></td><td>{{ s.name }}</td>
+  <td class="mono">{{ s.profile }}</td>
+  <td>{% if s.meta and s.meta.get('cookie') %}<span class="ok">cookie</span>{% else %}<span class="muted">none</span>{% endif %}</td>
+  <td class="mono trunc" style="max-width:300px">{{ s.url }}</td>
+  <td class="muted">{{ s.last_ok.strftime('%Y-%m-%d %H:%M') if s.last_ok else 'never' }}</td>
+  <td>{% if s.fail_count %}<span class="bad">{{ s.fail_count }}</span>{% else %}<span class="ok">0</span>{% endif %}</td>
+  <td class="muted trunc" style="max-width:220px">{{ s.last_error }}</td>
+  <td>
+    <form class="inline" method="post" action="/sources/{{ s.id }}/toggle"><button class="small">{{ 'disable' if s.enabled else 'enable' }}</button></form>
+    <form class="inline" method="post" action="/sources/{{ s.id }}/cookie"><input name="cookie" placeholder="cookie" style="width:90px" class="small"><button class="small">set</button></form>
+  </td>
+</tr>{% endfor %}</table>
+</div>
+{% endblock %}

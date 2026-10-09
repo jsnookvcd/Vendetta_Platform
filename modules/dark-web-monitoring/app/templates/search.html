@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block body %}
+<h1>Search collected data</h1>
+<div class="panel">
+<form class="row" method="get" action="/search">
+  <label>Query <input name="q" value="{{ q }}" style="min-width:360px" placeholder='acme OR "acme corp"   (use * for wildcard: acme*)'></label>
+  <label>Kind <select name="kind"><option value="">any</option>{% for k in ['victim','post','page','thread','message','paste','breach','stealer','credential','cert'] %}<option {{ 'selected' if k==kind }}>{{ k }}</option>{% endfor %}</select></label>
+  <label>Days <input name="days" type="number" value="{{ days }}" style="width:80px"></label>
+  <button class="primary">Search</button>
+</form>
+<p class="muted">Full text search over every victim post, crawled leak-site page, paste, breach record, infostealer log, certificate and Telegram message collected. Useful during IR scoping: search a prospect or new client before onboarding to see prior exposure.</p>
+</div>
+{% if q %}<div class="panel">
+<p class="muted">{{ items|length }} result(s)</p>
+<table><tr><th>Kind</th><th>Group</th><th>Title</th><th>Published</th><th>Collected</th></tr>
+{% for i in items %}<tr>
+  <td><span class="tag">{{ i.kind }}</span></td><td>{{ i.group_name }}</td>
+  <td><a href="/items/{{ i.id }}" class="trunc">{{ i.title }}</a></td>
+  <td class="muted">{{ i.published_at.strftime('%Y-%m-%d') if i.published_at else '' }}</td>
+  <td class="muted">{{ i.collected_at.strftime('%Y-%m-%d %H:%M') }}</td>
+</tr>{% endfor %}</table>
+</div>{% endif %}
+{% endblock %}

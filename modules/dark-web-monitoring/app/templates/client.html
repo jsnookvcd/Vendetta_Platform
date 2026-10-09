@@ -1,0 +1,63 @@
+{% extends "base.html" %}{% block body %}
+<h1>{{ client.name }} <span class="tag">{{ client.kind }}</span> {% if client.case_ref %}<span class="mono muted">{{ client.case_ref }}</span>{% endif %}</h1>
+<p>
+  <form class="inline" method="post" action="/clients/{{ client.id }}/toggle"><button class="small">{{ 'Pause monitoring' if client.active else 'Resume monitoring' }}</button></form>
+  <form class="inline" method="post" action="/clients/{{ client.id }}/backfill"><input type="hidden" name="days" value="365"><button class="small">Backfill: match terms against last 365 days</button></form>
+</p>
+
+<h2>Business profile (for initial access broker matching)</h2>
+<div class="panel">
+<p class="muted">Brokers advertise access without naming the victim. This profile is matched against forum posts to flag likely sales of access to this client. Industry is required; the rest raise confidence.</p>
+<form class="row" method="post" action="/clients/{{ client.id }}/profile">
+  <label>Industry <input name="industry" value="{{ client.industry }}" placeholder="credit union" list="industries"></label>
+  <datalist id="industries"><option>credit union</option><option>bank</option><option>healthcare</option><option>manufacturing</option><option>legal</option><option>education</option><option>government</option><option>insurance</option><option>retail</option><option>technology</option></datalist>
+  <label>Country <input name="country" value="{{ client.country }}" placeholder="USA" style="width:90px"></label>
+  <label>State <input name="state" value="{{ client.state }}" placeholder="Pennsylvania" style="width:120px"></label>
+  <label>Revenue $M min <input name="revenue_min_musd" type="number" value="{{ client.revenue_min_musd }}" style="width:90px"></label>
+  <label>max <input name="revenue_max_musd" type="number" value="{{ client.revenue_max_musd }}" style="width:90px"></label>
+  <label>Employees/hosts min <input name="employees_min" type="number" value="{{ client.employees_min }}" style="width:90px"></label>
+  <label>max <input name="employees_max" type="number" value="{{ client.employees_max }}" style="width:90px"></label>
+  <button class="primary">Save profile</button>
+</form>
+</div>
+
+<h2>Watch terms</h2>
+<div class="panel">
+<form class="row" method="post" action="/clients/{{ client.id }}/terms">
+  <label>Terms (one per line) <textarea name="term" style="min-width:320px;min-height:60px" required></textarea></label>
+  <label>Kind <select name="kind">
+    <option value="domain">domain (and subdomains)</option><option value="email_domain">email domain</option>
+    <option value="brand">brand</option><option value="keyword">keyword</option><option value="person">person</option>
+    <option value="ip_cidr">IP CIDR</option><option value="regex">regex</option></select></label>
+  <label>Severity <select name="severity"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select></label>
+  <button class="primary">Add</button>
+</form>
+<table><tr><th>Term</th><th>Kind</th><th>Sev</th><th></th></tr>
+{% for t in client.terms %}<tr>
+  <td class="mono">{{ t.term }}</td><td>{{ t.kind }}</td><td><span class="sev sev-{{ t.severity }}">{{ t.severity }}</span></td>
+  <td><form class="inline" method="post" action="/clients/{{ client.id }}/terms/{{ t.id }}/delete"><button class="small">remove</button></form></td>
+</tr>{% endfor %}</table>
+</div>
+
+<h2>Hits</h2>
+<div class="panel">
+{% if hits %}<table><tr><th>Sev</th><th>Reason</th><th>Status</th><th>Term</th><th>Item</th><th>Seen</th></tr>
+{% for h in hits %}<tr>
+  <td><span class="sev sev-{{ h.severity }}">{{ h.severity }}</span></td>
+  <td><span class="tag">{{ h.reason }}</span></td><td>{{ h.status }}</td>
+  <td class="mono">{{ h.term.term if h.term else h.matched_text[:40] }}</td>
+  <td><a href="/hits/{{ h.id }}" class="trunc">{{ h.item.title }}</a> <span class="tag">{{ h.item.kind }}</span></td>
+  <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+</tr>{% endfor %}</table>{% else %}<p class="muted">No hits yet.</p>{% endif %}
+</div>
+
+<h2>Evidence</h2>
+<div class="panel">
+{% if evidence %}<table><tr><th>Captured</th><th>URL</th><th>SHA-256</th><th>Status</th><th></th></tr>
+{% for e in evidence %}<tr>
+  <td class="muted">{{ e.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td class="mono trunc">{{ e.url }}</td>
+  <td class="mono">{{ e.sha256[:20] }}</td><td>{{ e.http_status }}</td>
+  <td><a href="/evidence/{{ e.id }}/download">download</a> &middot; <a href="/evidence/{{ e.id }}/verify">verify</a></td>
+</tr>{% endfor %}</table>{% else %}<p class="muted">No preserved evidence.</p>{% endif %}
+</div>
+{% endblock %}

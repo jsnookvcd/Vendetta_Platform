@@ -1,0 +1,58 @@
+services:
+  tor:
+    build: ./infra/tor
+    restart: unless-stopped
+    networks: [internal]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: darkweb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-darkweb}
+      POSTGRES_DB: darkweb
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=40"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darkweb"]
+      interval: 15s
+      retries: 10
+    networks: [internal]
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://darkweb:${POSTGRES_PASSWORD:-darkweb}@db:5432/darkweb
+      TOR_PROXY: socks5://tor:9050
+    depends_on:
+      db: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - evidence:/data
+    networks: [internal]
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://darkweb:${POSTGRES_PASSWORD:-darkweb}@db:5432/darkweb
+      TOR_PROXY: socks5://tor:9050
+    depends_on:
+      db: {condition: service_healthy}
+      tor: {condition: service_healthy}
+    volumes:
+      - evidence:/data
+    networks: [internal]
+
+volumes:
+  pgdata:
+  evidence:
+
+networks:
+  internal:

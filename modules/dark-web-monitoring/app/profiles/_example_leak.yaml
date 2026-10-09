@@ -1,0 +1,20 @@
+# Example leak-site profile. Copy to <group>.yaml and set the source's profile
+# field to the file name. Selectors are examples; every group's HTML differs, so
+# capture the real markup with the research console first, then write selectors.
+kind: leak
+group: Example Group
+# Each victim card on the index page
+list_selector: "div.card, article.post, li.victim"
+# Victim name within a card
+title_selector: "h2, .title, .company"
+# Link to the victim's dedicated post (optional; followed over Tor if present)
+link_selector: "a"
+# Short description or teaser within the card (optional)
+desc_selector: ".desc, .excerpt, p"
+# Published or countdown date within the card (optional)
+date_selector: ".date, time, .published"
+# Once a post is followed, how to read it (optional)
+post_title_selector: "h1, .post-title"
+post_body_selector: ".post-body, article, main"
+# Cap posts followed per sweep so a large site does not run forever on Tor
+max_posts_per_run: 40

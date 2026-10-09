@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block body %}
+<h1><span class="tag">{{ item.kind }}</span> {{ item.title }}</h1>
+<div class="panel">
+  <p><b>Group/source:</b> {{ item.group_name }} &nbsp; <b>Published:</b> {{ item.published_at or 'unknown' }} &nbsp; <b>Collected:</b> {{ item.collected_at }}<br>
+  <b>URL:</b> <span class="mono">{{ item.url or 'n/a' }}</span><br>
+  <b>Content hash:</b> <span class="mono">{{ item.content_hash }}</span></p>
+  {% if item.url %}<form class="inline" method="post" action="/research"><input type="hidden" name="url" value="{{ item.url }}"><input type="hidden" name="preserve" value="true"><button class="small">Fetch and preserve URL now</button></form>{% endif %}
+</div>
+<pre>{{ item.body }}</pre>
+<h2>Raw metadata</h2>
+<pre class="mono">{{ item.meta | tojson(indent=2) }}</pre>
+{% endblock %}

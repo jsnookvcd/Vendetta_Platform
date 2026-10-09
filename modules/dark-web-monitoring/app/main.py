@@ -1,0 +1,483 @@
+"""Analyst console and JSON API."""
+from __future__ import annotations
+
+import datetime as dt
+import io
+import logging
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import desc, func, select, text
+from sqlalchemy.orm import Session, selectinload
+
+from . import auth, evidence, iab, platform, profiles
+from .config import settings
+from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
+from .fetch import fetch, html_to_text, tor_check
+from .matcher import match_item
+from . import alerts
+
+log = logging.getLogger(__name__)
+app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
+templates = Jinja2Templates(directory="app/templates")
+templates.env.globals["app_name"] = settings.app_name
+
+
+@app.on_event("startup")
+def _startup():
+    init_db()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.exception_handler(HTTPException)
+async def _http_exc(request: Request, exc: HTTPException):
+    if exc.status_code == 401 and not request.url.path.startswith("/api/"):
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+def _audit(db: Session, actor: str, action: str, detail: str = "") -> None:
+    db.add(AuditLog(actor=actor, action=action, detail=detail[:4000]))
+    db.commit()
+
+
+def render(request: Request, name: str, **ctx):
+    return templates.TemplateResponse(request, name, ctx)
+
+
+# ---------------------------------------------------------------- auth
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, next: str = "/"):
+    return render(request, "login.html", next=next, error="")
+
+
+@app.post("/login")
+def login(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/"), db: Session = Depends(get_db)):
+    if username == settings.admin_user and auth.check_password(password):
+        resp = RedirectResponse(next or "/", status_code=302)
+        resp.set_cookie(auth.COOKIE, auth.make_session(username), httponly=True, samesite="lax", max_age=12 * 3600)
+        _audit(db, username, "login")
+        return resp
+    return render(request, "login.html", next=next, error="Invalid credentials")
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie(auth.COOKIE)
+    return resp
+
+
+# ---------------------------------------------------------------- dashboard
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=1)
+    stats = {
+        "clients": db.scalar(select(func.count(Client.id)).where(Client.active.is_(True))),
+        "terms": db.scalar(select(func.count(WatchTerm.id)).where(WatchTerm.enabled.is_(True))),
+        "items_24h": db.scalar(select(func.count(Item.id)).where(Item.collected_at >= since)),
+        "victims_24h": db.scalar(select(func.count(Item.id)).where(Item.collected_at >= since, Item.kind == "victim")),
+        "open_hits": db.scalar(select(func.count(Hit.id)).where(Hit.status.in_(("new", "reviewing")))),
+        "sources_ok": db.scalar(select(func.count(Source.id)).where(Source.enabled.is_(True), Source.fail_count == 0)),
+        "sources_total": db.scalar(select(func.count(Source.id)).where(Source.enabled.is_(True))),
+    }
+    hits = db.execute(
+        select(Hit).options(selectinload(Hit.client), selectinload(Hit.item), selectinload(Hit.term))
+        .where(Hit.status.in_(("new", "reviewing"))).order_by(desc(Hit.created_at)).limit(15)
+    ).scalars().all()
+    victims = db.execute(select(Item).where(Item.kind == "victim").order_by(desc(Item.collected_at)).limit(25)).scalars().all()
+    return render(request, "dashboard.html", user=user, stats=stats, hits=hits, victims=victims)
+
+
+# ---------------------------------------------------------------- clients and terms
+@app.get("/clients", response_class=HTMLResponse)
+def clients(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    rows = db.execute(select(Client).options(selectinload(Client.terms)).order_by(Client.name)).scalars().all()
+    return render(request, "clients.html", user=user, clients=rows)
+
+
+@app.post("/clients")
+def add_client(name: str = Form(...), case_ref: str = Form(""), kind: str = Form("managed"), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = Client(name=name.strip(), case_ref=case_ref.strip(), kind=kind)
+    db.add(c)
+    db.commit()
+    _audit(db, user, "client.add", name)
+    return RedirectResponse(f"/clients/{c.id}", status_code=302)
+
+
+@app.post("/clients/{cid}/profile")
+def update_profile(cid: str, industry: str = Form(""), country: str = Form(""), state: str = Form(""),
+                   revenue_min_musd: int = Form(0), revenue_max_musd: int = Form(0),
+                   employees_min: int = Form(0), employees_max: int = Form(0),
+                   user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    c.industry, c.country, c.state = industry.strip(), country.strip(), state.strip()
+    c.revenue_min_musd, c.revenue_max_musd = revenue_min_musd, revenue_max_musd
+    c.employees_min, c.employees_max = employees_min, employees_max
+    db.commit()
+    _audit(db, user, "client.profile", f"{c.name}: {industry} {country}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+@app.get("/clients/{cid}", response_class=HTMLResponse)
+def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    hits = db.execute(
+        select(Hit).options(selectinload(Hit.item), selectinload(Hit.term)).where(Hit.client_id == cid).order_by(desc(Hit.created_at)).limit(100)
+    ).scalars().all()
+    ev = db.execute(select(Evidence).where(Evidence.client_id == cid).order_by(desc(Evidence.captured_at)).limit(50)).scalars().all()
+    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev)
+
+
+@app.post("/clients/{cid}/terms")
+def add_term(cid: str, term: str = Form(...), kind: str = Form("keyword"), severity: str = Form("medium"), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    for t in [x.strip() for x in term.splitlines() if x.strip()]:
+        db.add(WatchTerm(client_id=cid, term=t, kind=kind, severity=severity))
+    db.commit()
+    _audit(db, user, "term.add", f"{cid}: {kind} {term[:200]}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+@app.post("/clients/{cid}/terms/{tid}/delete")
+def del_term(cid: str, tid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    t = db.get(WatchTerm, tid)
+    if t:
+        db.delete(t)
+        db.commit()
+        _audit(db, user, "term.delete", f"{cid}: {t.term}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+@app.post("/clients/{cid}/toggle")
+def toggle_client(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if c:
+        c.active = not c.active
+        db.commit()
+        _audit(db, user, "client.toggle", f"{c.name} active={c.active}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+@app.post("/clients/{cid}/backfill")
+def backfill(cid: str, days: int = Form(90), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Re-run matching for this client's terms against items already collected.
+    Use when onboarding an IR client: did their name show up on a leak site last month?"""
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    items = db.execute(select(Item).where(Item.collected_at >= since)).scalars().all()
+    n = 0
+    for it in items:
+        new = [h for h in match_item(db, it) if h.client_id == cid]
+        new += [h for h in iab.match_iab(db, it) if h.client_id == cid]
+        n += len(new)
+    _audit(db, user, "client.backfill", f"{cid}: {n} hits over {days}d")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+# ---------------------------------------------------------------- hits
+@app.get("/hits", response_class=HTMLResponse)
+def hits(request: Request, status: str = "open", client_id: str = "", severity: str = "", reason: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    q = select(Hit).options(selectinload(Hit.client), selectinload(Hit.item), selectinload(Hit.term))
+    if status == "open":
+        q = q.where(Hit.status.in_(("new", "reviewing")))
+    elif status != "all":
+        q = q.where(Hit.status == status)
+    if client_id:
+        q = q.where(Hit.client_id == client_id)
+    if severity:
+        q = q.where(Hit.severity == severity)
+    if reason:
+        q = q.where(Hit.reason == reason)
+    rows = db.execute(q.order_by(desc(Hit.created_at)).limit(300)).scalars().all()
+    clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
+    return render(request, "hits.html", user=user, hits=rows, clients=clients_, status=status, client_id=client_id, severity=severity, reason=reason)
+
+
+@app.get("/hits/{hid}", response_class=HTMLResponse)
+def hit_detail(hid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    ev = db.execute(select(Evidence).where(Evidence.item_id == h.item_id).order_by(desc(Evidence.captured_at))).scalars().all()
+    return render(request, "hit.html", user=user, hit=h, evidence=ev)
+
+
+@app.post("/hits/{hid}")
+def hit_update(hid: str, status: str = Form(...), analyst_notes: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    h.status = status
+    h.analyst_notes = analyst_notes
+    db.commit()
+    _audit(db, user, "hit.update", f"{hid} -> {status}")
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+@app.post("/hits/{hid}/preserve")
+def hit_preserve(hid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h or not h.item.url:
+        raise HTTPException(404)
+    evidence.preserve(db, h.item.url, client_id=h.client_id, item_id=h.item_id, captured_by=user, note=f"manual: hit {hid}")
+    _audit(db, user, "evidence.preserve", h.item.url)
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+@app.post("/hits/{hid}/realert")
+def hit_realert(hid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    alerts.dispatch(db, [h])
+    _audit(db, user, "hit.realert", hid)
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+# ---------------------------------------------------------------- research console
+@app.get("/search", response_class=HTMLResponse)
+def search(request: Request, q: str = "", kind: str = "", days: int = 365, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    rows = []
+    if q.strip():
+        since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        stmt = select(Item).where(Item.collected_at >= since)
+        if kind:
+            stmt = stmt.where(Item.kind == kind)
+        if any(ch in q for ch in "*%"):
+            stmt = stmt.where((Item.title.ilike(q.replace("*", "%"))) | (Item.body.ilike(q.replace("*", "%"))))
+        else:
+            stmt = stmt.where(text("search_vec @@ websearch_to_tsquery('simple', :q)")).params(q=q)
+        rows = db.execute(stmt.order_by(desc(Item.collected_at)).limit(200)).scalars().all()
+    return render(request, "search.html", user=user, q=q, kind=kind, days=days, items=rows)
+
+
+@app.get("/items/{iid}", response_class=HTMLResponse)
+def item_detail(iid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    it = db.get(Item, iid)
+    if not it:
+        raise HTTPException(404)
+    return render(request, "item.html", user=user, item=it)
+
+
+@app.get("/research", response_class=HTMLResponse)
+def research(request: Request, user: str = auth.RequireUser):
+    return render(request, "research.html", user=user, result=None, url="", tor=None)
+
+
+@app.post("/research", response_class=HTMLResponse)
+def research_fetch(request: Request, url: str = Form(...), force_tor: bool = Form(False), preserve: bool = Form(False), client_id: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    res = fetch(url.strip(), force_tor=force_tor)
+    txt = html_to_text(res.text) if res.text else f"[{len(res.content)} bytes, content-type {res.headers.get('content-type')}]"
+    ev = None
+    if preserve and (res.ok or res.content):
+        ev = evidence.preserve(db, url.strip(), client_id=client_id or None, captured_by=user, note="research console", result=res)
+    _audit(db, user, "research.fetch", f"{url} tor={force_tor} preserve={preserve}")
+    clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
+    return render(request, "research.html", user=user, result=res, text=txt[:60_000], url=url, evidence=ev, clients=clients_, tor=None)
+
+
+@app.get("/research/torcheck")
+def research_torcheck(user: str = auth.RequireUser):
+    return tor_check()
+
+
+# ---------------------------------------------------------------- evidence
+@app.get("/evidence", response_class=HTMLResponse)
+def evidence_list(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    rows = db.execute(select(Evidence).order_by(desc(Evidence.captured_at)).limit(300)).scalars().all()
+    return render(request, "evidence.html", user=user, evidence=rows)
+
+
+@app.get("/evidence/{eid}/download")
+def evidence_download(eid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ev = db.get(Evidence, eid)
+    if not ev:
+        raise HTTPException(404)
+    data = evidence.read_evidence_bytes(ev)
+    _audit(db, user, "evidence.download", eid)
+    return StreamingResponse(io.BytesIO(data), media_type="application/octet-stream", headers={"Content-Disposition": f'attachment; filename="{ev.sha256[:16]}.bin"'})
+
+
+@app.get("/evidence/{eid}/verify")
+def evidence_verify(eid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ev = db.get(Evidence, eid)
+    if not ev:
+        raise HTTPException(404)
+    return {"id": eid, "sha256": ev.sha256, "intact": evidence.verify(ev), "storage": ev.storage_uri}
+
+
+# ---------------------------------------------------------------- sources
+@app.get("/sources", response_class=HTMLResponse)
+def sources(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    rows = db.execute(select(Source).order_by(Source.kind, Source.fail_count.desc(), Source.name)).scalars().all()
+    return render(request, "sources.html", user=user, sources=rows)
+
+
+@app.post("/sources")
+def add_source(name: str = Form(...), url: str = Form(...), kind: str = Form("onion"), group_name: str = Form(""),
+               profile: str = Form(""), cookie: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    meta = {"seeded_from": "manual"}
+    if cookie.strip():
+        meta["cookie"] = cookie.strip()
+    db.add(Source(name=name.strip(), kind=kind if kind in ("onion", "forum") else "onion", url=url.strip(),
+                  group_name=group_name.strip(), profile=profile.strip(), meta=meta))
+    db.commit()
+    _audit(db, user, "source.add", f"{kind} {url} profile={profile} cookie={'yes' if cookie else 'no'}")
+    return RedirectResponse("/sources", status_code=302)
+
+
+@app.post("/sources/{sid}/cookie")
+def set_cookie(sid: str, cookie: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    s = db.get(Source, sid)
+    if s:
+        meta = dict(s.meta or {})
+        if cookie.strip():
+            meta["cookie"] = cookie.strip()
+        else:
+            meta.pop("cookie", None)
+        s.meta = meta
+        s.fail_count = 0
+        db.commit()
+        _audit(db, user, "source.cookie", f"{s.name} {'set' if cookie else 'cleared'}")
+    return RedirectResponse("/sources", status_code=302)
+
+
+@app.post("/sources/{sid}/toggle")
+def toggle_source(sid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    s = db.get(Source, sid)
+    if s:
+        s.enabled = not s.enabled
+        s.fail_count = 0
+        db.commit()
+    return RedirectResponse("/sources", status_code=302)
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, user: str = auth.RequireUser):
+    cfg = {
+        "alert_min_severity": settings.alert_min_severity,
+        "sns": bool(settings.sns_topic_arn),
+        "teams": bool(settings.teams_webhook_url),
+        "jira": bool(settings.jira_base_url and settings.jira_api_token),
+        "jira_project": settings.jira_project_key,
+        "hibp": bool(settings.hibp_api_key),
+        "telegram": bool(settings.telegram_api_id),
+        "evidence_bucket": settings.evidence_bucket or "(local disk)",
+        "verdict_hub": settings.verdict_hub_url or "(standalone, not wired to hub)",
+    }
+    return render(request, "settings.html", user=user, cfg=cfg, api_token=auth.api_token())
+
+
+# ---------------------------------------------------------------- JSON API
+@app.get("/api/hits")
+def api_hits(status: str = Query("open"), client: str = Query(""), user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    q = select(Hit).options(selectinload(Hit.client), selectinload(Hit.item), selectinload(Hit.term))
+    if status == "open":
+        q = q.where(Hit.status.in_(("new", "reviewing")))
+    elif status != "all":
+        q = q.where(Hit.status == status)
+    if client:
+        q = q.join(Client).where(Client.name.ilike(f"%{client}%"))
+    rows = db.execute(q.order_by(desc(Hit.created_at)).limit(500)).scalars().all()
+    return [{
+        "id": h.id, "client": h.client.name, "case_ref": h.client.case_ref, "severity": h.severity, "status": h.status,
+        "term": h.term.term if h.term else None, "matched": h.matched_text, "item_kind": h.item.kind, "group": h.item.group_name,
+        "title": h.item.title, "url": h.item.url, "published_at": h.item.published_at, "created_at": h.created_at, "alert_refs": h.alert_refs,
+    } for h in rows]
+
+
+@app.get("/api/victims")
+def api_victims(days: int = 7, group: str = "", user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    q = select(Item).where(Item.kind == "victim", Item.collected_at >= since)
+    if group:
+        q = q.where(Item.group_name.ilike(group))
+    rows = db.execute(q.order_by(desc(Item.collected_at)).limit(1000)).scalars().all()
+    return [{"group": i.group_name, "title": i.title, "url": i.url, "published_at": i.published_at, "collected_at": i.collected_at} for i in rows]
+
+
+@app.post("/api/clients/{cid}/terms")
+def api_add_terms(cid: str, payload: dict, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    for t in payload.get("terms", []):
+        db.add(WatchTerm(client_id=cid, term=t["term"], kind=t.get("kind", "keyword"), severity=t.get("severity", "medium")))
+    db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- VERDICT platform module
+@app.get("/api/module")
+def api_module(user: str = Depends(auth.api_user)):
+    """Module manifest the platform reads to register this capability."""
+    return {
+        "module": "dark-web-monitoring",
+        "display_name": "Dark Web Monitoring",
+        "platform": "VERDICT",
+        "finding_reasons": ["term", "credential", "iab"],
+        "severities": ["low", "medium", "high", "critical"],
+        "verdicts": ["new", "reviewing", "confirmed", "false_positive", "closed"],
+        "hub_configured": bool(settings.verdict_hub_url),
+        "endpoints": ["/api/findings", "/api/findings/{id}", "/api/findings/{id}/escalate", "/api/hits", "/api/victims"],
+    }
+
+
+@app.get("/api/findings")
+def api_findings(status: str = Query("open"), client: str = Query(""), reason: str = Query(""),
+                 user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    q = select(Hit).options(selectinload(Hit.client), selectinload(Hit.item), selectinload(Hit.term))
+    if status == "open":
+        q = q.where(Hit.status.in_(("new", "reviewing")))
+    elif status != "all":
+        q = q.where(Hit.status == status)
+    if reason:
+        q = q.where(Hit.reason == reason)
+    if client:
+        q = q.join(Client).where(Client.name.ilike(f"%{client}%"))
+    rows = db.execute(q.order_by(desc(Hit.created_at)).limit(500)).scalars().all()
+    return [platform.finding_dict(h, db) for h in rows]
+
+
+@app.get("/api/findings/{hid}")
+def api_finding(hid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    return platform.finding_dict(h, db)
+
+
+@app.post("/api/findings/{hid}/escalate")
+def api_escalate(hid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    result = platform.escalate(h, db)
+    _audit(db, user, "finding.escalate", f"{hid}: {result}")
+    return result
+
+
+@app.post("/hits/{hid}/escalate")
+def hit_escalate(hid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    platform.escalate(h, db)
+    _audit(db, user, "finding.escalate", hid)
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+@app.get("/healthz")
+def healthz(db: Session = Depends(get_db)):
+    db.execute(text("select 1"))
+    return {"ok": True}

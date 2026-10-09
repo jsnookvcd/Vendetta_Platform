@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--fg:#e6e8ee;--muted:#8b93a7;--red:#c8102e;--amber:#d99a2b;--green:#3fa66b;--blue:#4c8dff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+header{display:flex;align-items:center;gap:20px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+header .brand{font-weight:700;letter-spacing:.04em;color:#fff}header .brand b{color:var(--red)}
+header nav a{color:var(--muted);margin-right:14px}header nav a.active,header nav a:hover{color:#fff;text-decoration:none}
+header .spacer{flex:1}
+main{padding:20px;max-width:1400px;margin:0 auto}
+h1{font-size:20px;margin:0 0 14px}h2{font-size:15px;margin:22px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px}.stat .n{font-size:26px;font-weight:700}.stat .l{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}
+tr:hover td{background:#1c2029}
+.sev{display:inline-block;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase}
+.sev-critical{background:var(--red);color:#fff}.sev-high{background:#8a1c2b;color:#fff}.sev-medium{background:var(--amber);color:#000}.sev-low{background:#3a4152;color:#fff}
+.tag{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:3px;font-size:11px;color:var(--muted)}
+.ok{color:var(--green)}.bad{color:var(--red)}.muted{color:var(--muted)}
+input,select,textarea,button{font:inherit;background:#0c0e12;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+textarea{width:100%;min-height:80px}button{cursor:pointer;background:#232834}button.primary{background:var(--red);border-color:var(--red);color:#fff}button.small{padding:2px 7px;font-size:12px}
+form.inline{display:inline}form.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}form.row label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0c0e12;border:1px solid var(--line);padding:10px;border-radius:4px;max-height:600px;overflow:auto;font-size:12px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.trunc{max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">VENDETTA <b>&#9679;</b> DARK WEB</span>
+  <nav>
+    <a href="/">Dashboard</a><a href="/hits">Hits</a><a href="/clients">Clients</a><a href="/search">Search</a>
+    <a href="/research">Research</a><a href="/evidence">Evidence</a><a href="/sources">Sources</a><a href="/settings">Settings</a>
+  </nav>
+  <span class="spacer"></span>
+  {% if user %}<span class="muted">{{ user }}</span> &nbsp; <a href="/logout" class="muted">sign out</a>{% endif %}
+</header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

@@ -1,0 +1,67 @@
+"""Runtime configuration. Every value comes from the environment (.env in dev,
+SSM Parameter Store rendered to /opt/darkweb/.env in AWS)."""
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # Core
+    app_name: str = "Vendetta Dark Web Monitoring"
+    database_url: str = "postgresql+psycopg://darkweb:darkweb@db:5432/darkweb"
+    secret_key: str = "change-me"
+    admin_user: str = "admin"
+    admin_password_hash: str = ""  # bcrypt hash; scripts/make_password_hash.py
+    tor_proxy: str = "socks5://tor:9050"
+    request_timeout: int = 60
+    user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
+    )
+
+    # Collection cadence (minutes)
+    leak_feed_interval: int = 30
+    onion_crawl_interval: int = 120
+    forum_crawl_interval: int = 180
+    hibp_interval: int = 360
+    ct_interval: int = 360
+    paste_interval: int = 60
+    telegram_interval: int = 15
+
+    # Evidence
+    evidence_bucket: str = ""  # S3 bucket; empty disables S3 and keeps local copies
+    evidence_local_dir: str = "/data/evidence"
+    aws_region: str = "us-east-1"
+
+    # External APIs (all optional)
+    hibp_api_key: str = ""
+    ransomware_live_api_key: str = ""  # free PRO key from my.ransomware.live; required for business use
+    ransomware_live_api_header: str = "X-API-KEY"
+    ransomware_live_base: str = ""  # override; defaults to api-pro with a key, public v2 without
+    telegram_api_id: str = ""
+    telegram_api_hash: str = ""
+    telegram_channels: str = ""  # comma separated public channel usernames
+
+    # Alerting
+    alert_min_severity: str = "medium"  # low|medium|high|critical
+    sns_topic_arn: str = ""
+    teams_webhook_url: str = ""
+    jira_base_url: str = ""  # off unless set; https://vendettacyber.atlassian.net when the IR desk is live
+    jira_email: str = ""
+    jira_api_token: str = ""
+    jira_project_key: str = "IR"
+    jira_issue_type: str = "Task"
+    jira_min_severity: str = "high"  # only open tickets at or above this level
+
+    # VERDICT platform integration. Off until the hub URL is set, so the module
+    # runs standalone today and posts escalations to the engagement hub when live.
+    verdict_hub_url: str = ""
+    verdict_hub_token: str = ""
+
+
+settings = Settings()
+
+SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def severity_at_least(level: str, floor: str) -> bool:
+    return SEVERITY_ORDER.get(level, 0) >= SEVERITY_ORDER.get(floor, 0)

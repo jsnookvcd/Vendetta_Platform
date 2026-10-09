@@ -1,0 +1,9 @@
+# Minimal Tor client config for the collector. SOCKS only, no relay, no exit.
+SocksPort 0.0.0.0:9050
+Log notice stdout
+DataDirectory /var/lib/tor
+# Rotate circuits so leak sites do not pin us to one path for long.
+MaxCircuitDirtiness 600
+NewCircuitPeriod 120
+# We only ever reach onion services and clearnet through SOCKS; never act as a relay.
+ClientOnly 1

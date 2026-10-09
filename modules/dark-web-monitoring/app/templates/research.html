@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block body %}
+<h1>Research console</h1>
+<div class="panel">
+<form class="row" method="post" action="/research">
+  <label>URL (.onion goes through Tor automatically) <input name="url" value="{{ url }}" style="min-width:520px" required></label>
+  <label>Client (for evidence) <select name="client_id"><option value="">unassigned</option>{% for c in clients or [] %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+  <label><span>&nbsp;</span><span><input type="checkbox" name="force_tor" value="true"> route clearnet through Tor</span></label>
+  <label><span>&nbsp;</span><span><input type="checkbox" name="preserve" value="true" checked> preserve as evidence</span></label>
+  <button class="primary">Fetch</button>
+</form>
+<p class="muted">Fetches happen from the collector's Tor circuit, never from your workstation. Preserved captures land in the evidence bucket with SHA-256 and a manifest.
+Quick links: <a href="https://ahmia.fi/" target="_blank">Ahmia onion search</a> &middot; <a href="https://ransomware.live/" target="_blank">ransomware.live</a> &middot; <a href="/research/torcheck">Tor exit check</a></p>
+</div>
+{% if result %}
+<div class="panel">
+  <p><b>Status:</b> {% if result.ok %}<span class="ok">{{ result.status }}</span>{% else %}<span class="bad">{{ result.status or 'failed' }} {{ result.error }}</span>{% endif %}
+  &nbsp; <b>Final URL:</b> <span class="mono">{{ result.url }}</span> &nbsp; <b>Bytes:</b> {{ result.content|length }}
+  {% if evidence %}<br><b>Preserved:</b> <span class="mono">{{ evidence.sha256 }}</span> &rarr; <span class="mono">{{ evidence.storage_uri }}</span> <a href="/evidence/{{ evidence.id }}/download">download</a>{% endif %}</p>
+</div>
+<h2>Visible text</h2>
+<pre>{{ text }}</pre>
+{% endif %}
+{% endblock %}

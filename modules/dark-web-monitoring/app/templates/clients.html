@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block body %}
+<h1>Clients</h1>
+<div class="panel">
+<form class="row" method="post" action="/clients">
+  <label>Name <input name="name" required></label>
+  <label>Case or contract ref <input name="case_ref" placeholder="VCD-IR-2026-7xx or MSSP ref"></label>
+  <label>Type <select name="kind"><option value="managed">Managed services</option><option value="ir">IR matter</option></select></label>
+  <button class="primary">Add client</button>
+</form>
+</div>
+<div class="panel">
+<table><tr><th>Client</th><th>Type</th><th>Ref</th><th>Terms</th><th>Status</th></tr>
+{% for c in clients %}<tr>
+  <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td><td>{{ c.kind }}</td><td class="mono">{{ c.case_ref }}</td>
+  <td>{{ c.terms|length }}</td><td>{% if c.active %}<span class="ok">active</span>{% else %}<span class="muted">paused</span>{% endif %}</td>
+</tr>{% endfor %}</table>
+</div>
+{% endblock %}
