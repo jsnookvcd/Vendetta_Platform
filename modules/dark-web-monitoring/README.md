@@ -41,8 +41,14 @@ Evidence
 - Verify endpoint re-hashes stored bytes against the recorded hash.
 - Audit log of every analyst action.
 
+Client deliverable
+- Per-client exposure report, the thing you hand a client or counsel. Branded PDF with the Vendetta emblem on the cover, an executive summary with the severity breakdown, findings grouped by credential exposure, initial access broker activity, leak-site activity, mentions and infrastructure, recommended actions driven by what was found, and an evidence appendix with SHA-256 hashes. Issued under the Office of Special Projects line, prepared-by Jordan Snook, Founder and CEO. Download at /clients/{id}/report.pdf?days=30, preview the HTML at /clients/{id}/report. Rendered server-side with WeasyPrint, which needs the pango/cairo libraries already in the Dockerfile.
+
 API
-- GET /api/hits, GET /api/victims, POST /api/clients/{id}/terms. Bearer token on the settings page. Built so VERDICT or a Jira automation can pull from it.
+- GET /api/hits, GET /api/victims, GET /api/findings, GET /api/module, POST /api/clients/{id}/terms. Bearer token on the settings page. Built so VERDICT or a Jira automation can pull from it.
+
+Hardening
+- Security headers on every response (CSP, X-Frame-Options DENY, nosniff, no-referrer). In-memory login throttle per IP. Session cookie carries the secure flag when COOKIE_SECURE is set for TLS. Access is still expected to be behind SSM port forwarding or a VPN; these are layers, not the only control.
 
 ## Monthly cost, us-east-1, on-demand
 
@@ -145,6 +151,7 @@ app/
   matcher.py       watch term matching
   iab.py           initial access broker matching against client profiles
   redact.py        credential masking at ingest
+  report.py        per-client exposure report aggregation
   profiles.py      profile loader
   alerts.py        SNS, Teams, Jira (Jira off unless configured)
   evidence.py      S3 captures with hashes

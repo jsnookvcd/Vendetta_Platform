@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, evidence, iab, platform, profiles
+from . import auth, evidence, iab, platform, profiles, report as report_mod
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -32,6 +32,41 @@ app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="stat
 @app.on_event("startup")
 def _startup():
     init_db()
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    )
+    return resp
+
+
+# Simple in-memory login throttle. The console sits behind SSM/VPN, so this is a
+# second layer against credential stuffing, not the only one. Resets on restart.
+_login_hits: dict[str, list[float]] = {}
+
+
+def _login_allowed(ip: str) -> bool:
+    import time
+
+    now = time.time()
+    window = settings.login_window_seconds
+    hits = [t for t in _login_hits.get(ip, []) if now - t < window]
+    _login_hits[ip] = hits
+    return len(hits) < settings.login_max_attempts
+
+
+def _login_record(ip: str) -> None:
+    import time
+
+    _login_hits.setdefault(ip, []).append(time.time())
 
 
 def get_db():
@@ -84,11 +119,18 @@ def login_form(request: Request, next: str = "/"):
 
 @app.post("/login")
 def login(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/"), db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    if not _login_allowed(ip):
+        _audit(db, username, "login.throttled", ip)
+        return render(request, "login.html", next=next, error="Too many attempts. Wait a few minutes and try again.")
     if username == settings.admin_user and auth.check_password(password):
         resp = RedirectResponse(next or "/", status_code=302)
-        resp.set_cookie(auth.COOKIE, auth.make_session(username), httponly=True, samesite="lax", max_age=12 * 3600)
+        resp.set_cookie(auth.COOKIE, auth.make_session(username), httponly=True, samesite="lax",
+                        secure=settings.cookie_secure, max_age=12 * 3600)
         _audit(db, username, "login")
         return resp
+    _login_record(ip)
+    _audit(db, username, "login.failed", ip)
     return render(request, "login.html", next=next, error="Invalid credentials")
 
 
@@ -191,6 +233,34 @@ def toggle_client(cid: str, user: str = auth.RequireUser, db: Session = Depends(
         db.commit()
         _audit(db, user, "client.toggle", f"{c.name} active={c.active}")
     return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
+@app.get("/clients/{cid}/report", response_class=HTMLResponse)
+def client_report(cid: str, request: Request, days: int = 30, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    ctx = report_mod.build_report(db, c, days)
+    return templates.TemplateResponse(request, "report.html", ctx)
+
+
+@app.get("/clients/{cid}/report.pdf")
+def client_report_pdf(cid: str, request: Request, days: int = 30, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    ctx = report_mod.build_report(db, c, days)
+    html = templates.env.get_template("report.html").render(request=request, **ctx)
+    try:
+        from weasyprint import HTML
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=501, detail="PDF engine not installed; open the report and print to PDF, or install weasyprint")
+    pdf = HTML(string=html, base_url=str(_APP_DIR)).write_pdf()
+    _audit(db, user, "report.pdf", f"{c.name} {days}d")
+    safe = "".join(ch for ch in c.name if ch.isalnum() or ch in " -_").strip().replace(" ", "_")
+    fname = f"Vendetta_Dark_Web_Exposure_{safe}_{dt.date.today():%Y%m%d}.pdf"
+    return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @app.post("/clients/{cid}/backfill")

@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     app_name: str = "Vendetta Dark Web Monitoring"
     database_url: str = "postgresql+psycopg://darkweb:darkweb@db:5432/darkweb"
     secret_key: str = "change-me"
+    cookie_secure: bool = False  # set true once the console is served over TLS
+    login_max_attempts: int = 8  # per IP per window before a temporary lockout
+    login_window_seconds: int = 300
     admin_user: str = "admin"
     admin_password_hash: str = ""  # bcrypt hash; scripts/make_password_hash.py
     tor_proxy: str = "socks5://tor:9050"

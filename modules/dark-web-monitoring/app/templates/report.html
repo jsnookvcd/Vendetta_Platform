@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dark Web Exposure Report — {{ client.name }}</title>
+<style>
+  @page { size: Letter; margin: 22mm 18mm 20mm;
+    @bottom-left { content: "Confidential — Prepared for {{ client.name }}"; font: 8pt system-ui; color: #8a8f99; }
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt system-ui; color: #8a8f99; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1a1d22; font-size: 10.5pt; line-height: 1.5; margin: 0; }
+  h1,h2,h3 { color: #11141a; margin: 0; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 8.6pt; }
+  a { color: #b01222; }
+
+  .cover { display: flex; flex-direction: column; min-height: 232mm; }
+  .masthead { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #e0122f; padding-bottom: 14px; }
+  .masthead img { width: 54px; height: 54px; }
+  .masthead .firm { font-weight: 700; font-size: 15pt; letter-spacing: 0.02em; }
+  .masthead .firm span { display: block; font-size: 9pt; font-weight: 500; color: #6b7280; letter-spacing: 0.06em; }
+  .cover .title { margin-top: auto; }
+  .cover .title .kicker { color: #e0122f; font-weight: 700; font-size: 11pt; letter-spacing: 0.06em; }
+  .cover .title h1 { font-size: 30pt; letter-spacing: -0.01em; margin: 6px 0 2px; }
+  .cover .title .client { font-size: 17pt; color: #11141a; font-weight: 600; }
+  .cover .meta { margin-top: 26px; display: grid; grid-template-columns: max-content 1fr; gap: 5px 20px; font-size: 10pt; }
+  .cover .meta dt { color: #6b7280; }
+  .cover .meta dd { margin: 0; font-weight: 500; }
+  .cover .notice { margin-top: auto; border-top: 1px solid #e3e6ea; padding-top: 12px; color: #6b7280; font-size: 8.6pt; }
+
+  section { page-break-inside: avoid; margin-top: 22px; }
+  h2.sec { font-size: 13pt; border-bottom: 1px solid #e3e6ea; padding-bottom: 6px; margin-bottom: 12px; }
+  p { margin: 0 0 9px; }
+
+  .sevgrid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 4px 0 14px; }
+  .sevcell { border: 1px solid #e3e6ea; border-top: 3px solid; border-radius: 6px; padding: 10px 12px; }
+  .sevcell .n { font-size: 22pt; font-weight: 700; line-height: 1; }
+  .sevcell .l { font-size: 8.5pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+  .sc-critical { border-top-color: #e0122f; } .sc-high { border-top-color: #f2683c; }
+  .sc-medium { border-top-color: #e0a52e; } .sc-low { border-top-color: #7a8699; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin-bottom: 6px; }
+  th { text-align: left; color: #6b7280; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1.5px solid #d7dbe0; padding: 5px 8px; }
+  td { padding: 5px 8px; border-bottom: 1px solid #eceef1; vertical-align: top; }
+  .sev { font-weight: 700; font-size: 8.4pt; }
+  .sev-critical { color: #c00f29; } .sev-high { color: #d9542b; } .sev-medium { color: #b5801a; } .sev-low { color: #5f6b7e; }
+  .pill { display: inline-block; border: 1px solid #d7dbe0; border-radius: 10px; padding: 0 7px; font-size: 8pt; color: #4b5563; }
+
+  .action { page-break-inside: avoid; margin-bottom: 12px; }
+  .action h3 { font-size: 11pt; color: #b01222; }
+  .action p { margin: 3px 0 0; }
+
+  .muted { color: #6b7280; }
+  .method { font-size: 9pt; color: #4b5563; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="masthead">
+    {% if logo %}<img src="{{ logo }}" alt="">{% endif %}
+    <div class="firm">Vendetta Cyber Defense<span>Digital Forensics &amp; Incident Response</span></div>
+  </div>
+  <div class="title">
+    <div class="kicker">Dark Web Exposure Report</div>
+    <h1>Exposure Summary</h1>
+    <div class="client">{{ client.name }}</div>
+  </div>
+  <dl class="meta">
+    <dt>Reporting period</dt><dd>{{ period_start.strftime('%B %d, %Y') }} to {{ generated_at.strftime('%B %d, %Y') }} ({{ period_days }} days)</dd>
+    {% if client.case_ref %}<dt>Reference</dt><dd class="mono">{{ client.case_ref }}</dd>{% endif %}
+    <dt>Prepared by</dt><dd>{{ prepared_by }}</dd>
+    <dt>Issued under</dt><dd>{{ issuing_line }}</dd>
+    <dt>Date of issue</dt><dd>{{ generated_at.strftime('%B %d, %Y') }}</dd>
+  </dl>
+  <div class="notice">
+    This report is confidential and prepared solely for {{ client.name }}. It summarizes exposure observed on
+    public and dark web sources during the reporting period. Findings reflect information available at the time
+    of collection; absence of a finding is not assurance that exposure does not exist. Credential material is
+    shown with secrets masked.
+  </div>
+</div>
+
+<section>
+  <h2 class="sec">Executive summary</h2>
+  <div class="sevgrid">
+    <div class="sevcell sc-critical"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical</div></div>
+    <div class="sevcell sc-high"><div class="n">{{ by_sev.high }}</div><div class="l">High</div></div>
+    <div class="sevcell sc-medium"><div class="n">{{ by_sev.medium }}</div><div class="l">Medium</div></div>
+    <div class="sevcell sc-low"><div class="n">{{ by_sev.low }}</div><div class="l">Low</div></div>
+  </div>
+  <p>Vendetta monitored {{ client.name }} across ransomware leak sites, cybercrime forums and markets, credential
+  and infostealer sources, paste sites and certificate transparency during the {{ period_days }}-day period ending
+  {{ generated_at.strftime('%B %d, %Y') }}. Monitoring produced <b>{{ total }}</b> finding{{ 's' if total != 1 }}{% if by_sev.critical or by_sev.high %}, including {{ by_sev.critical + by_sev.high }} at high or critical severity{% endif %}.</p>
+  <p>
+  {% if credential %}Credential exposure was observed affecting {{ credential_domains|length }} domain{{ 's' if credential_domains|length != 1 }} and requires action. {% endif %}
+  {% if iab %}A broker posting consistent with this organization's profile was identified and is being tracked. {% endif %}
+  {% if leak %}Leak-site activity referencing the organization was captured and preserved. {% endif %}
+  {% if not (credential or iab or leak) %}No high-impact exposure surfaced in this period; routine mentions are detailed below.{% endif %}
+  The recommended actions section sets out the response Vendetta advises.</p>
+</section>
+
+{% if credential %}
+<section>
+  <h2 class="sec">Credential exposure</h2>
+  <p>Accounts and domains observed in breach corpora and infostealer logs. Secrets are masked; the presence of a
+  record indicates a credential for that account was exposed and should be treated as compromised.</p>
+  <table>
+    <thead><tr><th>Severity</th><th>Account / match</th><th>Source</th><th>Seen</th></tr></thead>
+    <tbody>
+    {% for h in credential %}<tr>
+      <td class="sev sev-{{ h.severity }}">{{ h.severity }}</td>
+      <td class="mono">{{ h.matched_text }}</td>
+      <td>{{ h.item.group_name or h.item.kind }} <span class="pill">{{ h.item.kind }}</span></td>
+      <td class="muted">{{ h.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if iab %}
+<section>
+  <h2 class="sec">Initial access broker activity</h2>
+  <p>Brokers advertise access without naming the victim. The following postings match this organization's business
+  profile and are tracked as candidates for analyst confirmation.</p>
+  <table>
+    <thead><tr><th>Severity</th><th>Posting</th><th>Basis</th><th>Seen</th></tr></thead>
+    <tbody>
+    {% for h in iab %}<tr>
+      <td class="sev sev-{{ h.severity }}">{{ h.severity }}</td>
+      <td>{{ h.item.title }} <span class="pill">{{ h.item.group_name }}</span></td>
+      <td class="muted">{{ h.matched_text }}</td>
+      <td class="muted">{{ h.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if leak %}
+<section>
+  <h2 class="sec">Ransomware leak-site activity</h2>
+  <table>
+    <thead><tr><th>Severity</th><th>Group</th><th>Posting</th><th>Published</th></tr></thead>
+    <tbody>
+    {% for h in leak %}<tr>
+      <td class="sev sev-{{ h.severity }}">{{ h.severity }}</td>
+      <td>{{ h.item.group_name }}</td>
+      <td>{{ h.item.title }}</td>
+      <td class="muted">{{ h.item.published_at.strftime('%Y-%m-%d') if h.item.published_at else 'unknown' }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if mentions or certs %}
+<section>
+  <h2 class="sec">Mentions and infrastructure</h2>
+  {% if mentions %}<table>
+    <thead><tr><th>Severity</th><th>Source</th><th>Item</th><th>Seen</th></tr></thead>
+    <tbody>{% for h in mentions %}<tr>
+      <td class="sev sev-{{ h.severity }}">{{ h.severity }}</td><td>{{ h.item.group_name }} <span class="pill">{{ h.item.kind }}</span></td>
+      <td>{{ h.item.title }}</td><td class="muted">{{ h.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>{% endif %}
+  {% if certs %}<table>
+    <thead><tr><th>Severity</th><th>Certificate / lookalike</th><th>Seen</th></tr></thead>
+    <tbody>{% for h in certs %}<tr>
+      <td class="sev sev-{{ h.severity }}">{{ h.severity }}</td><td>{{ h.item.title }}</td><td class="muted">{{ h.created_at.strftime('%Y-%m-%d') }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>{% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2 class="sec">Recommended actions</h2>
+  {% for title, detail in actions %}
+  <div class="action"><h3>{{ title }}</h3><p>{{ detail }}</p></div>
+  {% endfor %}
+</section>
+
+{% if evidence %}
+<section>
+  <h2 class="sec">Evidence appendix</h2>
+  <p class="method">Each item below was captured and preserved with its raw bytes, a timestamp and a SHA-256 hash.
+  Integrity can be re-verified against the stored hash on request.</p>
+  <table>
+    <thead><tr><th>Captured (UTC)</th><th>Source URL</th><th>SHA-256</th></tr></thead>
+    <tbody>{% for e in evidence %}<tr>
+      <td class="muted">{{ e.captured_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="mono">{{ e.url }}</td>
+      <td class="mono">{{ e.sha256 }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+
+<section>
+  <h2 class="sec">Methodology and scope</h2>
+  <p class="method">Collection covers ransomware leak sites reached over Tor, cybercrime forums and markets,
+  breach and infostealer credential sources, paste sites, and certificate transparency logs. Matching uses the
+  watch terms and business profile configured for {{ client.name }}. Initial access broker candidates are matched
+  on business profile rather than name and are leads for confirmation. Vendetta collects passively and does not
+  purchase, download data sets, or interact with threat actors. This report reflects information available at the
+  time of collection and does not constitute a guarantee that all exposure has been identified.</p>
+</section>
+
+</body>
+</html>
