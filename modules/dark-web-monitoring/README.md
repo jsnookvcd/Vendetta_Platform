@@ -2,7 +2,7 @@
 
 Self-hosted dark web monitoring and research for managed services clients and active IR matters. One small Graviton instance in AWS, Tor for onion access, Postgres for search, S3 Object Lock for evidence, and alerts into email, Teams and the JSM IR desk.
 
-This is the Dark Web Monitoring module of the Vendetta Platform (VERDICT). It runs as its own container stack and plugs into the platform's engagement hub: every hit is exposed as a platform finding with a severity, a verdict and evidence, and any finding can be escalated into an IR case. It also runs standalone until the hub is live. See module.yaml for the module descriptor and DEPLOY.md for the first-deploy runbook.
+This is the Dark Web Monitoring module of the Vendetta Platform. It runs as its own container stack and plugs into the platform's engagement hub: every hit is exposed as a platform finding with a severity, a status and evidence, and any finding can be escalated into an IR case. It also runs standalone until the hub is live. See module.yaml for the module descriptor and DEPLOY.md for the first-deploy runbook.
 
 Internal tool. Client deliverables attribute findings to the Vendetta Platform; this repo name and the console branding do not appear in client-facing material.
 
@@ -45,7 +45,7 @@ Client deliverable
 - Per-client exposure report, the thing you hand a client or counsel. Branded PDF with the Vendetta emblem on the cover, an executive summary with the severity breakdown, findings grouped by credential exposure, initial access broker activity, leak-site activity, mentions and infrastructure, recommended actions driven by what was found, and an evidence appendix with SHA-256 hashes. Issued under the Office of Special Projects line, prepared-by Jordan Snook, Founder and CEO. Download at /clients/{id}/report.pdf?days=30, preview the HTML at /clients/{id}/report. Rendered server-side with WeasyPrint, which needs the pango/cairo libraries already in the Dockerfile.
 
 API
-- GET /api/hits, GET /api/victims, GET /api/findings, GET /api/module, POST /api/clients/{id}/terms. Bearer token on the settings page. Built so VERDICT or a Jira automation can pull from it.
+- GET /api/hits, GET /api/victims, GET /api/findings, GET /api/module, POST /api/clients/{id}/terms. Bearer token on the settings page. Built so the Vendetta Platform or a Jira automation can pull from it.
 
 Hardening
 - Security headers on every response (CSP, X-Frame-Options DENY, nosniff, no-referrer). In-memory login throttle per IP. Session cookie carries the secure flag when COOKIE_SECURE is set for TLS. Access is still expected to be behind SSM port forwarding or a VPN; these are layers, not the only control.
@@ -176,4 +176,4 @@ Console at http://localhost:8000. The worker seeds onion sources from ransomwatc
 - Screenshot capture (headless Chromium over Tor) alongside text captures.
 - Per-client weekly PDF exposure summary for managed services reporting.
 - Forum and market sources beyond leak sites, each added as an onion source with a parser.
-- VERDICT integration: hits as a module in the platform, evidence manifests linked to case records.
+- Platform integration: hits as a module in the Vendetta Platform, evidence manifests linked to case records.

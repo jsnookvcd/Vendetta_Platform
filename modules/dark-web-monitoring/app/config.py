@@ -55,10 +55,10 @@ class Settings(BaseSettings):
     jira_issue_type: str = "Task"
     jira_min_severity: str = "high"  # only open tickets at or above this level
 
-    # VERDICT platform integration. Off until the hub URL is set, so the module
+    # Vendetta Platform integration. Off until the hub URL is set, so the module
     # runs standalone today and posts escalations to the engagement hub when live.
-    verdict_hub_url: str = ""
-    verdict_hub_token: str = ""
+    platform_hub_url: str = ""
+    platform_hub_token: str = ""
 
 
 settings = Settings()

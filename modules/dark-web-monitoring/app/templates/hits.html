@@ -23,7 +23,7 @@
     <td class="mono trunc" style="max-width:190px">{{ h.term.term if h.term else h.matched_text }}</td>
     <td><a href="/hits/{{ h.id }}" class="trunc" style="max-width:300px; display:inline-block; vertical-align:bottom">{{ h.item.title }}</a> <span class="chip">{{ h.item.kind }}</span></td>
     <td class="nowrap">{{ h.item.group_name }}</td>
-    <td class="nowrap faint mono">{{ h.alert_refs.get('verdict_case','') }}{{ ' teams' if h.alert_refs.get('teams') }}{{ ' sns' if h.alert_refs.get('sns') }}</td>
+    <td class="nowrap faint mono">{{ h.alert_refs.get('platform_case','') }}{{ ' teams' if h.alert_refs.get('teams') }}{{ ' sns' if h.alert_refs.get('sns') }}</td>
     <td class="nowrap faint">{{ h.created_at.strftime('%b %d %H:%M') }}</td>
   </tr>{% endfor %}
   </tbody>

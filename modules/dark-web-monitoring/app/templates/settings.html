@@ -10,18 +10,18 @@
     <dt>Have I Been Pwned</dt><dd>{{ 'configured' if cfg.hibp else 'off' }}</dd>
     <dt>Telegram</dt><dd>{{ 'configured' if cfg.telegram else 'off' }}</dd>
     <dt>Evidence storage</dt><dd class="mono">{{ cfg.evidence_bucket }}</dd>
-    <dt>VERDICT hub</dt><dd class="mono">{{ cfg.verdict_hub }}</dd>
+    <dt>Platform hub</dt><dd class="mono">{{ cfg.platform_hub }}</dd>
   </dl>
 </div>
 
 <div class="section-head"><h2>Platform module</h2></div>
 <div class="panel pad">
-  <p class="muted" style="margin:0 0 10px">This service is the Dark Web Monitoring module of VERDICT. The hub reads findings at <span class="mono">/api/findings</span> and the manifest at <span class="mono">/api/module</span>. Set VERDICT_HUB_URL and VERDICT_HUB_TOKEN to enable escalation of a finding into an IR case.</p>
+  <p class="muted" style="margin:0 0 10px">This service is the Dark Web Monitoring module of the Vendetta Platform. The hub reads findings at <span class="mono">/api/findings</span> and the manifest at <span class="mono">/api/module</span>. Set PLATFORM_HUB_URL and PLATFORM_HUB_TOKEN to enable escalation of a finding into an IR case.</p>
 </div>
 
 <div class="section-head"><h2>API access</h2></div>
 <div class="panel pad">
-  <p class="muted" style="margin:0 0 8px">Bearer token for VERDICT, Jira automations or scripts:</p>
+  <p class="muted" style="margin:0 0 8px">Bearer token for the platform, Jira automations or scripts:</p>
   <pre class="body" style="max-height:none">Authorization: Bearer {{ api_token }}</pre>
   <p class="faint" style="margin:8px 0 0">Endpoints: /api/findings · /api/hits · /api/victims · /api/module · docs at /api/docs</p>
 </div>

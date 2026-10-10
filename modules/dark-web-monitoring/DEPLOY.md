@@ -38,7 +38,7 @@ aws ssm put-parameter --name /darkweb/RANSOMWARE_LIVE_API_KEY --type SecureStrin
 aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL   --type SecureString --value '<url>'
 ```
 
-SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. Jira and the VERDICT hub are intentionally left blank; add them later when those are live.
+SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. Jira and the platform hub are intentionally left blank; add them later when those are live.
 
 ## 3. Bring up the stack
 
@@ -100,13 +100,13 @@ Then browse to http://localhost:8000 and sign in as admin with the password you 
 
 Add the client, set the business profile (industry, country, state, revenue and size bands) for IAB matching, add watch terms (primary domain, email domain, brand, executive names), and for an IR matter click Backfill to check the last year of collected data. Verify the client's domain in HIBP so the breach and stealer queries return data.
 
-## 7. Platform wiring (when VERDICT is ready)
+## 7. Platform wiring (when the hub is ready)
 
-This runs standalone today. When the hub is live:
+This runs standalone today. When the Vendetta Platform hub is live:
 
 ```
-aws ssm put-parameter --name /darkweb/VERDICT_HUB_URL   --type String       --value 'https://verdict.internal'
-aws ssm put-parameter --name /darkweb/VERDICT_HUB_TOKEN --type SecureString  --value '<token>'
+aws ssm put-parameter --name /darkweb/PLATFORM_HUB_URL   --type String       --value 'https://platform.internal'
+aws ssm put-parameter --name /darkweb/PLATFORM_HUB_TOKEN --type SecureString  --value '<token>'
 cd /opt/darkweb && sudo bash scripts/deploy.sh
 ```
 

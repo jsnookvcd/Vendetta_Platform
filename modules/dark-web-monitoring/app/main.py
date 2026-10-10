@@ -467,7 +467,7 @@ def settings_page(request: Request, user: str = auth.RequireUser):
         "hibp": bool(settings.hibp_api_key),
         "telegram": bool(settings.telegram_api_id),
         "evidence_bucket": settings.evidence_bucket or "(local disk)",
-        "verdict_hub": settings.verdict_hub_url or "(standalone, not wired to hub)",
+        "platform_hub": settings.platform_hub_url or "(standalone, not wired to hub)",
     }
     return render(request, "settings.html", user=user, cfg=cfg, api_token=auth.api_token())
 
@@ -510,18 +510,18 @@ def api_add_terms(cid: str, payload: dict, user: str = Depends(auth.api_user), d
     return {"ok": True}
 
 
-# ---------------------------------------------------------------- VERDICT platform module
+# ---------------------------------------------------------------- Vendetta Platform module
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user)):
     """Module manifest the platform reads to register this capability."""
     return {
         "module": "dark-web-monitoring",
         "display_name": "Dark Web Monitoring",
-        "platform": "VERDICT",
+        "platform": "Vendetta Platform",
         "finding_reasons": ["term", "credential", "iab"],
         "severities": ["low", "medium", "high", "critical"],
-        "verdicts": ["new", "reviewing", "confirmed", "false_positive", "closed"],
-        "hub_configured": bool(settings.verdict_hub_url),
+        "statuses": ["new", "reviewing", "confirmed", "false_positive", "closed"],
+        "hub_configured": bool(settings.platform_hub_url),
         "endpoints": ["/api/findings", "/api/findings/{id}", "/api/findings/{id}/escalate", "/api/hits", "/api/victims"],
     }
 

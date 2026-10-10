@@ -1,11 +1,11 @@
-# VERDICT platform module descriptor.
+# Vendetta Platform module descriptor.
 #
-# This service is the Dark Web Monitoring module of the Vendetta Platform
-# (VERDICT). It runs as its own container stack and plugs into the platform's
-# engagement hub through the API below, rather than being a standalone product.
-# It aligns to the platform's common finding model: every dark web hit is a
-# finding with a severity, a verdict, evidence and a client-owned status, and
-# any finding can be escalated into a full IR case in the hub.
+# This service is the Dark Web Monitoring module of the Vendetta Platform. It
+# runs as its own container stack and plugs into the platform's engagement hub
+# through the API below, rather than being a standalone product. It aligns to the
+# platform's common finding model: every dark web hit is a finding with a
+# severity, a status, evidence and a client-owned status, and any finding can be
+# escalated into a full IR case in the hub.
 #
 # Where naming has been scaffolded already, this module is the backend for the
 # DarkWatch capability and the WRAITH console surface. Keep or rename in one
@@ -14,7 +14,7 @@
 module:
   name: dark-web-monitoring
   display_name: Dark Web Monitoring
-  platform: VERDICT
+  platform: Vendetta Platform
   owner: Vendetta Cloud Team
   service_lines: [managed-security, incident-response, vciso, litigation-support]
 
@@ -23,7 +23,7 @@ finding_model:
   id_field: id
   subject: client            # platform account the finding belongs to
   severity: [low, medium, high, critical]
-  verdict: [new, reviewing, confirmed, false_positive, closed]  # maps to Hit.status
+  status: [new, reviewing, confirmed, false_positive, closed]  # maps to Hit.status
   reasons: [term, credential, iab]
   evidence: true             # each finding may carry preserved captures with SHA-256
   client_owned_status: true  # client technical view can see confirmed findings
@@ -39,7 +39,7 @@ roles:
   partner_carrier: scoped_none         # no dark web access by default
 
 # API the hub consumes. Bearer token on the settings page; same token the other
-# VERDICT modules use for service-to-service calls.
+# platform modules use for service-to-service calls.
 api:
   base: /api
   endpoints:
@@ -51,9 +51,9 @@ api:
     - POST /api/findings/{id}/escalate   # open or link an IR case in the hub
   module_manifest: GET /api/module
 
-# Escalation into the engagement hub. Off until VERDICT_HUB_URL is set, so the
+# Escalation into the engagement hub. Off until PLATFORM_HUB_URL is set, so the
 # module runs standalone today and wires into the hub when it is ready.
 escalation:
-  enabled_when: VERDICT_HUB_URL
-  target: "${VERDICT_HUB_URL}/api/ir-cases"
+  enabled_when: PLATFORM_HUB_URL
+  target: "${PLATFORM_HUB_URL}/api/ir-cases"
   workstream: "Forensics and Analysis"   # dark web findings attach here in the five-workstream template
