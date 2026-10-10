@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ app_name }}{% endblock %}</title>
 <link rel="stylesheet" href="/static/app.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%23e0122f' stroke-width='3'/%3E%3Cpath d='M9 10 L16 22 L23 10' fill='none' stroke='%23e0122f' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="/static/logo.png">
 </head>
 <body>
 {% macro icon(name) %}
@@ -22,11 +22,10 @@
 </svg>
 {% endmacro %}
 {% set p = request.url.path if request else '/' %}
-{% macro mark(sz) %}<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#e0122f" stroke-width="3"/><path d="M9 10 L16 22 L23 10" fill="none" stroke="#e0122f" stroke-width="3"/></svg>{% endmacro %}
 {% if user %}
 <div class="app">
   <aside class="rail">
-    <div class="brand">{{ mark(26) }}<div class="name">VENDETTA<span>Dark Web Monitoring</span></div></div>
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Dark Web<span>Monitoring</span></div></div>
     <nav class="nav">
       <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Dashboard</a>
       <a href="/hits" class="{{ 'active' if p.startswith('/hits') }}">{{ icon('alert') }} Hits</a>

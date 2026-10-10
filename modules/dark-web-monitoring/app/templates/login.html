@@ -2,7 +2,7 @@
 {% block anon %}
 <div class="login-wrap">
   <div class="login-card">
-    <div class="brand">{{ mark(28) }}<div class="name">VENDETTA<span>Dark Web Monitoring</span></div></div>
+    <div class="brand" style="justify-content:center; flex-direction:column; text-align:center; gap:12px"><img class="logo" src="/static/logo.png" alt="Vendetta" style="width:60px;height:60px"><div class="name" style="font-size:14px">Dark Web<span>Monitoring</span></div></div>
     {% if error %}<p class="login-err">{{ error }}</p>{% endif %}
     <form method="post" action="/login">
       <input type="hidden" name="next" value="{{ next }}">

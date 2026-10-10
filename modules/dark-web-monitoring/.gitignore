@@ -7,4 +7,3 @@ infra/terraform/*.tfstate*
 infra/terraform/.terraform.lock.hcl
 
 preview/
-*.png
