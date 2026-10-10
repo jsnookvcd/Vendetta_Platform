@@ -11,10 +11,11 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, evidence, iab, platform, profiles, report as report_mod
+from . import auth, evidence, iab, oidc, platform, profiles, report as report_mod
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -27,6 +28,9 @@ _APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 templates.env.globals["app_name"] = settings.app_name
 app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="static")
+# Session middleware backs the OIDC state/nonce during the sign-in round trip.
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=settings.cookie_secure)
+app.include_router(oidc.router)
 
 
 @app.on_event("startup")
@@ -113,8 +117,10 @@ def render(request: Request, name: str, **ctx):
 
 # ---------------------------------------------------------------- auth
 @app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, next: str = "/"):
-    return render(request, "login.html", next=next, error="")
+def login_form(request: Request, next: str = "/", sso: str = ""):
+    msg = {"failed": "Microsoft sign-in did not complete. Try again.",
+           "denied": "That account is not permitted to access this console."}.get(sso, "")
+    return render(request, "login.html", next=next, error=msg, oidc_enabled=settings.oidc_enabled)
 
 
 @app.post("/login")
@@ -122,7 +128,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     ip = request.client.host if request.client else "unknown"
     if not _login_allowed(ip):
         _audit(db, username, "login.throttled", ip)
-        return render(request, "login.html", next=next, error="Too many attempts. Wait a few minutes and try again.")
+        return render(request, "login.html", next=next, error="Too many attempts. Wait a few minutes and try again.", oidc_enabled=settings.oidc_enabled)
     if username == settings.admin_user and auth.check_password(password):
         resp = RedirectResponse(next or "/", status_code=302)
         resp.set_cookie(auth.COOKIE, auth.make_session(username), httponly=True, samesite="lax",
@@ -131,7 +137,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         return resp
     _login_record(ip)
     _audit(db, username, "login.failed", ip)
-    return render(request, "login.html", next=next, error="Invalid credentials")
+    return render(request, "login.html", next=next, error="Invalid credentials", oidc_enabled=settings.oidc_enabled)
 
 
 @app.get("/logout")
@@ -468,6 +474,7 @@ def settings_page(request: Request, user: str = auth.RequireUser):
         "telegram": bool(settings.telegram_api_id),
         "evidence_bucket": settings.evidence_bucket or "(local disk)",
         "platform_hub": settings.platform_hub_url or "(standalone, not wired to hub)",
+        "sso": f"Entra ID tenant {settings.entra_tenant_id}" if settings.oidc_enabled else "off (local admin login)",
     }
     return render(request, "settings.html", user=user, cfg=cfg, api_token=auth.api_token())
 

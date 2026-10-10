@@ -15,6 +15,19 @@ class Settings(BaseSettings):
     login_window_seconds: int = 300
     admin_user: str = "admin"
     admin_password_hash: str = ""  # bcrypt hash; scripts/make_password_hash.py
+
+    # Microsoft 365 / Entra ID single sign-on (OIDC authorization code flow).
+    # Off until entra_client_id is set; the local admin login stays as break-glass.
+    entra_tenant_id: str = ""      # directory (tenant) ID, restricts who can sign in
+    entra_client_id: str = ""      # application (client) ID of the app registration
+    entra_client_secret: str = ""  # client secret value
+    entra_redirect_url: str = ""   # e.g. https://darkweb.vendettacd.io/auth/callback
+    entra_allowed_group: str = ""  # optional group object ID required in the token
+    entra_allowed_emails: str = "" # optional comma-separated allowlist of UPNs/emails
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(self.entra_client_id and self.entra_tenant_id)
     tor_proxy: str = "socks5://tor:9050"
     request_timeout: int = 60
     user_agent: str = (

@@ -47,6 +47,10 @@ Client deliverable
 API
 - GET /api/hits, GET /api/victims, GET /api/findings, GET /api/module, POST /api/clients/{id}/terms. Bearer token on the settings page. Built so the Vendetta Platform or a Jira automation can pull from it.
 
+Sign-in
+- Microsoft 365 / Entra ID single sign-on (OIDC). When configured, the team signs in with their 365 accounts, access is restricted to your tenant and optionally a security group or email allowlist, and each session and audit entry is tied to the real user. A users table records who has signed in, with a role field for later RBAC. The local admin account stays as a break-glass path behind an "Admin sign in" disclosure on the login page. SSO is off until ENTRA_CLIENT_ID and ENTRA_TENANT_ID are set, in which case the console runs on the shared admin login only.
+- Entra app registration: register a Web app, set the redirect URI to https://<host>/auth/callback, create a client secret, grant Microsoft Graph delegated openid, profile and email, and if you want ENTRA_ALLOWED_GROUP, add a groups claim to the token configuration. Put ENTRA_TENANT_ID, ENTRA_CLIENT_ID, ENTRA_CLIENT_SECRET and ENTRA_REDIRECT_URL in SSM. SSO needs the console on a real HTTPS hostname for the redirect, so set COOKIE_SECURE true at the same time.
+
 Hardening
 - Security headers on every response (CSP, X-Frame-Options DENY, nosniff, no-referrer). In-memory login throttle per IP. Session cookie carries the secure flag when COOKIE_SECURE is set for TLS. Access is still expected to be behind SSM port forwarding or a VPN; these are layers, not the only control.
 

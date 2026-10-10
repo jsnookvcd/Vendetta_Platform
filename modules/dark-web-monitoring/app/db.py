@@ -174,6 +174,21 @@ class Evidence(Base):
     headers: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class User(Base):
+    """A person who has signed in, by Entra ID SSO or the local admin account.
+    Gives per-user attribution now and a place for roles as the platform grows."""
+
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    source: Mapped[str] = mapped_column(String(20), default="entra")  # entra | local
+    role: Mapped[str] = mapped_column(String(30), default="analyst")  # analyst | admin
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
