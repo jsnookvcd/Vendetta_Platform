@@ -20,9 +20,21 @@ variable "root_volume_gb" {
 }
 
 variable "repo_url" {
-  description = "Git URL the instance clones on first boot. Use a deploy key or a public mirror. Leave empty to rsync code via SSM instead."
+  description = "Git URL the instance clones on first boot. The private platform repo over SSH, using the read-only deploy key stored in SSM at <ssm_prefix>/DEPLOY_KEY."
   type        = string
-  default     = ""
+  default     = "git@github.com:jsnookvcd/Vendetta_Platform.git"
+}
+
+variable "git_ref" {
+  description = "Branch or tag to deploy."
+  type        = string
+  default     = "main"
+}
+
+variable "module_subdir" {
+  description = "Path to this module inside the repo. The stack is built and run from here."
+  type        = string
+  default     = "modules/dark-web-monitoring"
 }
 
 variable "ssm_prefix" {

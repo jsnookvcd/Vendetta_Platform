@@ -1,14 +1,26 @@
 # First deploy to AWS
 
-Run top to bottom from your Mac. Everything after Terraform happens over SSM; no ports are opened on the instance. Budget 30 to 45 minutes for the first run, most of it waiting on Tor to bootstrap and the first feed sweep.
+This module lives inside the Vendetta_Platform repo at `modules/dark-web-monitoring`, and it is self-contained: the Terraform, the Dockerfiles and the compose stack are all under this directory. The instance clones the private repo on first boot with a read-only deploy key and runs the stack from this subdirectory.
+
+Run top to bottom from your Mac. Everything after Terraform happens over SSM; no ports are opened on the instance. Budget 30 to 45 minutes for the first run, most of it waiting on Tor to bootstrap and the first feed sweep. All commands are run from `modules/dark-web-monitoring`.
 
 ## 0. Prerequisites
 
 - AWS CLI with a profile for the Vendetta account, and the Session Manager plugin installed.
 - Terraform 1.6 or newer.
-- The code reachable by the instance: either push this repo to a private Git URL the instance can clone, or plan to copy it over SSM in step 3b.
 
-## 1. Stand up infrastructure
+## 1. Create a read-only deploy key for the instance
+
+The instance needs to clone the private repo. Create a dedicated key, add the public half to the repo, and store the private half in SSM. Do this before Terraform so the key exists when the instance first boots.
+
+```
+ssh-keygen -t ed25519 -f ./darkweb_deploy -N "" -C "darkweb-instance"
+# On GitHub: Vendetta_Platform, Settings, Deploy keys, Add deploy key, paste darkweb_deploy.pub, leave write access OFF.
+aws ssm put-parameter --name /darkweb/DEPLOY_KEY --type SecureString --value "file://$(pwd)/darkweb_deploy"
+rm -f darkweb_deploy darkweb_deploy.pub
+```
+
+## 2. Stand up infrastructure
 
 ```
 cd infra/terraform
@@ -16,16 +28,15 @@ terraform init
 terraform validate
 terraform plan -out tf.plan \
   -var 'alert_emails=["ir@vendettacd.io"]' \
-  -var object_lock_mode=GOVERNANCE \
-  -var repo_url=git@github.com:vendettacd/vcd-darkweb.git
+  -var object_lock_mode=GOVERNANCE
 terraform apply tf.plan
 ```
 
-Keep object_lock_mode at GOVERNANCE for the first deploy so nothing in the evidence bucket is permanent while you shake the stack out. Flip it to COMPLIANCE in a later apply once you trust it.
+repo_url, git_ref and module_subdir default to this repo, main, and modules/dark-web-monitoring; override them only if that changes. Keep object_lock_mode at GOVERNANCE for the first deploy so nothing in the evidence bucket is permanent while you shake the stack out. Flip it to COMPLIANCE in a later apply once you trust it.
 
 Confirm the SNS subscription email that arrives at each address in alert_emails. Unconfirmed addresses get no alerts.
 
-## 2. Put secrets into SSM
+## 3. Put the rest of the secrets into SSM
 
 These never go into Terraform state. Generate the password hash on your Mac:
 
@@ -36,9 +47,10 @@ aws ssm put-parameter --name /darkweb/ADMIN_PASSWORD_HASH --type SecureString --
 aws ssm put-parameter --name /darkweb/HIBP_API_KEY        --type SecureString --value '<key>'
 aws ssm put-parameter --name /darkweb/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
 aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL   --type SecureString --value '<url>'
+aws ssm put-parameter --name /darkweb/COOKIE_SECURE       --type String --value 'false'
 ```
 
-SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. Jira and the platform hub are intentionally left blank; add them later when those are live.
+SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.
 
 ## 3. Bring up the stack
 
@@ -48,18 +60,20 @@ Open a shell on the instance:
 aws ssm start-session --target "$(terraform output -raw instance_id)"
 ```
 
-3a. If repo_url was set, user_data already cloned and started the stack. Confirm:
+user_data cloned the repo and started the stack on first boot. `/opt/darkweb` is a symlink to the module directory inside the clone. Confirm:
 
 ```
 cd /opt/darkweb && sudo docker compose ps
 ```
 
-3b. If repo_url was blank, copy the code up now (from your Mac, using the S3 bucket as a shuttle or scp over an SSM tunnel), then:
+If the stack is not up, the clone likely failed because the deploy key was missing or wrong at boot. Fix the key in SSM (step 1), then:
 
 ```
-cd /opt/darkweb
-sudo bash scripts/render_env.sh /opt/darkweb/.env
-sudo docker compose up -d --build
+sudo rm -rf /opt/vendetta_platform
+sudo bash -c 'aws ssm get-parameter --region "$AWS_REGION" --name "$SSM_PREFIX/DEPLOY_KEY" --with-decryption --query Parameter.Value --output text > /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519'
+sudo git clone git@github.com:jsnookvcd/Vendetta_Platform.git /opt/vendetta_platform
+sudo ln -sfn /opt/vendetta_platform/modules/dark-web-monitoring /opt/darkweb
+cd /opt/darkweb && sudo bash scripts/deploy.sh
 ```
 
 ## 4. Go/no-go checks, in order

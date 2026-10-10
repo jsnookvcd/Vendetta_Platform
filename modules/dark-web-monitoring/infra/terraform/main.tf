@@ -255,9 +255,11 @@ resource "aws_instance" "monitor" {
   }
 
   user_data = templatefile("${path.module}/user_data.sh", {
-    repo_url   = var.repo_url
-    ssm_prefix = var.ssm_prefix
-    region     = var.region
+    repo_url      = var.repo_url
+    git_ref       = var.git_ref
+    module_subdir = var.module_subdir
+    ssm_prefix    = var.ssm_prefix
+    region        = var.region
   })
 
   tags = { Name = "${var.name_prefix}-monitor" }

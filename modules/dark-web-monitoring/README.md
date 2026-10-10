@@ -75,42 +75,7 @@ Core tiers return breached accounts by domain only. Infostealer logs by domain r
 
 ## Deploy
 
-Prerequisites on the Mac: Terraform, AWS CLI with the Session Manager plugin, a profile for the Vendetta AWS account.
-
-1. Push this repo somewhere the instance can clone it (GitHub deploy key, CodeCommit, or leave repo_url empty and copy code over SSM later).
-
-2. Terraform
-```
-cd infra/terraform
-terraform init
-terraform apply \
-  -var repo_url=git@github.com:vendettacd/vcd-darkweb.git \
-  -var 'alert_emails=["ir@vendettacd.io"]'
-```
-Confirm the SNS subscription email.
-
-3. Secrets into SSM Parameter Store (never into Terraform)
-```
-python3 -c "import bcrypt,getpass;print(bcrypt.hashpw(getpass.getpass().encode(),bcrypt.gensalt()).decode())"
-aws ssm put-parameter --name /darkweb/ADMIN_PASSWORD_HASH --type SecureString --value '<hash>'
-aws ssm put-parameter --name /darkweb/HIBP_API_KEY --type SecureString --value '<key>'
-aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL --type SecureString --value '<url>'
-aws ssm put-parameter --name /darkweb/JIRA_EMAIL --type String --value 'jordan@vendettacd.io'
-aws ssm put-parameter --name /darkweb/JIRA_API_TOKEN --type SecureString --value '<token>'
-```
-Use a dedicated Jira service account, not a personal token, so tickets show a consistent reporter.
-
-4. Start or restart the stack
-```
-aws ssm start-session --target <instance id>
-sudo bash /opt/darkweb/scripts/deploy.sh
-```
-
-5. Open the console
-```
-terraform output -raw connect | bash
-```
-Then http://localhost:8000. No ports are exposed on the instance. Everyone on the delivery team connects through their own SSM session; IAM is the access control.
+The full runbook is in DEPLOY.md. In short: create a read-only deploy key for the private repo and store it in SSM, `terraform apply` from `infra/terraform` (repo and subdirectory default to this module), put the remaining secrets in SSM, then open the console over an SSM port-forward. The instance clones the repo on boot and runs the stack from this module directory; `/opt/darkweb` on the instance is a symlink to it. No ports are exposed; everyone on the delivery team connects through their own SSM session, so IAM is the access control. To redeploy after a change, `sudo bash /opt/darkweb/scripts/deploy.sh` on the instance.
 
 ## Onboarding a client
 
