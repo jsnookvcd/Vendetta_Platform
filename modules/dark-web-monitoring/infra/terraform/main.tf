@@ -193,6 +193,8 @@ resource "aws_ssm_parameter" "defaults" {
     SNS_TOPIC_ARN      = aws_sns_topic.alerts.arn
     ADMIN_USER         = "admin"
     ALERT_MIN_SEVERITY = "medium"
+    WEB_BIND           = var.enable_alb ? "0.0.0.0" : "127.0.0.1"
+    COOKIE_SECURE      = var.enable_alb ? "true" : "false"
   }
   name      = "${var.ssm_prefix}/${each.key}"
   type      = "String"

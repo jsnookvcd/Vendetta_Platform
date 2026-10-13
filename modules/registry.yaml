@@ -1,0 +1,45 @@
+# Vendetta Platform module catalog. The hub reads this to know which modules exist,
+# their status, and the environment flag that turns each on or off. Status is
+# production, in-progress, or planned.
+platform: Vendetta Platform
+
+modules:
+  - name: dark-web-monitoring
+    display_name: Dark Web Monitoring
+    service_lines: [managed-security, incident-response, vciso, litigation-support]
+    status: production
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    findings: /api/findings
+
+  - name: vulnerability-management
+    display_name: Vulnerability Management
+    service_lines: [managed-security, vciso, pci-asv]
+    status: planned
+    enablement: MODULE_ENABLED
+    notes: Wraps the existing Go scanner service (Greenbone/Nuclei/Nessus ingest, EPSS/KEV enrichment).
+
+  - name: penetration-testing
+    display_name: Penetration Testing
+    service_lines: [offensive-security]
+    status: planned
+    enablement: MODULE_ENABLED
+
+  - name: incident-response
+    display_name: Incident Response and Case Management
+    service_lines: [incident-response]
+    status: planned
+    enablement: MODULE_ENABLED
+    notes: The engagement hub spine; IR cases, retainers, five-workstream template, incident declaration.
+
+  - name: mdr
+    display_name: Managed Detection and Response
+    service_lines: [managed-security]
+    status: planned
+    enablement: MODULE_ENABLED
+
+  - name: network-operations
+    display_name: Network Operations
+    service_lines: [managed-it, managed-security]
+    status: planned
+    enablement: MODULE_ENABLED

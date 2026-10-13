@@ -1,0 +1,34 @@
+# Vendetta Platform module descriptor. Status: planned.
+# See /docs/ARCHITECTURE.md and /modules/dark-web-monitoring (reference).
+module:
+  name: mdr
+  display_name: Managed Detection and Response
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [managed-security]
+  status: planned
+  enablement: MODULE_ENABLED
+
+finding_model:
+  type: investigation          # clients see investigations with verdicts, not raw alerts
+  severity: [low, medium, high, critical]
+  status: [new, reviewing, confirmed, false_positive, closed]
+  verdict: [benign, suspicious, malicious]   # analyst determination surfaced to clients
+  client_owned_status: false
+  evidence: true               # detection detail, analyst actions taken
+  fields: [detection_source, asset, technique, analyst_actions]
+
+roles:
+  admin: full
+  analyst: full
+  client: confirmed_investigations   # verdicts and actions, not raw telemetry
+  partner_carrier: scoped_none
+
+api:
+  module_manifest: GET /api/module
+  findings: GET /api/findings
+  escalate: POST /api/findings/{id}/escalate   # convert an investigation to a full IR case
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  workstream: "Scoping and Containment"

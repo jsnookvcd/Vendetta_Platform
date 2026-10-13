@@ -18,3 +18,18 @@ output "connect" {
 output "shell" {
   value = "aws ssm start-session --region ${var.region} --target ${aws_instance.monitor.id}"
 }
+
+output "console_url" {
+  description = "Public URL when the ALB is enabled; otherwise use the SSM port-forward in `connect`."
+  value       = var.enable_alb ? "https://${var.domain_name}" : "(ALB disabled; use the SSM port-forward)"
+}
+
+output "alb_dns_name" {
+  description = "ALB DNS name to point domain_name at if you manage DNS yourself."
+  value       = var.enable_alb ? aws_lb.console[0].dns_name : ""
+}
+
+output "entra_redirect_url" {
+  description = "Set this as ENTRA_REDIRECT_URL in SSM and as the Entra app redirect URI."
+  value       = var.enable_alb ? "https://${var.domain_name}/auth/callback" : ""
+}

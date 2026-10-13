@@ -126,6 +126,32 @@ cd /opt/darkweb && sudo bash scripts/deploy.sh
 
 The hub reads findings at /api/findings and the manifest at /api/module. Escalate turns a finding into an IR case in the engagement hub, attached to the Forensics and Analysis workstream.
 
+## 8. Public HTTPS front for SSO and the client portal
+
+SSM port forwarding is enough for the internal console. Microsoft 365 SSO and the client portal need a real HTTPS hostname, which the optional ALB provides. It stays off until you enable it.
+
+Apply with the ALB on:
+
+```
+cd infra/terraform
+terraform apply \
+  -var 'alert_emails=["ir@vendettacd.io"]' \
+  -var enable_alb=true \
+  -var domain_name=darkweb.vendettacd.io \
+  -var hosted_zone_id=Z0123456789ABC \
+  -var 'alb_allowed_cidrs=["<office/VPN CIDR>"]'
+```
+
+This creates an ACM certificate (DNS-validated in that Route53 zone), an ALB with an HTTPS listener and an HTTP-to-HTTPS redirect, points the hostname at it, opens the instance to the ALB only on 8000, and sets WEB_BIND and COOKIE_SECURE for you. Restrict alb_allowed_cidrs to your office and VPN egress where you can; the login is still SSO or the admin break-glass, but there is no reason to expose it to the whole internet. To manage DNS yourself, set acm_certificate_arn and leave hosted_zone_id blank, then point domain_name at the ALB DNS name from `terraform output alb_dns_name`.
+
+Then wire SSO to the hostname:
+
+```
+terraform output entra_redirect_url    # https://darkweb.vendettacd.io/auth/callback
+aws ssm put-parameter --name /darkweb/ENTRA_REDIRECT_URL --type String --value '<that URL>'
+```
+Register the same URL as the redirect URI in the Entra app, add the tenant, client ID and secret to SSM (step from the Sign-in section of the README), and redeploy. Enable each client's portal from their page in the console.
+
 ## Rollback and teardown
 
 - Redeploy after a code change: `cd /opt/darkweb && sudo bash scripts/deploy.sh`.

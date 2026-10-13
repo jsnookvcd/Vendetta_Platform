@@ -1,0 +1,34 @@
+# Vendetta Platform module descriptor. Status: planned.
+# See /docs/ARCHITECTURE.md and /modules/dark-web-monitoring (reference).
+module:
+  name: penetration-testing
+  display_name: Penetration Testing
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [offensive-security]
+  status: planned
+  enablement: MODULE_ENABLED
+
+finding_model:
+  type: pentest-finding
+  severity: [low, medium, high, critical]
+  status: [new, reviewing, confirmed, false_positive, closed]
+  client_owned_status: true    # clients track remediation
+  retest: true                 # retest button per finding
+  evidence: true               # proof-of-concept, screenshots, request/response
+  fields: [engagement, asset, cwe, remediation, retest_status]
+
+roles:
+  admin: full
+  analyst: full
+  client: confirmed_findings_detail   # own engagement findings and retest status
+  partner_carrier: scoped_none
+
+api:
+  module_manifest: GET /api/module
+  findings: GET /api/findings
+  report: GET /api/engagements/{id}/report.pdf   # rendered from the findings at close
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  workstream: "Resilience and Hardening"

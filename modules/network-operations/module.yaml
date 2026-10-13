@@ -1,0 +1,33 @@
+# Vendetta Platform module descriptor. Status: planned.
+# See /docs/ARCHITECTURE.md and /modules/dark-web-monitoring (reference).
+module:
+  name: network-operations
+  display_name: Network Operations
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [managed-it, managed-security]
+  status: planned
+  enablement: MODULE_ENABLED
+
+finding_model:
+  type: event                  # device/service health events and operational incidents
+  severity: [low, medium, high, critical]
+  status: [new, reviewing, confirmed, false_positive, closed]
+  client_owned_status: false
+  evidence: true               # monitoring detail, change records
+  fields: [device, service, metric, change_window, maintenance]
+
+roles:
+  admin: full
+  analyst: full
+  client: service_health_summary   # health and maintenance, not internal tooling
+  partner_carrier: scoped_none
+
+api:
+  module_manifest: GET /api/module
+  findings: GET /api/findings
+  escalate: POST /api/findings/{id}/escalate   # a security-relevant event becomes an IR case
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  workstream: "Scoping and Containment"

@@ -29,8 +29,10 @@ services:
       TOR_PROXY: socks5://tor:9050
     depends_on:
       db: {condition: service_healthy}
+    # Bind to loopback by default (SSM port-forward only). Set WEB_BIND=0.0.0.0
+    # when fronting with the ALB; the instance security group is the gate either way.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${WEB_BIND:-127.0.0.1}:8000:8000"
     volumes:
       - evidence:/data
     healthcheck:

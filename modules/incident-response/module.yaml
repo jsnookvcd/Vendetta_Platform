@@ -1,0 +1,38 @@
+# Vendetta Platform module descriptor. Status: planned.
+# This module is the engagement hub spine: it RECEIVES escalations from the other
+# modules and is the system of record for clients and IR cases.
+# See /docs/ARCHITECTURE.md and /modules/dark-web-monitoring (reference).
+module:
+  name: incident-response
+  display_name: Incident Response and Case Management
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [incident-response]
+  status: planned
+  enablement: MODULE_ENABLED
+  role: engagement-hub        # the spine other modules escalate into
+
+case_model:
+  id: case_id                 # firm-wide running sequence; client and incident type not in the ID
+  workstreams:                # fixed five-workstream template
+    - Scoping and Containment
+    - Forensics and Analysis
+    - Recovery and Restoration
+    - Notification and Legal
+    - Resilience and Hardening
+  retainers: true             # GetZero retainers; one-button incident declaration
+  deliverable_issuing_line: "Incident Response"   # counsel-directed privileged work
+
+api:
+  module_manifest: GET /api/module
+  cases: GET /api/ir-cases
+  open_case: POST /api/ir-cases          # modules escalate findings here
+  declare_incident: POST /api/ir-cases/declare
+
+roles:
+  admin: full
+  analyst: full
+  client_executive: case_milestones
+  client_technical: case_detail
+  breach_counsel: privileged_full
+  partner_carrier: scoped_panel
