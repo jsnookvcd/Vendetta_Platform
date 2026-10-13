@@ -173,6 +173,15 @@ class CaseUpdate(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Chain of custody: filled automatically at flush (see the before_flush hook).
+    # These bind the entry into a per-case, signed, tamper-evident chain. task_id is
+    # deliberately not among the signed fields because it is a mutable UI link.
+    chain_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    signature: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    key_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     case: Mapped[Case] = relationship(back_populates="updates")
     task: Mapped[Task | None] = relationship(back_populates="updates")
 
@@ -210,6 +219,13 @@ def init_db() -> None:
             "ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS task_id VARCHAR(32) "
             "REFERENCES tasks(id) ON DELETE SET NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_case_updates_task_id ON case_updates (task_id)"))
+        # Chain-of-custody columns.
+        conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS chain_seq INTEGER"))
+        conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64)"))
+        conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"))
+        conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS signature VARCHAR(160)"))
+        conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS key_id VARCHAR(32)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_case_updates_content_hash ON case_updates (content_hash)"))
 
 
 def next_case_number(db: Session) -> tuple[int, str]:
@@ -254,6 +270,159 @@ def open_case(
     db.add(case)
     db.commit()
     return case
+
+
+def update_fields(u: "CaseUpdate") -> dict:
+    """The immutable, evidentiary fields of a timeline entry, in the exact shape the
+    chain hashes. Write and verify both go through this so the two always agree.
+    task_id is excluded on purpose: it is a mutable UI link, not evidence."""
+    case_id = u.case_id or (u.case.id if u.case is not None else None)
+    at = u.at.isoformat() if u.at is not None else None
+    return {
+        "id": u.id,
+        "case_id": case_id,
+        "chain_seq": u.chain_seq,
+        "at": at,
+        "actor": u.actor,
+        "kind": u.kind,
+        "note": u.note,
+        "workstream": u.workstream,
+        "internal_only": bool(u.internal_only),
+        "payload": u.payload or {},
+    }
+
+
+def case_chain_records(db: Session, case_id: str) -> list[dict]:
+    """The case's timeline as ordered chain records for verification. Only entries
+    that were chained are included, in chain order."""
+    rows = db.execute(
+        select(CaseUpdate).where(CaseUpdate.case_id == case_id, CaseUpdate.content_hash.isnot(None))
+        .order_by(CaseUpdate.chain_seq)
+    ).scalars().all()
+    return [{"fields": update_fields(u), "prev_hash": u.prev_hash,
+             "content_hash": u.content_hash, "signature": u.signature,
+             "chain_seq": u.chain_seq, "at": u.at, "actor": u.actor, "kind": u.kind,
+             "note": u.note} for u in rows]
+
+
+def build_proof(db: Session, case: "Case", *, client_view: bool = False) -> dict:
+    """A self-contained, independently verifiable chain-of-custody document for a
+    case. With client_view, internal entries are sealed: their content is withheld
+    but their hash, signature and position remain, so the client (or opposing
+    counsel) can still verify nothing was added, removed or altered."""
+    from . import evidence
+
+    rows = db.execute(
+        select(CaseUpdate).where(CaseUpdate.case_id == case.id, CaseUpdate.content_hash.isnot(None))
+        .order_by(CaseUpdate.chain_seq)
+    ).scalars().all()
+    entries, verify_input = [], []
+    for u in rows:
+        reveal = (not client_view) or (not u.internal_only)
+        fields = update_fields(u) if reveal else None
+        verify_input.append({"fields": fields, "prev_hash": u.prev_hash,
+                             "content_hash": u.content_hash, "signature": u.signature})
+        entry = {"chain_seq": u.chain_seq, "prev_hash": u.prev_hash,
+                 "content_hash": u.content_hash, "signature": u.signature,
+                 "sealed": not reveal}
+        if reveal:
+            entry["at"] = u.at.isoformat() if u.at else None
+            entry["actor"] = u.actor
+            entry["kind"] = u.kind
+            entry["note"] = u.note
+            entry["workstream"] = u.workstream
+            entry["internal_only"] = bool(u.internal_only)
+            entry["payload"] = u.payload or {}
+        entries.append(entry)
+    result = evidence.verify_chain(verify_input)
+    return {
+        "document": "Vendetta Cyber Defense chain-of-custody proof",
+        "scheme": evidence.SCHEME,
+        "generated_at": utcnow().isoformat(),
+        "key_id": evidence.key_id(),
+        "public_key": evidence.public_key_hex(),
+        "case": {"id": case.id, "number": case.number, "title": case.title,
+                 "opened_at": case.opened_at.isoformat() if case.opened_at else None},
+        "entry_count": len(entries),
+        "verification": result,
+        "entries": entries,
+        "how_to_verify": (
+            "For each entry, Ed25519-verify 'signature' against 'content_hash' using "
+            "'public_key'. Confirm each 'prev_hash' equals the previous entry's "
+            "'content_hash' (the first is 64 zeros). For entries that are not sealed, "
+            "recompute sha256 of the canonical JSON "
+            "{\"scheme\",\"prev\":prev_hash,\"fields\":{...}} and confirm it equals "
+            "'content_hash'. Any mismatch means the record was altered, added, removed "
+            "or reordered."),
+    }
+
+
+def _chain_new_updates(session: Session) -> None:
+    """Assign chain position, prev hash, content hash and signature to every new
+    timeline entry in this flush, per case, continuing each case's existing chain."""
+    from collections import defaultdict
+
+    from . import evidence
+
+    pending = [o for o in session.new if isinstance(o, CaseUpdate) and o.content_hash is None]
+    if not pending:
+        return
+
+    # Python-side defaults (id, at) and column defaults (actor, kind, ...) are applied
+    # at INSERT, after this hook. Any hashed field still None here would be stored as
+    # its default and break verification, so materialise every signed field onto the
+    # object now, including the parent case id, so what we sign is exactly what is
+    # stored. task_id is excluded from the signed set and left to the ORM.
+    by_case: dict[str, list[CaseUpdate]] = defaultdict(list)
+    for u in pending:
+        if u.id is None:
+            u.id = new_id()
+        if u.case_id is None and u.case is not None:
+            if u.case.id is None:
+                u.case.id = new_id()
+            u.case_id = u.case.id
+        if u.at is None:
+            u.at = utcnow()
+        if u.actor is None:
+            u.actor = "system"
+        if u.kind is None:
+            u.kind = "note"
+        if u.note is None:
+            u.note = ""
+        if u.workstream is None:
+            u.workstream = ""
+        if u.internal_only is None:
+            u.internal_only = True
+        if u.payload is None:
+            u.payload = {}
+        by_case[u.case_id].append(u)
+
+    with session.no_autoflush:
+        for cid, ups in by_case.items():
+            prev_seq, prev_hash = 0, evidence.GENESIS
+            head = session.execute(
+                select(CaseUpdate.chain_seq, CaseUpdate.content_hash)
+                .where(CaseUpdate.case_id == cid, CaseUpdate.content_hash.isnot(None))
+                .order_by(CaseUpdate.chain_seq.desc()).limit(1)
+            ).first()
+            if head:
+                prev_seq, prev_hash = head[0], head[1]
+            # Deterministic order within the flush so verify (which reads by chain_seq)
+            # always sees the same sequence we signed.
+            for u in sorted(ups, key=lambda x: (x.at, x.id)):
+                prev_seq += 1
+                u.chain_seq = prev_seq
+                u.prev_hash = prev_hash
+                u.content_hash, u.signature, u.key_id = evidence.compute(update_fields(u), prev_hash)
+                prev_hash = u.content_hash
+
+
+from sqlalchemy import event  # noqa: E402
+
+
+@event.listens_for(SessionLocal, "before_flush")
+def _evidence_before_flush(session, flush_context, instances):  # noqa: ANN001
+    _chain_new_updates(session)
 
 
 def ensure_seq_counter(db: Session) -> None:

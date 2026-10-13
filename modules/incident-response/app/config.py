@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://irhub:irhub@db:5432/irhub"
 
     secret_key: str = "change-me"
+    # Ed25519 private key (32 bytes, hex) that signs the case chain of custody. When
+    # blank, a key is derived deterministically from secret_key so a deployment can
+    # still verify its own chain; set a dedicated key in production so it can be
+    # backed up and rotated independently of the session secret.
+    evidence_signing_key: str = ""
     cookie_secure: bool = False
     login_max_attempts: int = 8
     login_window_seconds: int = 300

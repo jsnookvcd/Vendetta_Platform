@@ -123,7 +123,12 @@
 
 <div class="detail-grid" style="margin-top:18px">
   <div>
-    <div class="section-head" id="timeline"><h2>Timeline</h2><span class="count">{{ case.updates|length }}</span></div>
+    <div class="section-head" id="timeline"><h2>Timeline</h2><span class="count">{{ case.updates|length }}</span>
+      <span class="grow"></span>
+      <a class="btn btn-sm btn-ghost" href="/cases/{{ case.id }}/chain/verify" target="_blank" rel="noopener">Verify chain</a>
+      <a class="btn btn-sm btn-ghost" href="/cases/{{ case.id }}/proof.json">Download proof</a>
+    </div>
+    <p class="faint" style="font-size:12px; margin:0 2px 10px">Every timeline entry is hash-chained and signed as it is written, so the record is tamper-evident and verifiable for expert testimony.</p>
     <div class="panel pad" style="margin-bottom:12px">
       <form method="post" action="/cases/{{ case.id }}/updates" id="update-form">
         <textarea name="note" placeholder="Log an action, finding or decision" required></textarea>

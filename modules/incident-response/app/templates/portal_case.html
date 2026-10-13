@@ -15,6 +15,24 @@
   <div class="title-row"><h1>{{ case.title }}</h1></div>
   <p class="faint" style="margin:2px 0 14px">Opened {{ case.opened_at.strftime('%b %d, %Y %H:%M') }} UTC{% if case.lead %}, lead responder {{ case.lead }}{% endif %}</p>
 
+  {% if chain %}
+  <div class="panel pad coc coc-{{ 'ok' if chain.ok else 'broken' }}" style="margin-bottom:16px">
+    <div class="row" style="align-items:center; gap:10px">
+      <span class="coc-badge">{{ 'VERIFIED' if chain.ok else 'CHECK FAILED' }}</span>
+      <div style="flex:1; min-width:240px">
+        {% if chain.ok %}
+        <strong>Chain of custody verified.</strong>
+        <span class="faint">All {{ chain.length }} record{{ 's' if chain.length != 1 }} on this case are cryptographically sealed and in order{% if chain.sealed %}, {{ chain.sealed }} held internal{% endif %}. Signing key {{ chain.key_id }}.</span>
+        {% else %}
+        <strong>Integrity check did not pass.</strong>
+        <span class="faint">The record at position {{ chain.broken_at }} does not verify: {{ chain.reason }}. Contact your Vendetta lead.</span>
+        {% endif %}
+      </div>
+      <a class="btn btn-sm btn-ghost" href="/portal/cases/{{ case.id }}/proof.json">Download proof</a>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="section-head"><h2>Progress</h2></div>
   <div class="wsgrid">
     {% for w in case.workstreams %}{% set l = lanes[loop.index0] %}

@@ -233,6 +233,44 @@ def case_detail(cid: str, request: Request, user: str = auth.RequireUser, db: Se
                   today=dt.date.today())
 
 
+@app.get("/cases/{cid}/chain/verify")
+def case_chain_verify(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Verify the case chain of custody and return the result as JSON (staff)."""
+    from .db import case_chain_records
+
+    case = _get_case(db, cid)
+    from . import evidence
+
+    result = evidence.verify_chain(case_chain_records(db, case.id))
+    _audit(db, user, "case.chain.verify", f"{case.number} ok={result['ok']}")
+    return JSONResponse(result)
+
+
+@app.get("/cases/{cid}/proof.json")
+def case_proof(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Download the full chain-of-custody proof for the case (staff / expert witness)."""
+    from .db import build_proof
+
+    case = _get_case(db, cid)
+    proof = build_proof(db, case, client_view=False)
+    _audit(db, user, "case.proof", case.number)
+    return JSONResponse(proof, headers={
+        "Content-Disposition": f'attachment; filename="chain_of_custody_{case.number}.json"'})
+
+
+@app.get("/api/cases/{cid}/chain/verify")
+def api_case_chain_verify(cid: str, _: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Programmatic verification endpoint (bearer token), for external auditors."""
+    from .db import case_chain_records
+
+    case = db.get(Case, cid)
+    if not case:
+        raise HTTPException(404)
+    from . import evidence
+
+    return JSONResponse(evidence.verify_chain(case_chain_records(db, case.id)))
+
+
 @app.post("/cases/{cid}/status")
 def case_status(cid: str, status: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     case = _get_case(db, cid)
@@ -526,9 +564,27 @@ def portal_case(cid: str, request: Request, ident: auth.Identity = Depends(auth.
     # executive: progress at the workstream level, no step-by-step timeline.
     milestones_only = case.privileged or ident.is_executive
     updates = [] if milestones_only else [u for u in case.updates if not u.internal_only]
+    from .db import case_chain_records
+    from . import evidence
+
+    chain = evidence.verify_chain(case_chain_records(db, case.id))
     return render(request, "portal_case.html", user=ident.email, portal=True, client=case.client, case=case,
                   updates=updates, lanes=board.lanes(case), exec_view=ident.is_executive,
-                  milestones_only=milestones_only)
+                  milestones_only=milestones_only, chain=chain)
+
+
+@app.get("/portal/cases/{cid}/proof.json")
+def portal_case_proof(cid: str, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    """The client's own downloadable chain-of-custody proof. Internal entries are
+    sealed: their content is withheld but their integrity is still verifiable."""
+    from .db import build_proof
+
+    case = _get_case(db, cid)
+    auth.require_owned(ident, case)
+    proof = build_proof(db, case, client_view=True)
+    _audit(db, ident.email, "portal.proof", case.number)
+    return JSONResponse(proof, headers={
+        "Content-Disposition": f'attachment; filename="chain_of_custody_{case.number}.json"'})
 
 
 @app.post("/portal/declare")
