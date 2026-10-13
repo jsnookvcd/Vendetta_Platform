@@ -155,21 +155,47 @@ def set_status(ok: bool, detail: str) -> None:
             row = SsoConfig(id="default")
             db.add(row)
         row.last_tested_at = utcnow()
-        row.last_detail = detail[:500]
+        # The pass/fail result rides in the stored detail (no schema change): a
+        # leading "ok:" marks a verified test, which readiness reads back.
+        row.last_detail = (("ok: " if ok else "fail: ") + detail)[:500]
         db.commit()
     finally:
         db.close()
 
 
+def _last_result(detail: str) -> tuple[bool | None, str]:
+    """(passed, clean_detail) from a stored last_detail. passed is None if never tested."""
+    if not detail:
+        return None, ""
+    if detail.startswith("ok: "):
+        return True, detail[4:]
+    if detail.startswith("fail: "):
+        return False, detail[6:]
+    return None, detail  # pre-marker rows: tested, result unknown
+
+
+def verified() -> bool:
+    """SSO is enabled, fully configured, and the last test passed."""
+    cfg = resolve()
+    if not (cfg["enabled"] and cfg["configured"]):
+        return False
+    row = _row()
+    passed, _ = _last_result(row.last_detail if row else "")
+    return passed is True
+
+
 def status() -> dict:
     row = _row()
     cfg = resolve()
+    passed, clean = _last_result(row.last_detail if row else "")
     return {
         "configured": cfg["configured"],
         "enabled": cfg["enabled"],
         "source": cfg["source"],
+        "verified": verified(),
         "last_tested_at": row.last_tested_at if row else None,
-        "last_detail": row.last_detail if row else "",
+        "last_ok": passed,
+        "last_detail": clean,
         "values": {f: cfg[f] for f in _FIELDS if f != "client_secret"},
         "has_secret": bool(cfg["client_secret"]),
     }

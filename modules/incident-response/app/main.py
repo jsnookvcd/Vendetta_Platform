@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth, board, findings as findings_mod, hub, notify, oidc, provision, sso
+from . import readiness as readiness_mod
 from .config import WORKSTREAMS, settings
 from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Task, Workstream,
                  ensure_seq_counter, init_db, open_case, utcnow)
@@ -684,6 +685,7 @@ def api_module(user: str = Depends(auth.api_user)):
         "platform": "Vendetta Platform", "enabled": settings.module_enabled, "role": "engagement-hub",
         "roles": ["admin", "analyst", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
         "card_statuses": board.TASK_STATUSES,
+        "readiness": readiness_mod.block(),
         "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/module"],
     }
 

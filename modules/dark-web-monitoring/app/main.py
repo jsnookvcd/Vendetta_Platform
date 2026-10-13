@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, evidence, iab, oidc, platform, profiles, provision, report as report_mod, sso
+from . import auth, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -677,6 +677,7 @@ def api_module(user: str = Depends(auth.api_user)):
         "severities": ["low", "medium", "high", "critical"],
         "statuses": ["new", "reviewing", "confirmed", "false_positive", "closed"],
         "hub_configured": bool(settings.platform_hub_url),
+        "readiness": readiness.block(),
         "endpoints": ["/api/findings", "/api/findings/{id}", "/api/findings/{id}/escalate", "/api/hits", "/api/victims"],
     }
 

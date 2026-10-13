@@ -19,7 +19,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import aggregate, auth, oidc, sso
+from . import aggregate, auth, oidc, readiness as readiness_mod, sso
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
 from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, ToolConnection,
                  User, get_client_module, init_db, slugify, utcnow)
@@ -171,6 +171,22 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
 def refresh(user: str = auth.RequireUser):
     aggregate.clear_cache()
     return _back("/", True, "Overview refreshed.")
+
+
+# ---------------------------------------------------------------- go-live readiness
+@app.get("/readiness", response_class=HTMLResponse)
+def readiness_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    modules = _modules(db)
+    ov = aggregate.overview([m for m in modules if m.base_url])
+    report = readiness_mod.assess(modules, ov)
+    return render(request, "readiness.html", user=user, report=report)
+
+
+@app.get("/api/platform/readiness")
+def api_readiness(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    modules = _modules(db)
+    ov = aggregate.overview([m for m in modules if m.base_url])
+    return readiness_mod.assess(modules, ov)
 
 
 # ---------------------------------------------------------------- clients

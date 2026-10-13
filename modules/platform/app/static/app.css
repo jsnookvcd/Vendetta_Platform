@@ -305,6 +305,27 @@ label.field.chk { flex-direction: row; align-items: center; gap: 7px; }
 .pill { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; border-radius: 4px; padding: 3px 8px; white-space: nowrap; color: var(--muted); border: 1px solid var(--line-2); }
 .pill-ok { color: #8fd98a; border-color: #2f5a34; background: rgba(47,90,52,0.14); }
 .pill-warn { color: #ffc96b; border-color: #6a5224; background: rgba(106,82,36,0.14); }
+.pill-fail { color: #ff9ba6; border-color: var(--brand-dim); background: rgba(224,18,47,0.12); }
+
+/* go-live readiness */
+.rdy-banner { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: var(--radius-card); border: 1px solid; margin-bottom: 16px; }
+.rdy-banner.go { border-color: #2f5a34; background: rgba(47,90,52,0.12); }
+.rdy-banner.nogo { border-color: var(--brand-dim); background: rgba(224,18,47,0.10); }
+.rdy-banner h2 { font-size: 18px; margin: 0; }
+.rdy-banner .sub { color: var(--muted); font-size: 13px; }
+.rdy-counts { margin-left: auto; display: flex; gap: 8px; }
+.rdy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+.rdy-card .hd { display: flex; align-items: center; gap: 9px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+.rdy-card .hd h3 { font-size: 14.5px; margin: 0; }
+.rdy-card .hd .pill { margin-left: auto; }
+.chk { display: flex; align-items: flex-start; gap: 10px; padding: 9px 15px; font-size: 13px; border-top: 1px solid var(--line); }
+.chk:first-of-type { border-top: 0; }
+.chk .cdot { width: 9px; height: 9px; border-radius: 50%; flex: none; margin-top: 4px; }
+.chk .cdot.ok { background: var(--ok); }
+.chk .cdot.warn { background: #e0a93b; }
+.chk .cdot.fail { background: var(--brand); }
+.chk .cl { font-weight: 600; }
+.chk .cd { color: var(--faint); font-size: 12px; }
 .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .fieldgrid .field { margin: 0; }
 .req { color: #ff9ba6; }

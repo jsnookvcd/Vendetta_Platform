@@ -36,7 +36,7 @@ def probe_module(module, transport: httpx.BaseTransport | None = None, force: bo
 
     spec = PROBE.get(module.key)
     result = {"reachable": False, "enabled": None, "open": None, "critical": 0,
-              "label": spec["label"] if spec else "", "detail": "", "tools": {}}
+              "label": spec["label"] if spec else "", "detail": "", "tools": {}, "readiness": {}}
     if not module.base_url or not spec:
         result["detail"] = "no endpoint" if spec else "no live feed"
         _CACHE[module.key] = (now + settings.probe_cache_seconds, result)
@@ -52,6 +52,7 @@ def probe_module(module, transport: httpx.BaseTransport | None = None, force: bo
                 result["reachable"] = True
                 result["enabled"] = body.get("enabled")
                 result["tools"] = body.get("tools") or {}
+                result["readiness"] = body.get("readiness") or {}
                 if result["enabled"] is False:
                     result["detail"] = "module disabled"
                 else:

@@ -8,6 +8,8 @@
     {% if st.enabled and st.configured %}<span class="pill pill-ok">ENABLED</span>
     {% elif st.configured %}<span class="pill pill-warn">CONFIGURED, OFF</span>
     {% else %}<span class="pill">NOT CONFIGURED</span>{% endif %}
+    {% if st.verified %}<span class="pill pill-ok">VERIFIED</span>
+    {% elif st.configured %}<span class="pill pill-warn">SAVED, NOT VERIFIED</span>{% endif %}
     <span class="faint" style="font-size:12px">source: {{ st.source }}</span>
     <span class="grow"></span>
     {% if st.last_tested_at %}<span class="faint" style="font-size:12px">last test {{ st.last_tested_at.strftime('%b %d %H:%M') }} UTC{% if st.last_detail %}: {{ st.last_detail }}{% endif %}</span>{% endif %}

@@ -90,6 +90,22 @@ bash infra/verify.sh
 The control-plane bearer is on its Settings page. Green across the board means the
 four modules are up and the provisioning loop works.
 
+Once the modules are wired (step 3), the control plane also serves a live go-live
+checklist at `Platform.vendettacyber.com/readiness` (Go-live in the sidebar). It
+rolls up every module's self-reported readiness together with the control plane's
+own posture into one screen:
+
+- blocking items (red) stop a production go-live: a module that is unreachable or
+  disabled, or a control plane still running the default `SECRET_KEY`;
+- hardening items (amber) work today but should be set before onboarding a client:
+  Microsoft 365 SSO saved but not verified, or signing/encryption keys still derived
+  from `secret_key` rather than set to dedicated values (step 1).
+
+SSO counts as verified only after its test passes, not merely when it is saved, so
+the screen reflects a configuration Microsoft has actually accepted. Re-check after
+any change; the probe results are cached briefly. The same report is available as
+JSON at `/api/platform/readiness` for a CI gate.
+
 ## 3. Wire the module endpoints and tokens
 
 On the control plane (`localhost:8300`), open Connections and for each module paste

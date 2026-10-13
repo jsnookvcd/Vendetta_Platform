@@ -771,10 +771,12 @@ def portal_post(desk: str, body: str = Form(...), ident: auth.Identity = Depends
 # ---------------------------------------------------------------- platform API
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user)):
+    from . import readiness
     return {
         "module": "managed-services", "display_name": "Managed Services",
         "platform": "Vendetta Platform", "enabled": settings.module_enabled,
         "tools": {t: getattr(connectors.get(t), "configured", False) for t in TOOLS},
+        "readiness": readiness.block(),
         "endpoints": ["/api/findings", "/api/module"],
     }
 

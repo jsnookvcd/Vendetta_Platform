@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}Go-live readiness{% endblock %}
+{% macro statepill(ok, warn, fail) %}
+  {% if fail %}<span class="pill pill-fail">{{ fail }} blocking</span>
+  {% elif warn %}<span class="pill pill-warn">{{ warn }} to harden</span>
+  {% else %}<span class="pill pill-ok">ready</span>{% endif %}
+{% endmacro %}
+{% macro checklist(checks) %}
+  {% for c in checks %}
+  <div class="chk"><span class="cdot {{ c.state }}"></span><span><span class="cl">{{ c.label }}</span>{% if c.detail %} <span class="cd">{{ c.detail }}</span>{% endif %}</span></div>
+  {% endfor %}
+{% endmacro %}
+{% block body %}
+<div class="title-row"><h1>Go-live readiness</h1><form method="post" action="/refresh" style="margin-left:auto"><button class="btn btn-sm">Re-check</button></form></div>
+<p class="faint" style="margin:2px 0 16px">One checklist across every module and the control plane. Blocking items stop a production go-live; hardening items work today but should be set before onboarding a client. SSO must be tested, not just saved, to count as verified.</p>
+
+{% set s = report.summary %}
+<div class="rdy-banner {{ 'go' if report.ready else 'nogo' }}">
+  <div>
+    <h2>{{ 'Ready for production' if report.ready else 'Not ready: ' ~ s.fail ~ ' blocking item' ~ ('' if s.fail == 1 else 's') }}</h2>
+    <div class="sub">{{ s.modules_ready }} of {{ s.modules_total }} modules ready · checked {{ report.generated_at.strftime('%b %d, %Y %H:%M') }} UTC</div>
+  </div>
+  <div class="rdy-counts">
+    <span class="pill pill-ok">{{ s.ok }} ok</span>
+    {% if s.warn %}<span class="pill pill-warn">{{ s.warn }} harden</span>{% endif %}
+    {% if s.fail %}<span class="pill pill-fail">{{ s.fail }} blocking</span>{% endif %}
+  </div>
+</div>
+
+<div class="rdy-grid">
+  <div class="panel rdy-card">
+    <div class="hd"><b>Control plane</b><span style="color:var(--faint);font-size:12px">Platform.vendettacyber.com</span>{{ statepill(report.control_plane.ok, report.control_plane.warn, report.control_plane.fail) }}</div>
+    {{ checklist(report.control_plane.checks) }}
+  </div>
+  {% for m in report.modules %}
+  <div class="panel rdy-card">
+    <div class="hd"><h3>{{ m.display_name }}</h3>{{ statuschip(m.status) }}{{ statepill(m.ok, m.warn, m.fail) }}</div>
+    {{ checklist(m.checks) }}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

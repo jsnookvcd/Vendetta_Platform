@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, oidc, platform as platform_mod, provision, sso
+from . import auth, oidc, platform as platform_mod, provision, readiness, sso
 from .config import (ENGAGEMENT_STATES, ENGAGEMENT_TYPES, OPEN_STATUSES, SEVERITIES, STATUSES,
                      cvss_to_severity, settings, severity_rank)
 from .db import (AuditLog, Client, Engagement, Finding, RemediationStep, SessionLocal, User,
@@ -533,7 +533,7 @@ def healthz():
 def api_module(user: str = Depends(auth.api_user)):
     return {"module": "penetration-testing", "enabled": settings.module_enabled,
             "roles": ["admin", "analyst", "client"], "finding_types": ["pentest-finding"],
-            "engagement_types": ENGAGEMENT_TYPES}
+            "engagement_types": ENGAGEMENT_TYPES, "readiness": readiness.block()}
 
 
 @app.get("/api/findings")
