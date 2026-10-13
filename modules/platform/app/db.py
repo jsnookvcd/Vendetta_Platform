@@ -159,6 +159,28 @@ class User(Base):
     last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SsoConfig(Base):
+    """Microsoft 365 / Entra SSO configuration entered in-app. Single row ('default').
+    The secret is encrypted at rest; the rest overlays the environment defaults so
+    SSO can be wired and tested from the UI without a redeploy."""
+
+    __tablename__ = "sso_config"
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default="default")
+    tenant_id: Mapped[str] = mapped_column(String(100), default="")
+    client_id: Mapped[str] = mapped_column(String(100), default="")
+    client_secret: Mapped[str] = mapped_column(EncryptedStr(512), default="")
+    redirect_url: Mapped[str] = mapped_column(String(400), default="")
+    allowed_group: Mapped[str] = mapped_column(String(100), default="")
+    allowed_emails: Mapped[str] = mapped_column(String(1000), default="")
+    internal_email_domains: Mapped[str] = mapped_column(String(500), default="")
+    admin_emails: Mapped[str] = mapped_column(String(1000), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_tested_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_detail: Mapped[str] = mapped_column(String(500), default="")
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

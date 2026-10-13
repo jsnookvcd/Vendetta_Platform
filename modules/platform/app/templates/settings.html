@@ -4,7 +4,7 @@
 <div class="panel pad" style="margin-bottom:14px">
   <dl class="kv">
     <dt>Control plane</dt><dd>{{ 'enabled' if cfg.module_enabled else 'disabled' }}</dd>
-    <dt>Sign-in</dt><dd>{{ cfg.sso }}</dd>
+    <dt>Sign-in</dt><dd>{{ cfg.sso }} &nbsp;<a href="/settings/sso" class="faint">configure</a></dd>
     <dt>Overview cache</dt><dd>{{ cfg.probe_cache }} seconds</dd>
     <dt>Staff accounts</dt><dd>{{ n_users }}</dd>
   </dl>
