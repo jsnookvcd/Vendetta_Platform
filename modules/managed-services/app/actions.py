@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from . import connectors, hub
+from . import connectors, hub, sla
 from .config import settings
 from .connectors import ConnectorError
 from .db import ActionLog, Alert, Device
@@ -180,6 +180,12 @@ def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comm
             raise ConnectorError(f"unhandled action {action_id}")
     except ConnectorError as e:
         ok, detail = False, str(e)
+    if ok:
+        # A successful action is a response, so the acknowledge clock stops; a
+        # destructive action or a resolution stops the contain clock too.
+        sla.mark_acknowledged(alert)
+        if action.danger or alert.status == "resolved":
+            sla.mark_contained(alert)
     visible = ok and action.shared and alert.published
     db.add(ActionLog(client_id=alert.client_id, alert_id=alert.id, device_id=alert.device_id,
                      tool=alert.tool, action=action.label, actor=actor, approver=approver,
@@ -228,6 +234,10 @@ def run_device_action(db: Session, device: Device, action_id: str, actor: str,
             device.status = "online"
     except ConnectorError as e:
         ok, detail = False, str(e)
+    if ok and alert is not None:
+        sla.mark_acknowledged(alert)
+        if action.danger:
+            sla.mark_contained(alert)
     visible = ok and action.shared and (alert.published if alert else True)
     db.add(ActionLog(client_id=device.client_id, alert_id=alert.id if alert else None, device_id=device.id,
                      tool=device.tool, action=action.label, actor=actor, approver=approver,

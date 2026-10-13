@@ -1,13 +1,40 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% macro slabadge(st) %}
+{%- if st.state == 'breached' -%}<span class="slachip sla-breached" title="{{ st.phase }} SLA">{{ st.phase }} {{ sla.humanize(st.remaining_seconds) }}</span>
+{%- elif st.state == 'at_risk' -%}<span class="slachip sla-risk" title="{{ st.phase }} SLA">{{ st.phase }} {{ sla.humanize(st.remaining_seconds) }} left</span>
+{%- elif st.state == 'on_track' -%}<span class="slachip sla-ok" title="{{ st.phase }} SLA">{{ st.phase }} {{ sla.humanize(st.remaining_seconds) }}</span>
+{%- elif st.state == 'done' -%}<span class="slachip sla-done">met</span>
+{%- endif -%}
+{% endmacro %}
 {% block body %}
 <div class="tiles">
   <div class="tile {{ 'crit' if by_sev.critical }}"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical open</div></div>
   <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High open</div></div>
   <div class="tile"><div class="n">{{ alerts|length if alerts|length < 25 else shell.open_alerts }}</div><div class="l">Open alerts</div></div>
+  <div class="tile {{ 'crit' if sla_summary.breached else ('warn' if sla_summary.at_risk) }}"><div class="n">{{ sla_summary.breached + sla_summary.at_risk }}</div><div class="l">SLAs at risk{% if sla_summary.breached %} · {{ sla_summary.breached }} breached{% endif %}</div></div>
   <div class="tile"><div class="n">{{ n_online }}<span class="sub">/{{ n_devices }}</span></div><div class="l">Devices online</div></div>
   {% if n_isolated %}<div class="tile crit"><div class="n">{{ n_isolated }}</div><div class="l">Hosts isolated</div></div>{% endif %}
   <div class="tile"><div class="n">{{ clients|length }}</div><div class="l">Managed clients</div></div>
 </div>
+
+{% if at_risk %}
+<div class="section-head" style="margin-top:4px"><h2>SLA clocks running out</h2><span class="count">{{ at_risk|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Clock</th><th>Sev</th><th>Client</th><th>Alert</th><th>Host</th><th>Target</th></tr></thead>
+  <tbody>
+  {% for a in at_risk %}{% set st = sla_live[a.id] %}<tr class="{{ 'rowbreach' if st.state == 'breached' }}">
+    <td class="nowrap">{{ slabadge(st) }}</td>
+    <td>{{ sev(a.severity) }}</td>
+    <td class="nowrap"><a href="/clients/{{ a.client_id }}">{{ a.client.name }}</a></td>
+    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a></td>
+    <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+    <td class="nowrap faint">{{ st.phase }} in {{ st.target_minutes }}m</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endif %}
 
 <div class="section-head"><h2>Tool connections</h2></div>
 <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:18px">
@@ -30,7 +57,7 @@
 <div class="panel"><div class="table-wrap">
 {% if alerts %}
 <table>
-  <thead><tr><th>Sev</th><th>Client</th><th>Tool</th><th>Alert</th><th>Host</th><th>Status</th><th>When</th></tr></thead>
+  <thead><tr><th>Sev</th><th>Client</th><th>Tool</th><th>Alert</th><th>Host</th><th>SLA</th><th>Status</th><th>When</th></tr></thead>
   <tbody>
   {% for a in alerts %}<tr>
     <td>{{ sev(a.severity) }}</td>
@@ -38,6 +65,7 @@
     <td class="nowrap">{{ toolchip(a.tool) }}</td>
     <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(90) }}</a>{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}</td>
     <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+    <td class="nowrap">{{ slabadge(sla_live[a.id]) }}</td>
     <td class="nowrap faint">{{ a.status }}</td>
     <td class="nowrap faint">{{ a.occurred_at.strftime('%b %d %H:%M') if a.occurred_at else '' }}</td>
   </tr>{% endfor %}

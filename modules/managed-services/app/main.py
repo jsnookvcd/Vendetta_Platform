@@ -7,6 +7,7 @@ portal showing published alerts and the actions taken, with messaging to the SOC
 NOC and helpdesk. Helpdesk messages become SuperOps tickets."""
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import time
 from pathlib import Path
@@ -20,8 +21,9 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act, sso
-from . import auth, connectors, creds, messaging, oidc, preflight, provision, sync
-from .config import DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, TOOL_NAMES, TOOLS, settings
+from . import auth, connectors, creds, messaging, oidc, preflight, provision, sla, sync
+from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
+                     TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
                  User, get_channel, init_db, utcnow)
 
@@ -226,9 +228,17 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
     channels = db.execute(select(Channel).options(selectinload(Channel.client))
                           .where(Channel.tech_unread > 0).order_by(desc(Channel.updated_at)).limit(8)).scalars().all()
     tools_up = {t: getattr(connectors.get(t), "configured", False) for t in TOOLS}
+    # SLA clocks across the open book, and a per-alert live status for the badges.
+    now = utcnow()
+    sla_live = {a.id: sla.live_status(a, a.client.sla_profile, now) for a in open_alerts}
+    sla_summary = sla.summarize([(a, a.client.sla_profile) for a in open_alerts], now)
+    at_risk = [a for a in open_alerts if sla_live[a.id]["state"] in ("at_risk", "breached")]
+    at_risk.sort(key=lambda a: sla_live[a.id]["remaining_seconds"]
+                 if sla_live[a.id]["remaining_seconds"] is not None else 1e18)
     return render(request, "dashboard.html", user=user, alerts=open_alerts[:25], by_sev=by_sev,
                   n_devices=n_devices, n_online=n_online, n_isolated=n_isolated, clients=clients,
-                  recent_actions=recent_actions, channels=channels, tools_up=tools_up)
+                  recent_actions=recent_actions, channels=channels, tools_up=tools_up,
+                  sla_live=sla_live, sla_summary=sla_summary, at_risk=at_risk[:8], sla=sla)
 
 
 # ---------------------------------------------------------------- clients
@@ -439,8 +449,10 @@ def triage(aid: str, op: str = Form(...), client_note: str = Form(""),
     label = ""
     if op == "acknowledge" and a.status == "open":
         a.status, label = "acknowledged", "Acknowledged"
+        sla.mark_acknowledged(a)
     elif op == "resolve":
         a.status, label = "resolved", "Resolved in console"
+        sla.mark_contained(a)
     elif op == "reopen":
         a.status, label = "open", "Reopened"
     elif op == "publish":
@@ -714,10 +726,29 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
     from . import evidence
 
     chain = evidence.verify_chain(client_chain_records(db, c.id))
+
+    # Client-facing SLA service level: measured over this client's own events in the
+    # last 30 days, against the client's SLA profile. This reads all of the client's
+    # alerts, not just the published subset, so the service number is real; no other
+    # client's data and no internal operator detail is exposed.
+    now = utcnow()
+    window = now - dt.timedelta(days=30)
+    measured = db.execute(
+        select(Alert).where(Alert.client_id == c.id, Alert.received_at >= window)
+    ).scalars().all()
+    pairs = [(a, c.sla_profile) for a in measured]
+    sla_summary = sla.summarize(pairs, now)
+    sla_stats = sla.response_stats(pairs)
+    sla_profile_name = SLA_PROFILE_NAMES.get(c.sla_profile, c.sla_profile)
+    sla_on = c.sla_profile != "monitor" and (sla_summary["graded"] > 0 or any(
+        sla.governed(c.sla_profile, s_) for s_ in SEVERITIES))
+    alert_sla = {a.id: sla.adherence(a, c.sla_profile) for a in alerts}
     return render(request, "portal.html", user=ident.email, portal=True, client=c,
                   open_alerts=open_alerts, resolved=resolved, feed=feed, channels=channels,
                   n_devices=len(devices), n_online=sum(1 for d in devices if d.status == "online"),
-                  exec_view=ident.is_executive, by_sev=by_sev, chain=chain)
+                  exec_view=ident.is_executive, by_sev=by_sev, chain=chain,
+                  sla_summary=sla_summary, sla_stats=sla_stats, sla_profile_name=sla_profile_name,
+                  sla_on=sla_on, alert_sla=alert_sla, sla=sla)
 
 
 @app.get("/portal/actions/proof.json")

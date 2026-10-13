@@ -18,6 +18,34 @@ WORKSTREAMS = [
 SEVERITIES = ["info", "low", "medium", "high", "critical"]
 SEVERITY_ORDER = {s: i for i, s in enumerate(SEVERITIES)}
 
+# Service-level targets in minutes, as (acknowledge, contain) per severity. A profile
+# is assigned per client so a premium account can carry tighter commitments and a
+# client still in onboarding can run with no SLA clock. None means no target for that
+# phase at that severity (an info finding has no contain clock, for example).
+SLA_PROFILES: dict[str, dict[str, tuple[int | None, int | None]]] = {
+    "standard": {
+        "critical": (15, 60),
+        "high": (30, 240),
+        "medium": (120, 1440),
+        "low": (480, None),
+        "info": (None, None),
+    },
+    "priority": {
+        "critical": (10, 30),
+        "high": (20, 120),
+        "medium": (60, 480),
+        "low": (240, None),
+        "info": (None, None),
+    },
+    "monitor": {s: (None, None) for s in SEVERITIES},  # onboarding/validation: no clock
+}
+SLA_PROFILE_NAMES = {
+    "standard": "Standard",
+    "priority": "Priority",
+    "monitor": "Monitoring only",
+}
+DEFAULT_SLA_PROFILE = "standard"
+
 TOOLS = ["superops", "sentinelone", "crowdstrike", "huntress", "acronis"]
 TOOL_NAMES = {
     "superops": "SuperOps RMM",

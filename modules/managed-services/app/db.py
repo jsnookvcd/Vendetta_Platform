@@ -60,6 +60,8 @@ class Client(Base):
     executive_emails: Mapped[str] = mapped_column(String(1000), default="")
     # Set when this client is provisioned from the platform control plane.
     platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    # Which SLA profile governs this client's alert clocks (see config.SLA_PROFILES).
+    sla_profile: Mapped[str] = mapped_column(String(20), default="standard")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -130,6 +132,12 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | acknowledged | resolved
     tool_status: Mapped[str] = mapped_column(String(60), default="")
     occurred_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # SLA clock anchors. received_at is when the alert first entered our queue (the
+    # clock start); acknowledged_at and contained_at are when a responder first
+    # triaged it and first contained it, filled on the triage/action that does so.
+    received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    acknowledged_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    contained_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     synced_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     link: Mapped[str] = mapped_column(Text, default="")
@@ -290,6 +298,12 @@ def init_db() -> None:
         conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_act BOOLEAN DEFAULT true"))
         conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_approve BOOLEAN DEFAULT false"))
         conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS approver VARCHAR(320) DEFAULT ''"))
+        # SLA: per-client profile and per-alert clock anchors.
+        conn.execute(_text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS sla_profile VARCHAR(20) DEFAULT 'standard'"))
+        conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ"))
+        conn.execute(_text("UPDATE alerts SET received_at = COALESCE(received_at, synced_at, occurred_at, now())"))
+        conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ"))
+        conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS contained_at TIMESTAMPTZ"))
 
 
 # ---------------------------------------------------------------- chain of custody

@@ -332,3 +332,20 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .pill-warn { color: #ffc96b; border-color: #6a5224; background: rgba(106,82,36,0.14); }
 .appr { font-size: 12px; margin: 0 4px; max-width: 150px; }
 .btn-xs { font-size: 11px; padding: 2px 7px; }
+
+/* ---------------------------------------------------------------- SLA clocks */
+.tile.warn { border-color: #6a5224; }
+.tile.warn .n { color: var(--med); }
+.slachip {
+  display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.01em;
+  border-radius: 4px; padding: 2px 7px; white-space: nowrap; text-transform: capitalize;
+  border: 1px solid var(--line-2); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.sla-ok { color: #8fd98a; border-color: #2f5a34; background: rgba(47,90,52,0.12); }
+.sla-risk { color: #ffc96b; border-color: #6a5224; background: rgba(106,82,36,0.16); }
+.sla-breached { color: #ff9ba6; border-color: var(--brand-dim); background: rgba(224,18,47,0.14); }
+.sla-done { color: var(--faint); border-color: var(--line-2); }
+tr.rowbreach { background: rgba(224,18,47,0.05); }
+.sla-metric { display: flex; align-items: baseline; gap: 8px; }
+.sla-metric .big { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.adh-good { color: #8fd98a; } .adh-mid { color: var(--med); } .adh-bad { color: var(--brand-2); }
