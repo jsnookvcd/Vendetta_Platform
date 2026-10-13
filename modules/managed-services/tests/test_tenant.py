@@ -117,3 +117,21 @@ def test_admin_session_still_reaches_staff_routes(admin):
     assert admin.get("/").status_code == 200
     assert admin.get(f"/clients/{a.id}").status_code == 200
     assert admin.get("/api/module", headers={"Authorization": f"Bearer {auth.api_token()}"}).status_code == 200
+
+
+def test_oidc_refuses_ambiguous_domain(client):
+    from app import oidc
+    from app.db import Client
+    a, b = _two_clients()
+    aid, bid = a.id, b.id
+    db = SessionLocal()
+    ca, cb = db.get(Client, aid), db.get(Client, bid)
+    ca.portal_enabled = cb.portal_enabled = True
+    ca.portal_domains = cb.portal_domains = "shared.example"
+    db.commit()
+    assert oidc._map_identity({"email": "user@shared.example"}) is None  # ambiguous: refused
+    db = SessionLocal()
+    db.get(Client, bid).portal_domains = "bravo.example"
+    db.commit()
+    mapped = oidc._map_identity({"email": "cfo@shared.example"})
+    assert mapped is not None and mapped[1] == "client" and mapped[2] == aid

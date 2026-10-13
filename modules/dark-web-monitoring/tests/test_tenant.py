@@ -77,3 +77,21 @@ def test_auth_backstop_refuses_client_session(client):
         assert getattr(e.value, "status_code", None) == 403
     good = types.SimpleNamespace(cookies={}, headers={"authorization": f"Bearer {auth.api_token()}"})
     assert auth.api_user(good) == "api"
+
+
+def test_oidc_refuses_ambiguous_domain(client):
+    from app import oidc
+    from app.db import Client
+    a, b = _two_clients()
+    aid, bid = a.id, b.id
+    db = SessionLocal()
+    ca, cb = db.get(Client, aid), db.get(Client, bid)
+    ca.portal_enabled = cb.portal_enabled = True
+    ca.portal_domains = cb.portal_domains = "shared.example"
+    db.commit()
+    assert oidc._map_identity({"email": "user@shared.example"}) is None  # ambiguous: refused
+    db = SessionLocal()
+    db.get(Client, bid).portal_domains = "bravo.example"
+    db.commit()
+    mapped = oidc._map_identity({"email": "cfo@shared.example"})
+    assert mapped is not None and mapped[1] == "client" and mapped[2] == aid

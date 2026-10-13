@@ -66,7 +66,7 @@ The platform has these role families. A module enforces the ones relevant to it.
 - breach_counsel: privileged access to findings tied to a counsel-directed IR case.
 - partner_carrier: scoped access for a reseller or insurance carrier; no access by default.
 
-Internal identity comes from Entra ID SSO (by email domain, allowlist or group); client identity is mapped from the signing-in user's email domain to a client that has the portal enabled.
+Internal identity comes from Entra ID SSO (by email domain, allowlist or group); client identity is mapped from the signing-in user's email domain to the one client that has the portal enabled for that domain. A portal domain belongs to a single client: the control plane refuses assigning a domain already used by another active client, and at sign-in a domain that somehow matches more than one client is refused rather than guessed, so a user is never mapped into the wrong tenant.
 
 ## Tenant isolation
 

@@ -161,3 +161,19 @@ def test_module_on_off(client):
     finally:
         settings.module_enabled = True
     assert client.get("/login").status_code == 200
+
+
+def test_portal_domain_must_be_unique_across_clients(admin):
+    a = _client(admin, "Alpha")
+    b = _client(admin, "Bravo")
+    admin.post(f"/clients/{a.id}/edit", data={"portal_domains": "shared.example", "active": "true"})
+    # Bravo cannot take the same domain
+    r = admin.post(f"/clients/{b.id}/edit", data={"portal_domains": "shared.example", "active": "true"},
+                   follow_redirects=False)
+    assert "err=" in r.headers["location"]
+    db = SessionLocal()
+    assert db.get(Client, b.id).portal_domains == ""  # not saved
+    # a different domain is fine
+    r = admin.post(f"/clients/{b.id}/edit", data={"portal_domains": "bravo.example", "active": "true"},
+                   follow_redirects=False)
+    assert "msg=" in r.headers["location"]

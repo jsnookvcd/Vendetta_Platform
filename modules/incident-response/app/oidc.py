@@ -70,16 +70,22 @@ def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
         admins = {e.strip().lower() for e in settings.admin_emails.split(",") if e.strip()}
         return email, ("admin" if email in admins else "analyst"), None
 
-    # Client portal: match the email domain to an enabled client.
+    # Client portal: match the email domain to an enabled client. A domain that
+    # matches more than one client is ambiguous and is refused, never guessed, so a
+    # user can never be mapped into the wrong tenant.
     db = SessionLocal()
     try:
         rows = db.execute(select(Client).where(Client.portal_enabled.is_(True), Client.active.is_(True))).scalars().all()
-        for c in rows:
-            domains = {d.strip().lower() for d in (c.portal_domains or "").split(",") if d.strip()}
-            if domain in domains:
-                return email, "client", c.id
+        matches = [c for c in rows
+                   if domain in {d.strip().lower() for d in (c.portal_domains or "").split(",") if d.strip()}]
     finally:
         db.close()
+    if len(matches) == 1:
+        return email, "client", matches[0].id
+    if len(matches) > 1:
+        log.warning("oidc: %s domain %s maps to %d clients; refusing sign-in (ambiguous tenant)",
+                    email, domain, len(matches))
+        return None
     log.warning("oidc: %s not internal and no enabled client portal for domain %s", email, domain)
     return None
 

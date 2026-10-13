@@ -223,10 +223,30 @@ def client_page(cid: str, request: Request, user: str = auth.RequireUser, db: Se
 def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form(""), active: bool = Form(False),
                 user: str = auth.RequireUser, db: Session = Depends(get_db)):
     c = _get_client(db, cid)
+    wanted = {d.strip().lower() for d in portal_domains.split(",") if d.strip()}
+    # A portal domain must belong to one client only; two clients sharing a domain
+    # would make portal sign-in ambiguous, so refuse it here at the source.
+    clash = _domain_clash(db, cid, wanted)
+    if clash:
+        return _back(f"/clients/{cid}", False,
+                     f"Portal domain {clash[0]} is already used by {clash[1]}. A domain belongs to one client.")
     c.industry, c.portal_domains, c.active = industry.strip(), portal_domains.strip(), active
     db.commit()
     _audit(db, user, "client.edit", c.name)
     return _back(f"/clients/{cid}", True, "Client saved.")
+
+
+def _domain_clash(db: Session, cid: str, wanted: set[str]) -> tuple[str, str] | None:
+    """Return (domain, other client name) if any wanted portal domain is already
+    used by a different active client, else None."""
+    if not wanted:
+        return None
+    for other in db.execute(select(Client).where(Client.id != cid, Client.active.is_(True))).scalars().all():
+        theirs = {d.strip().lower() for d in (other.portal_domains or "").split(",") if d.strip()}
+        overlap = wanted & theirs
+        if overlap:
+            return sorted(overlap)[0], other.name
+    return None
 
 
 @app.post("/clients/{cid}/modules/{key}")
