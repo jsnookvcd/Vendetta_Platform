@@ -2,8 +2,8 @@
 per-module bearer tokens. A SQLAlchemy type transparently encrypts on write and
 decrypts on read, so application code keeps handling plain strings.
 
-The key comes from PLATFORM_ENCRYPTION_KEY (a Fernet key, urlsafe base64 of 32
-bytes). When unset, a key is derived from secret_key so a deployment still protects
+The key comes from ENCRYPTION_KEY (a Fernet key, urlsafe base64 of 32 bytes). When
+unset, a key is derived from secret_key so a deployment still protects
 its own data; production should set a dedicated key so it can be rotated and so the
 tokens are not readable from the session secret alone.
 
@@ -33,7 +33,7 @@ def _fernet() -> Fernet:
     raw = (settings.encryption_key or "").strip()
     if raw:
         return Fernet(raw.encode())
-    log.warning("platform: no PLATFORM_ENCRYPTION_KEY set; deriving a storage key from secret_key. "
+    log.warning("platform: no ENCRYPTION_KEY set; deriving a storage key from secret_key. "
                 "Set a dedicated key in production.")
     key = base64.urlsafe_b64encode(hashlib.sha256(b"vendetta-platform-enc-v1:" + settings.secret_key.encode()).digest())
     return Fernet(key)

@@ -39,7 +39,37 @@ aws ssm put-parameter --type String --name /vendetta/managed-services/ACTIONS_RE
   --value true
 ```
 
-Reboot the instance (or re-run the deploy) so it picks up the key and renders each
+### Signing and encryption keys
+
+Generate these once, before any real data lands, and store them where you keep your
+most sensitive secrets. If a key is absent the module derives a working key from its
+`SECRET_KEY` and logs a warning, which is fine for a demo but means the key cannot be
+backed up or rotated on its own. Set a dedicated key for each so it can be.
+
+```bash
+# Chain-of-custody signing key for the IR hub and managed services (32 bytes hex).
+# A separate value per module is fine; each signs its own chain.
+aws ssm put-parameter --type SecureString --name /vendetta/incident-response/EVIDENCE_SIGNING_KEY \
+  --value "$(openssl rand -hex 32)"
+aws ssm put-parameter --type SecureString --name /vendetta/managed-services/EVIDENCE_SIGNING_KEY \
+  --value "$(openssl rand -hex 32)"
+
+# At-rest encryption key for the control plane (Fernet: urlsafe base64 of 32 bytes).
+# The parameter basename is rendered into the module's .env verbatim, so it must be
+# ENCRYPTION_KEY to match the setting the control plane reads.
+aws ssm put-parameter --type SecureString --name /vendetta/platform/ENCRYPTION_KEY \
+  --value "$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+```
+
+Treat all three as permanent. The evidence key is what proves a case timeline or an
+action log was signed by Vendetta, so changing it makes every record signed under the
+old key fail verification unless you keep the old public key to verify historical
+proofs. The encryption key is what decrypts the stored module tokens, so losing it
+means re-entering those tokens and changing it without a re-encryption pass makes the
+existing ones unreadable. Back them up before go-live, and rotate only with a plan to
+retain prior evidence public keys and re-encrypt under a new encryption key.
+
+Reboot the instance (or re-run the deploy) so it picks up the keys and renders each
 `.env`. Give it a few minutes to clone, build and start.
 
 ## 2. Verify the deployment
@@ -151,5 +181,6 @@ SSO per each module's `.env.example`.
 - Live Entra SSO and the dark web Tor path have not been exercised against the real
   services yet; test them on the deployed host.
 - Per-tech RBAC beyond admin/analyst/client.
-- The client-executive vs client-technical portal split.
 - A real `terraform plan` against the target account before the first apply.
+- The four planned modules (MDR, network operations, pentest, vulnerability
+  management) are still scaffolds.
