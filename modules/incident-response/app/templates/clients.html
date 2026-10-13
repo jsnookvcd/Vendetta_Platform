@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Clients and retainers{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
+<form class="row" method="post" action="/clients">
+  <label class="field">Client name<input name="name" required style="min-width:240px"></label>
+  <label class="field">Industry<input name="industry" placeholder="credit union"></label>
+  <button class="btn btn-primary">Add client</button>
+</form>
+</div>
+<div class="panel"><div class="table-wrap">
+{% if clients %}
+<table>
+  <thead><tr><th>Client</th><th>Industry</th><th>Retainer</th><th>Hours remaining</th><th>SLA</th><th>Open cases</th><th>Portal</th></tr></thead>
+  <tbody>
+  {% for c in clients %}{% set open = c.cases|selectattr('status','ne','closed')|list %}<tr>
+    <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+    <td>{{ c.industry }}</td>
+    <td>{% if c.retainer and c.retainer.active %}<span class="ok-txt">{{ c.retainer.tier or 'active' }}</span>{% else %}<span class="faint">none</span>{% endif %}</td>
+    <td class="num">{{ c.retainer.hours_remaining if c.retainer and c.retainer.active else '' }}</td>
+    <td class="num">{{ (c.retainer.sla_minutes ~ ' min') if c.retainer and c.retainer.active else '' }}</td>
+    <td class="num">{% if open %}<span class="bad-txt">{{ open|length }}</span>{% else %}0{% endif %}</td>
+    <td>{% if c.portal_enabled %}<span class="ok-txt">on</span>{% else %}<span class="faint">off</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No clients yet</h3><p>Add a client above. Escalations from other modules also create the client record automatically if it does not exist.</p></div>{% endif %}
+</div></div>
+{% endblock %}

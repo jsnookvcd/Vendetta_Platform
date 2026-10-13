@@ -227,6 +227,18 @@ def update_profile(cid: str, industry: str = Form(""), country: str = Form(""), 
     return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
+@app.post("/clients/{cid}/case-ref")
+def update_case_ref(cid: str, case_ref: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Point this client's escalations at an open IR case in the engagement hub."""
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    c.case_ref = case_ref.strip()[:100]
+    db.commit()
+    _audit(db, user, "client.case_ref", f"{c.name}: {c.case_ref or '(cleared)'}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
+
+
 @app.get("/clients/{cid}", response_class=HTMLResponse)
 def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     c = db.get(Client, cid)

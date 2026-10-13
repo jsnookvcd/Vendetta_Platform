@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Configuration</h2><span class="count">read from the environment / SSM</span></div>
+<div class="panel pad">
+  <dl class="kv">
+    <dt>Module</dt><dd>{{ 'enabled' if cfg.module_enabled else 'disabled' }}</dd>
+    <dt>Sign-in</dt><dd>{{ cfg.sso }}</dd>
+    <dt>Case numbering</dt><dd class="mono">{{ cfg.case_format }}</dd>
+    <dt>SNS paging</dt><dd>{{ 'configured' if cfg.sns else 'off' }}</dd>
+    <dt>Teams paging</dt><dd>{{ 'configured' if cfg.teams else 'off' }}</dd>
+  </dl>
+</div>
+
+<div class="section-head"><h2>Engagement hub</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 10px">This module is the Vendetta Platform engagement hub. Other modules escalate findings with POST <span class="mono">/api/ir-cases</span>. To connect a module, set its PLATFORM_HUB_URL to this service's URL and its PLATFORM_HUB_TOKEN to the token below.</p>
+  <pre class="body" style="max-height:none">Authorization: Bearer {{ api_token }}</pre>
+  <p class="faint" style="margin:8px 0 0">Endpoints: /api/ir-cases (GET list, POST escalate) · /api/ir-cases/declare · /api/module · docs at /api/docs</p>
+</div>
+{% endblock %}

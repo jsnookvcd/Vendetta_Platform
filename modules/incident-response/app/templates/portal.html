@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% block title %}Incident Response — {{ client.name }}{% endblock %}
+{% block portal %}
+{% set r = client.retainer %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Incident Response<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:1040px; margin:0 auto">
+
+  {% if r and r.active %}
+  <div class="declare-hero" style="margin-bottom:18px">
+    <div class="row" style="align-items:center">
+      <div style="flex:1; min-width:260px">
+        <h2 style="font-size:17px; color:var(--fg); margin-bottom:4px">Need help now?</h2>
+        <p class="muted" style="margin:0">Declaring opens a case immediately and pages your Vendetta responders. Response SLA: {{ r.sla_minutes }} minutes.</p>
+      </div>
+      <form method="post" action="/portal/declare" style="flex:1; min-width:300px">
+        <textarea name="description" placeholder="What is happening? For example: ransom note on file server, users locked out" style="min-height:62px"></textarea>
+        <div style="margin-top:8px"><button class="btn btn-primary">Declare an incident</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="n">{{ r.tier or 'Active' }}</div><div class="l">Retainer</div></div>
+    <div class="tile"><div class="n">{{ r.hours_remaining }}<span class="sub">/{{ r.hours_total }}</span></div><div class="l">Hours remaining</div></div>
+    <div class="tile"><div class="n">{{ r.sla_minutes }}<span class="sub"> min</span></div><div class="l">Response SLA</div></div>
+    <div class="tile"><div class="n">{{ r.readiness|selectattr('done')|list|length }}<span class="sub">/{{ r.readiness|length }}</span></div><div class="l">Readiness items complete</div></div>
+  </div>
+  {% if r.named_responders %}<p class="faint" style="font-size:12.5px; margin:-8px 2px 14px">Your named responders: {{ r.named_responders }}</p>{% endif %}
+  {% endif %}
+
+  <div class="section-head"><h2>Your cases</h2><span class="count">{{ cases|length }}</span></div>
+  <div class="panel"><div class="table-wrap">
+  {% if cases %}
+  <table>
+    <thead><tr><th>Case</th><th>Status</th><th>Title</th><th>Progress</th><th>Opened</th></tr></thead>
+    <tbody>
+    {% for c in cases %}<tr>
+      <td class="nowrap"><a class="casenum" href="/portal/cases/{{ c.id }}">{{ c.number }}</a></td>
+      <td class="nowrap"><span class="cstate cstate-{{ c.status }}">{{ c.status }}</span></td>
+      <td><a href="/portal/cases/{{ c.id }}">{{ c.title }}</a></td>
+      <td class="nowrap"><span class="wsrow">{% for w in c.workstreams %}{{ wsdot(w.status) }}{% endfor %}</span></td>
+      <td class="nowrap faint">{{ c.opened_at.strftime('%b %d, %Y') }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty"><h3>No cases</h3><p>You have no incidents on record. If something happens, declare it above and your responders are paged immediately.</p></div>{% endif %}
+  </div></div>
+</main>
+{% endblock %}

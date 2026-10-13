@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Cases{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
+<form class="row" method="get" action="/cases">
+  <label class="field">Status<select name="status">{% for s in ['active'] + statuses + ['all'] %}<option value="{{ s }}" {{ 'selected' if s==status }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Client<select name="client_id"><option value="">All clients</option>{% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if c.id==client_id }}>{{ c.name }}</option>{% endfor %}</select></label>
+  <button class="btn">Apply filters</button>
+</form>
+</div>
+
+<div class="panel pad" style="margin-bottom:14px">
+<form class="row" method="post" action="/cases">
+  <label class="field">Client<select name="client_id" required>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+  <label class="field">Title<input name="title" required style="min-width:280px" placeholder="Business email compromise, wire fraud attempt"></label>
+  <label class="field">Severity<select name="severity">{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s=='high' }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Type<input name="incident_type" placeholder="BEC, ransomware, insider"></label>
+  <label class="field">Lead<input name="lead" placeholder="responder"></label>
+  <button class="btn btn-primary">Open case</button>
+</form>
+</div>
+
+<div class="panel"><div class="table-wrap">
+{% if cases %}
+<table>
+  <thead><tr><th>Case</th><th>Severity</th><th>Status</th><th>Client</th><th>Title</th><th>Origin</th><th>Workstreams</th><th>Lead</th><th>Opened</th></tr></thead>
+  <tbody>
+  {% for c in cases %}<tr>
+    <td class="nowrap"><a class="casenum" href="/cases/{{ c.id }}">{{ c.number }}</a></td>
+    <td class="nowrap"><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
+    <td class="nowrap"><span class="cstate cstate-{{ c.status }}">{{ c.status }}</span></td>
+    <td class="nowrap"><a href="/clients/{{ c.client_id }}">{{ c.client.name }}</a></td>
+    <td><a href="/cases/{{ c.id }}" class="trunc" style="max-width:280px; display:inline-block; vertical-align:bottom">{{ c.title }}</a>{% if c.privileged %} <span class="lock">privileged</span>{% endif %}</td>
+    <td class="nowrap"><span class="chip">{{ c.origin }}</span>{% if c.source_module %} <span class="faint" style="font-size:12px">{{ c.source_module }}</span>{% endif %}</td>
+    <td class="nowrap"><span class="wsrow">{% for w in c.workstreams %}{{ wsdot(w.status) }}{% endfor %}</span></td>
+    <td class="nowrap">{{ c.lead or '' }}</td>
+    <td class="nowrap faint">{{ c.opened_at.strftime('%b %d, %Y') }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No cases match</h3><p>Widen the status filter to all to see closed cases.</p></div>{% endif %}
+</div></div>
+{% endblock %}

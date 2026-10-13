@@ -1,13 +1,13 @@
 # Vendetta Platform
 
-The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense delivery. It is built as a set of modules around a shared engagement hub, each covering one service line and each able to be turned on or off per deployment. Dark Web Monitoring is the first module in production and is the reference implementation that the others follow.
+The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense delivery. It is built as a set of modules around a shared engagement hub, each covering one service line and each able to be turned on or off per deployment. Dark Web Monitoring is the first module in production and is the reference implementation that the others follow. Incident Response is the engagement hub the other modules escalate into.
 
 ## Modules
 
 - dark-web-monitoring — leak-site, forum, credential and certificate monitoring with evidence preservation and a client portal. In production. See modules/dark-web-monitoring.
 - vulnerability-management — scan ingest, enrichment and risk scoring, with findings and client-owned remediation status. Wraps the existing Go scanner service. Planned.
 - penetration-testing — engagement findings as records (severity, asset, evidence, remediation, retest), with the report rendered from them at close. Planned.
-- incident-response — IR cases and retainers; the engagement hub spine, with the five-workstream case template and one-button incident declaration. Planned.
+- incident-response — IR cases and retainers; the engagement hub spine, with the five-workstream case template, one-button incident declaration, a client portal and the escalation API. Built; first deploy pending.
 - mdr — managed detection and response: investigations with verdicts and analyst actions rather than raw alerts, convertible to an IR case. Planned.
 - network-operations — managed network and infrastructure operations: device and service health, change and maintenance tracking. Planned.
 

@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}{{ case.number }}{% endblock %}
+{% block portal %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Incident Response<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <a href="/portal" class="faint" style="font-size:12px">All cases</a> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:1040px; margin:0 auto">
+  <div class="title-row">
+    <span class="casenum" style="font-size:14px">{{ case.number }}</span>
+    <span class="cstate cstate-{{ case.status }}">{{ case.status }}</span>
+  </div>
+  <div class="title-row"><h1>{{ case.title }}</h1></div>
+  <p class="faint" style="margin:2px 0 14px">Opened {{ case.opened_at.strftime('%b %d, %Y %H:%M') }} UTC{% if case.lead %}, lead responder {{ case.lead }}{% endif %}</p>
+
+  <div class="section-head"><h2>Progress</h2></div>
+  <div class="wsgrid">
+    {% for w in case.workstreams %}
+    <div class="wscard ws-{{ w.status }}">
+      <h3>{{ w.name }}</h3>
+      <div class="state" style="text-transform:capitalize">{{ w.status.replace('_',' ') }}</div>
+      {% if w.client_visible_note %}<p class="muted" style="font-size:12.5px; margin:8px 0 0">{{ w.client_visible_note }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if case.privileged %}
+  <p class="faint" style="font-size:12.5px; margin-top:16px; max-width:70ch">This matter is being handled at the direction of counsel. Progress is shown at the milestone level; please direct questions about details to your counsel or your Vendetta lead.</p>
+  {% else %}
+  <div class="section-head"><h2>Updates</h2></div>
+  <div class="panel">
+    {% if updates %}
+    <ul class="timeline">
+      {% for u in updates %}<li class="k-{{ u.kind }}"><div class="meta">{{ u.at.strftime('%b %d %H:%M') }}{% if u.workstream %} · {{ u.workstream }}{% endif %}</div>{{ u.note }}</li>{% endfor %}
+    </ul>
+    {% else %}<div class="empty"><p>No updates shared yet.</p></div>{% endif %}
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

@@ -1,38 +1,51 @@
-# Vendetta Platform module descriptor. Status: planned.
+# Vendetta Platform module descriptor.
 # This module is the engagement hub spine: it RECEIVES escalations from the other
-# modules and is the system of record for clients and IR cases.
-# See /docs/ARCHITECTURE.md and /modules/dark-web-monitoring (reference).
+# modules and is the system of record for clients, retainers and IR cases.
+# See /docs/ARCHITECTURE.md and README.md in this directory.
 module:
   name: incident-response
   display_name: Incident Response and Case Management
   platform: Vendetta Platform
   owner: Vendetta Cloud Team
   service_lines: [incident-response]
-  status: planned
+  status: in-progress          # built and tested; first deploy pending
   enablement: MODULE_ENABLED
-  role: engagement-hub        # the spine other modules escalate into
+  role: engagement-hub         # the spine other modules escalate into
+  client_portal: per-client    # portal_enabled + portal_domains on the client
 
 case_model:
-  id: case_id                 # firm-wide running sequence; client and incident type not in the ID
-  workstreams:                # fixed five-workstream template
+  id: number                   # firm-wide running sequence, CASE_PREFIX-CASE_YEAR-seq; client and incident type never in the ID
+  statuses: [open, contained, eradicated, recovered, closed]
+  workstreams:                 # fixed five-workstream template, created on every case
     - Scoping and Containment
     - Forensics and Analysis
     - Recovery and Restoration
     - Notification and Legal
     - Resilience and Hardening
-  retainers: true             # GetZero retainers; one-button incident declaration
-  deliverable_issuing_line: "Incident Response"   # counsel-directed privileged work
+  workstream_statuses: [not_started, in_progress, blocked, done]
+  origins: [manual, declared, escalated]
+  privileged: true             # counsel-directed cases show the client milestones only
+  retainers: true              # GetZero retainers; one-button incident declaration
+  deliverable_issuing_line: "Incident Response"
 
 api:
   module_manifest: GET /api/module
   cases: GET /api/ir-cases
-  open_case: POST /api/ir-cases          # modules escalate findings here
+  open_case: POST /api/ir-cases          # modules escalate findings here (link-or-open)
   declare_incident: POST /api/ir-cases/declare
+  docs: /api/docs
+  auth: Bearer token from the settings page
+
+paging:
+  sns: SNS_TOPIC_ARN
+  teams: TEAMS_WEBHOOK_URL
+  case_links: PUBLIC_URL
 
 roles:
-  admin: full
-  analyst: full
-  client_executive: case_milestones
-  client_technical: case_detail
-  breach_counsel: privileged_full
-  partner_carrier: scoped_panel
+  admin: full                  # built
+  analyst: full                # built
+  client: case_milestones      # built: portal, scoped to own client, internal-only and privileged detail hidden
+  client_executive: case_milestones   # planned split of the client role
+  client_technical: case_detail       # planned
+  breach_counsel: privileged_full     # planned
+  partner_carrier: scoped_panel       # planned

@@ -4,6 +4,7 @@
    color, the severity ramp, the brand rail and layout, not from a typeface. */
 
 :root {
+  color-scheme: dark;
   --bg: #0A0D13;
   --bg-2: #0E131B;
   --panel: #141A24;
@@ -53,7 +54,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 code, .mono { font-family: var(--mono); font-size: 0.86em; }
 
 /* ---------------------------------------------------------------- app shell */
-.app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: 100vh; }
+.app { display: grid; grid-template-columns: var(--rail-w) 1fr; min-height: 100vh;
+  /* rail colour runs the full page height even past the sticky rail */
+  background: linear-gradient(90deg, var(--bg-2) calc(var(--rail-w) - 1px), var(--line) calc(var(--rail-w) - 1px) var(--rail-w), transparent var(--rail-w)); }
 
 .rail {
   background: var(--bg-2);
@@ -183,7 +186,7 @@ td .sub { color: var(--faint); font-size: 12px; }
 /* ---------------------------------------------------------------- forms */
 input, select, textarea, button { font: inherit; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-input[type=text], input[type=password], input[type=number], input:not([type]), select, textarea {
+input[type=text], input[type=password], input[type=number], input[type=date], input[type=email], input:not([type]), select, textarea {
   background: var(--bg-2); color: var(--fg); border: 1px solid var(--line-2);
   border-radius: var(--radius-input); padding: 8px 10px;
 }
@@ -243,7 +246,7 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 860px) {
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: 1fr; background: none; }
   .rail { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; }
   .rail .foot, .brand .name span { display: none; }
   .nav { flex-direction: row; padding: 8px; }

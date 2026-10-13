@@ -1,0 +1,74 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+{% set r = client.retainer %}
+<div class="title-row">
+  <h1>{{ client.name }}</h1>
+  {% if client.industry %}<span class="chip">{{ client.industry }}</span>{% endif %}
+  {% if r and r.active %}<span class="ok-txt">retainer {{ r.tier }}</span>{% endif %}
+</div>
+<div class="actions"><a class="btn btn-sm btn-primary" href="/declare">Declare incident</a></div>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Cases</h2><span class="count">{{ cases|length }}</span></div>
+    <div class="panel"><div class="table-wrap">
+    {% if cases %}
+    <table><thead><tr><th>Case</th><th>Severity</th><th>Status</th><th>Title</th><th>Workstreams</th><th>Opened</th></tr></thead><tbody>
+    {% for c in cases %}<tr>
+      <td class="nowrap"><a class="casenum" href="/cases/{{ c.id }}">{{ c.number }}</a></td>
+      <td class="nowrap"><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
+      <td class="nowrap"><span class="cstate cstate-{{ c.status }}">{{ c.status }}</span></td>
+      <td><a href="/cases/{{ c.id }}">{{ c.title }}</a></td>
+      <td class="nowrap"><span class="wsrow">{% for w in c.workstreams %}{{ wsdot(w.status) }}{% endfor %}</span></td>
+      <td class="nowrap faint">{{ c.opened_at.strftime('%b %d, %Y') }}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty"><p>No cases for this client.</p></div>{% endif %}
+    </div></div>
+
+    <div class="section-head" id="readiness"><h2>Readiness</h2>{% if r %}<span class="count">{{ r.readiness|selectattr('done')|list|length }} of {{ r.readiness|length }} complete</span>{% endif %}</div>
+    <div class="panel pad">
+    {% if r %}
+      <ul class="ready">
+        {% for it in r.readiness %}<li>
+          <form class="inline" method="post" action="/clients/{{ client.id }}/readiness"><input type="hidden" name="index" value="{{ loop.index0 }}"><button class="btn btn-sm btn-ghost" aria-label="Toggle readiness item">{{ 'Undo' if it.done else 'Mark done' }}</button></form>
+          <span class="{{ 'done' if it.done }}">{{ it.item }}</span>
+        </li>{% endfor %}
+      </ul>
+      <form class="row" method="post" action="/clients/{{ client.id }}/readiness" style="margin-top:10px">
+        <label class="field">Add readiness item<input name="new_item" style="min-width:300px"></label>
+        <button class="btn btn-sm">Add</button>
+      </form>
+    {% else %}<p class="faint" style="margin:0">Readiness items are tracked once a retainer is set up.</p>{% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="section-head"><h2>Retainer</h2></div>
+    <div class="panel pad retcard">
+      <form method="post" action="/clients/{{ client.id }}/retainer">
+        <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="active" value="true" {{ 'checked' if r and r.active }}> Active retainer</label>
+        <label class="field" style="margin-top:9px">Tier<input name="tier" value="{{ r.tier if r else '' }}" placeholder="GetZero tier"></label>
+        <div class="row" style="margin-top:9px">
+          <label class="field">Hours<input name="hours_total" type="number" value="{{ r.hours_total if r else 0 }}" style="width:84px"></label>
+          <label class="field">Used<input name="hours_used" type="number" value="{{ r.hours_used if r else 0 }}" style="width:84px"></label>
+          <label class="field">SLA min<input name="sla_minutes" type="number" value="{{ r.sla_minutes if r else 60 }}" style="width:84px"></label>
+        </div>
+        <label class="field" style="margin-top:9px">Named responders<input name="named_responders" value="{{ r.named_responders if r else '' }}" placeholder="first is default lead"></label>
+        <label class="field" style="margin-top:9px">Renews on<input name="renews_on" type="date" value="{{ r.renews_on.isoformat() if r and r.renews_on else '' }}"></label>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save retainer</button></div>
+      </form>
+    </div>
+
+    <div class="section-head"><h2>Client portal</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/portal">
+        <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Enable portal</label>
+        <label class="field" style="margin-top:9px">Allowed email domains<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org"></label>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal users see case milestones and their retainer. Retainer clients also get one-button incident declaration.</p>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save portal access</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

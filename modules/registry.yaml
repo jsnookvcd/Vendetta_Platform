@@ -28,9 +28,12 @@ modules:
   - name: incident-response
     display_name: Incident Response and Case Management
     service_lines: [incident-response]
-    status: planned
+    status: in-progress
     enablement: MODULE_ENABLED
-    notes: The engagement hub spine; IR cases, retainers, five-workstream template, incident declaration.
+    manifest: /api/module
+    escalation: /api/ir-cases
+    role: engagement-hub
+    notes: Built and tested; first deploy pending. IR cases, retainers, five-workstream template, incident declaration, client portal.
 
   - name: mdr
     display_name: Managed Detection and Response

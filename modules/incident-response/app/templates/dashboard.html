@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block body %}
+{% if n_clients == 0 %}
+<div class="panel"><div class="empty">
+  <h3>Add your first client to start running cases</h3>
+  <p>Clients are the system of record here. Add one, set up their retainer if they have one, and cases opened by your team, declared by the client, or escalated from another module will land against them.</p>
+  <p style="margin-top:14px"><a class="btn btn-primary" href="/clients">Add a client</a></p>
+</div></div>
+{% else %}
+<div class="tiles">
+  <div class="tile {{ 'alert' if by_status.open }}"><div class="n">{{ by_status.open }}</div><div class="l">Open, not yet contained</div></div>
+  <div class="tile"><div class="n">{{ by_status.contained }}</div><div class="l">Contained</div></div>
+  <div class="tile"><div class="n">{{ by_status.eradicated }}</div><div class="l">Eradicated</div></div>
+  <div class="tile"><div class="n">{{ by_status.recovered }}</div><div class="l">Recovered, closing out</div></div>
+  <div class="tile"><div class="n">{{ retainers|length }}</div><div class="l">Active retainers</div></div>
+</div>
+
+<div class="section-head"><h2>Active cases</h2><span class="count">{{ cases|length }}</span><span class="grow"></span><a href="/cases" class="faint">All cases</a></div>
+<div class="panel"><div class="table-wrap">
+{% if cases %}
+<table>
+  <thead><tr><th>Case</th><th>Severity</th><th>Status</th><th>Client</th><th>Title</th><th>Workstreams</th><th>Lead</th><th>Opened</th></tr></thead>
+  <tbody>
+  {% for c in cases %}<tr>
+    <td class="nowrap"><a class="casenum" href="/cases/{{ c.id }}">{{ c.number }}</a></td>
+    <td class="nowrap"><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span></td>
+    <td class="nowrap"><span class="cstate cstate-{{ c.status }}">{{ c.status }}</span></td>
+    <td class="nowrap"><a href="/clients/{{ c.client_id }}">{{ c.client.name }}</a></td>
+    <td><a href="/cases/{{ c.id }}" class="trunc" style="max-width:300px; display:inline-block; vertical-align:bottom">{{ c.title }}</a>{% if c.privileged %} <span class="lock">privileged</span>{% endif %}{% if c.origin != 'manual' %} <span class="chip">{{ c.origin }}{{ ' · ' ~ c.source_module if c.source_module }}</span>{% endif %}</td>
+    <td class="nowrap"><span class="wsrow">{% for w in c.workstreams %}{{ wsdot(w.status) }}{% endfor %}</span></td>
+    <td class="nowrap">{{ c.lead or '' }}</td>
+    <td class="nowrap faint">{{ c.opened_at.strftime('%b %d %H:%M') }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty"><h3>No active cases</h3><p>When an incident is declared, opened by your team, or escalated from another module, it appears here.</p></div>
+{% endif %}
+</div></div>
+
+<div class="section-head"><h2>Latest activity</h2></div>
+<div class="panel">
+{% if recent %}
+<ul class="timeline">
+  {% for u in recent %}<li class="k-{{ u.kind }}">
+    <div class="meta"><a class="casenum" href="/cases/{{ u.case_id }}">{{ u.case.number }}</a> · {{ u.case.client.name }} · {{ u.actor }} · {{ u.at.strftime('%b %d %H:%M') }}{% if u.workstream %} · {{ u.workstream }}{% endif %}</div>
+    {{ u.note }}
+  </li>{% endfor %}
+</ul>
+{% else %}<div class="empty"><p>No activity yet.</p></div>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

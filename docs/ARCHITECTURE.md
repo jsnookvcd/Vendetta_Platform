@@ -41,7 +41,9 @@ The hub is the spine of the platform and the system of record for clients and IR
 - Findings: the hub pulls findings from each enabled module to present a single view per client and to drive client-facing surfaces.
 - Escalation: a module can open or link an IR case for a finding by POSTing to the hub, attaching it to a workstream. IR cases use a fixed five-workstream template: Scoping and Containment, Forensics and Analysis, Recovery and Restoration, Notification and Legal, Resilience and Hardening.
 
-Until the hub is live a module runs standalone; escalation is a no-op gated by PLATFORM_HUB_URL.
+The hub is the incident-response module (modules/incident-response). Escalation is live: POST {PLATFORM_HUB_URL}/api/ir-cases with Bearer PLATFORM_HUB_TOKEN, the token shown on the hub's settings page. The hub resolves the module's client by name, links to the open case named in case_ref or opens a new one, raises but never lowers severity, and records the finding internal-only on the requested workstream. The payload and response are documented in modules/incident-response/README.md. The findings pull is not built yet.
+
+A module whose PLATFORM_HUB_URL is blank runs standalone; escalation is a no-op.
 
 ## Roles
 

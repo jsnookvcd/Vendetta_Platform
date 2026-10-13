@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Declare incident{% endblock %}
+{% block body %}
+<div class="declare-hero" style="max-width:720px">
+  <h1 style="font-size:20px; margin-bottom:6px">Declare an incident</h1>
+  <p class="muted" style="margin:0 0 16px">Opens a numbered case on the five-workstream template, assigns the client's first named responder as lead if they hold a retainer, and pages the on-call channel.</p>
+  <form method="post" action="/declare">
+    <div class="row">
+      <label class="field">Client<select name="client_id" required>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}{{ ' (retainer)' if c.retainer and c.retainer.active }}</option>{% endfor %}</select></label>
+      <label class="field">Severity<select name="severity">{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s=='high' }}>{{ s }}</option>{% endfor %}</select></label>
+    </div>
+    <label class="field" style="margin-top:12px">What is happening<textarea name="description" placeholder="Ransomware note on file server, users locked out since 06:40" required></textarea></label>
+    <div style="margin-top:14px"><button class="btn btn-primary">Declare and page on-call</button></div>
+  </form>
+</div>
+{% endblock %}

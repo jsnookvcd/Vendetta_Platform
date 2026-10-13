@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% block title %}{{ case.number }}{% endblock %}
+{% block body %}
+<div class="title-row">
+  <span class="casenum" style="font-size:14px">{{ case.number }}</span>
+  <span class="sev sev-{{ case.severity }}">{{ case.severity }}</span>
+  <span class="cstate cstate-{{ case.status }}">{{ case.status }}</span>
+  {% if case.privileged %}<span class="lock">privileged{{ ' · ' ~ case.counsel if case.counsel }}</span>{% endif %}
+</div>
+<div class="title-row"><h1>{{ case.title }}</h1></div>
+<p class="faint" style="margin:2px 0 6px">
+  <a href="/clients/{{ case.client_id }}">{{ case.client.name }}</a>
+  {% if case.incident_type %}&nbsp; {{ case.incident_type }}{% endif %}
+  &nbsp; opened {{ case.opened_at.strftime('%b %d, %Y %H:%M') }} UTC
+  &nbsp; origin {{ case.origin }}{{ ' from ' ~ case.source_module if case.source_module }}
+  {% if case.client.retainer and case.client.retainer.active %}&nbsp; retainer {{ case.client.retainer.tier }}, {{ case.client.retainer.hours_remaining }} h remaining, {{ case.client.retainer.sla_minutes }} min SLA{% endif %}
+</p>
+
+<div class="actions">
+  <form class="inline" method="post" action="/cases/{{ case.id }}/status">
+    <select name="status" aria-label="Case status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s==case.status }}>{{ s }}</option>{% endfor %}</select>
+    <button class="btn btn-sm">Set status</button>
+  </form>
+</div>
+
+<div class="section-head" id="ws"><h2>Workstreams</h2><span class="count">the client sees each status and the milestone line</span></div>
+<div class="wsgrid">
+  {% for w in case.workstreams %}
+  <form class="wscard ws-{{ w.status }}" method="post" action="/cases/{{ case.id }}/workstreams/{{ w.id }}">
+    <h3>{{ w.name }}</h3>
+    <select name="status" aria-label="{{ w.name }} status">{% for s in ws_statuses %}<option value="{{ s }}" {{ 'selected' if s==w.status }}>{{ s.replace('_',' ') }}</option>{% endfor %}</select>
+    <label class="field">Owner<input name="owner" value="{{ w.owner }}" placeholder="responder"></label>
+    <label class="field">Milestone for client<textarea name="client_visible_note" placeholder="What the client should see">{{ w.client_visible_note }}</textarea></label>
+    <div style="margin-top:8px"><button class="btn btn-sm">Save</button></div>
+  </form>
+  {% endfor %}
+</div>
+
+<div class="detail-grid" style="margin-top:18px">
+  <div>
+    <div class="section-head" id="timeline"><h2>Timeline</h2><span class="count">{{ case.updates|length }}</span></div>
+    <div class="panel pad" style="margin-bottom:12px">
+      <form method="post" action="/cases/{{ case.id }}/updates">
+        <textarea name="note" placeholder="Log an action, finding or decision" required></textarea>
+        <div class="row" style="margin-top:8px">
+          <label class="field">Workstream<select name="workstream"><option value="">General</option>{% for w in WORKSTREAMS %}<option>{{ w }}</option>{% endfor %}</select></label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="internal_only" value="true" checked> Internal only</label>
+          <button class="btn btn-primary">Add to timeline</button>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <ul class="timeline">
+      {% for u in case.updates %}<li class="k-{{ u.kind }}">
+        <div class="meta">{{ u.at.strftime('%b %d %H:%M') }} · {{ u.actor }}{% if u.workstream %} · {{ u.workstream }}{% endif %}{% if u.internal_only %} · <span class="lock">internal</span>{% endif %}</div>
+        {{ u.note }}
+        {% if u.kind == 'finding' and u.payload and u.payload.finding %}
+        <div class="faint" style="font-size:12px; margin-top:4px">
+          {{ u.payload.finding.type or '' }} · {{ u.payload.finding.severity or '' }}{% if u.payload.finding.matched %} · <span class="mono">{{ u.payload.finding.matched }}</span>{% endif %}
+          {% if u.payload.finding.evidence %} · {{ u.payload.finding.evidence|length }} evidence capture{{ 's' if u.payload.finding.evidence|length != 1 }}{% endif %}
+        </div>
+        {% endif %}
+      </li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-head"><h2>Case details</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/cases/{{ case.id }}/details">
+        <label class="field">Lead responder<input name="lead" value="{{ case.lead }}"></label>
+        <label class="field" style="margin-top:9px">Severity<select name="severity">{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s==case.severity }}>{{ s }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:9px">Incident type<input name="incident_type" value="{{ case.incident_type }}"></label>
+        <label class="field" style="margin-top:9px; flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="privileged" value="true" {{ 'checked' if case.privileged }}> Counsel-directed (privileged)</label>
+        <label class="field" style="margin-top:9px">Breach counsel<input name="counsel" value="{{ case.counsel }}" placeholder="firm, attorney"></label>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Privileged cases show the client milestones only, with no timeline detail, and deliverables issue under the Incident Response line.</p>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save details</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

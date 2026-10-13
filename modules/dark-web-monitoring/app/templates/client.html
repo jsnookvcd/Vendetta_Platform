@@ -12,6 +12,9 @@
   <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/report?days=30" target="_blank">Preview report</a>
   <form class="inline" method="post" action="/clients/{{ client.id }}/toggle"><button class="btn btn-sm">{{ 'Pause monitoring' if client.active else 'Resume monitoring' }}</button></form>
   <form class="inline" method="post" action="/clients/{{ client.id }}/backfill"><input type="hidden" name="days" value="365"><button class="btn btn-sm btn-ghost">Backfill 365 days</button></form>
+  <form class="inline" method="post" action="/clients/{{ client.id }}/case-ref" title="Escalations from this client link to this IR case while it is open">
+    <input name="case_ref" value="{{ client.case_ref }}" placeholder="IR case, e.g. VCD-IR-2026-781" aria-label="IR case reference" style="width:220px"><button class="btn btn-sm btn-ghost">Set case ref</button>
+  </form>
 </div>
 
 <div class="section-head"><h2>Business profile</h2><span class="count">used for initial access broker matching</span></div>
@@ -33,7 +36,7 @@
 <div class="panel pad">
 <form class="row" method="post" action="/clients/{{ client.id }}/portal">
   <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Enable portal</label>
-  <label class="field">Allowed email domains, comma separated<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="riverbendcu.org" style="min-width:300px"></label>
+  <label class="field">Allowed email domains, comma separated<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org" style="min-width:300px"></label>
   <button class="btn btn-primary">Save portal access</button>
 </form>
 <p class="page-intro" style="margin:10px 0 0">When enabled, anyone who signs in with a Microsoft 365 account on one of these domains sees a read-only view of this client's confirmed findings and the exposure report, and nothing else. Leave disabled to keep the client out entirely.</p>
