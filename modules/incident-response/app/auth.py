@@ -43,13 +43,14 @@ def make_session(username: str) -> str:
 
 
 def current_user(request: Request) -> str:
-    tok = request.cookies.get(COOKIE)
-    if not tok:
-        raise HTTPException(status_code=401, detail="login required")
-    try:
-        return _signer.loads(tok, max_age=60 * 60 * 12)["u"]
-    except (BadSignature, KeyError):
-        raise HTTPException(status_code=401, detail="login required")
+    """Identity for staff routes. A valid session that is not an internal user
+    (admin or analyst) is refused, so a client-portal session can never reach a
+    staff route or the service API even if the access gate is bypassed. This is the
+    route-level half of the tenant boundary; the middleware gate is the other."""
+    ident = require_identity(request)
+    if not ident.is_internal:
+        raise HTTPException(status_code=403, detail="internal access only")
+    return ident.email
 
 
 def _session_email(request: Request) -> str | None:
@@ -105,13 +106,25 @@ def require_client(request: Request) -> Identity:
     return ident
 
 
+def require_owned(ident: "Identity", obj, *, extra: bool = True):
+    """The single tenant check every portal detail route goes through: 404 unless
+    the record exists, belongs to the signed-in client, and any extra condition
+    (such as being published) holds. 404 rather than 403 so a client cannot even
+    probe which record ids belong to another tenant."""
+    if obj is None or getattr(obj, "client_id", None) != ident.client_id or not extra:
+        raise HTTPException(status_code=404, detail="not found")
+    return obj
+
+
 def api_token() -> str:
     """Static bearer token derived from SECRET_KEY. Shown on the settings page."""
     return hmac.new(settings.secret_key.encode(), b"api-token-v1", hashlib.sha256).hexdigest()
 
 
 def api_user(request: Request) -> str:
-    """API calls can use the session cookie or the bearer token."""
+    """Service API: the shared bearer token, or an internal staff session. A
+    client-portal session is refused (current_user enforces the internal role), so
+    the API can never return another tenant's data to a client."""
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], api_token()):
         return "api"

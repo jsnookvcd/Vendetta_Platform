@@ -504,8 +504,7 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
 def portal_alert(aid: str, request: Request, ident: auth.Identity = Depends(auth.require_client),
                  db: Session = Depends(get_db)):
     a = _get_alert(db, aid)
-    if a.client_id != ident.client_id or not a.published:
-        raise HTTPException(404)
+    auth.require_owned(ident, a, extra=a.published)
     feed = db.execute(select(ActionLog).where(ActionLog.alert_id == a.id, ActionLog.client_visible.is_(True))
                       .order_by(desc(ActionLog.at))).scalars().all()
     return render(request, "portal_alert.html", user=ident.email, portal=True, client=a.client, a=a, feed=feed)

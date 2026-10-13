@@ -68,6 +68,16 @@ The platform has these role families. A module enforces the ones relevant to it.
 
 Internal identity comes from Entra ID SSO (by email domain, allowlist or group); client identity is mapped from the signing-in user's email domain to a client that has the portal enabled.
 
+## Tenant isolation
+
+The platform is a multi-tenant MSSP system, and the tenant boundary is a security boundary enforced the same way in every module.
+
+- Operators (admin, analyst) work across every client. A client user is bound to one client_id at login and may only reach the portal.
+- The boundary is enforced at two layers. The access-gate middleware confines a client session to the portal. Independently, every staff route and the service API require an internal role at the route itself (current_user and api_user refuse a client session), so a client can never reach another tenant's data even if the gate is bypassed or a new route is added.
+- Every client-facing record carries client_id, and every portal query filters on it. Portal detail routes go through one helper, require_owned, which returns 404 unless the record exists, belongs to the signed-in client, and meets any extra condition (such as being published), so a client cannot even probe which ids belong to another tenant.
+- This is logical multi-tenancy on a shared database per module, with client_id as the tenant key. It is proven, not assumed: each portal-bearing module ships a cross-tenant test suite (two clients, one signed in, asserting no read, probe or action crosses the boundary, plus a direct test of the route-level backstop).
+- Tool tenancy is per client: one MSSP-level credential per vendor, narrowed to each client's slice (SentinelOne site IDs, CrowdStrike child CID via Flight Control, Huntress org, Acronis tenant, SuperOps account). Reads and actions are always scoped to the client's mapping.
+
 ## Enablement
 
 Two switches:

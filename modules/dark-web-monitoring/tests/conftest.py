@@ -11,6 +11,10 @@ TEST_DB = os.environ.get("DARKWEB_TEST_DATABASE_URL", "postgresql+psycopg://dark
 os.environ["DATABASE_URL"] = TEST_DB
 os.environ.setdefault("SECRET_KEY", "test-secret")
 
+import bcrypt  # noqa: E402
+
+os.environ["ADMIN_PASSWORD_HASH"] = bcrypt.hashpw(b"pw", bcrypt.gensalt(4)).decode()
+
 
 def _db_up() -> bool:
     try:
@@ -38,3 +42,19 @@ def fresh_db():
     yield
     close_all_sessions()
     engine.dispose()
+
+
+@pytest.fixture()
+def client(fresh_db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as tc:
+        yield tc
+
+
+@pytest.fixture()
+def admin(client):
+    client.post("/login", data={"username": "admin", "password": "pw", "next": "/"})
+    return client

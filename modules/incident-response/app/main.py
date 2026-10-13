@@ -520,8 +520,7 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
 @app.get("/portal/cases/{cid}", response_class=HTMLResponse)
 def portal_case(cid: str, request: Request, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
     case = _get_case(db, cid)
-    if case.client_id != ident.client_id:
-        raise HTTPException(404)
+    auth.require_owned(ident, case)
     if case.privileged:
         # Counsel-directed cases show milestones only; no timeline detail.
         updates = []
