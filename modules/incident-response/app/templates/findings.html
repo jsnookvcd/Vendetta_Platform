@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}Findings{% endblock %}
+{% block body %}
+<div class="title-row"><h1>Findings{% if scope %}, {{ scope }}{% endif %}</h1></div>
+<p class="faint" style="margin:2px 0 14px">Pulled live from each enabled module. A module that is unreachable is shown below and simply contributes nothing.</p>
+
+<form method="get" action="/findings" class="row" style="margin-bottom:14px; gap:8px">
+  <label class="field">Client
+    <select name="client_id" onchange="this.form.submit()">
+      <option value="">All clients</option>
+      {% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if c.id == client_id }}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button class="btn btn-sm">Filter</button></noscript>
+</form>
+
+<div class="row" style="gap:8px; margin-bottom:12px; flex-wrap:wrap">
+  {% for s in sources %}
+  <span class="toolchip">{{ s.name }}: {% if s.reachable %}{{ s.count }} finding{{ 's' if s.count != 1 }}{% else %}unreachable ({{ s.detail }}){% endif %}</span>
+  {% else %}<span class="faint">No finding sources configured.</span>{% endfor %}
+</div>
+
+<div class="panel"><div class="table-wrap">
+{% if findings %}
+<table>
+  <thead><tr><th>Severity</th><th>Module</th><th>Client</th><th>Type</th><th>Title</th><th>Status</th><th>When</th></tr></thead>
+  <tbody>
+  {% for f in findings %}<tr>
+    <td class="nowrap"><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td class="nowrap faint">{{ f._source }}</td>
+    <td class="nowrap">{{ f.subject.client if f.subject else '' }}</td>
+    <td class="nowrap faint">{{ f.type }}</td>
+    <td>{% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.title }}</a>{% else %}{{ f.title }}{% endif %}</td>
+    <td class="nowrap faint">{{ f.status }}</td>
+    <td class="nowrap faint">{{ (f.created_at or '')[:16] }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No findings</h3><p>No active findings from the configured modules{% if scope %} for {{ scope }}{% endif %}.</p></div>{% endif %}
+</div></div>
+{% endblock %}

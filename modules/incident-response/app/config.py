@@ -51,6 +51,29 @@ class Settings(BaseSettings):
     platform_url: str = ""
     platform_token: str = ""
 
+    # Modules the hub pulls findings from, as a JSON list of
+    # [{"name": "...", "base_url": "https://...", "token": "..."}]. Empty means the
+    # hub shows no cross-module findings (escalation still works regardless).
+    findings_sources: str = ""
+    findings_cache_seconds: int = 60
+
+    def finding_source_list(self) -> list[dict]:
+        import json
+
+        raw = (self.findings_sources or "").strip()
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return []
+        out = []
+        for s in data if isinstance(data, list) else []:
+            if s.get("name") and s.get("base_url"):
+                out.append({"name": s["name"], "base_url": s["base_url"].rstrip("/"),
+                            "token": s.get("token", "")})
+        return out
+
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.entra_client_id and self.entra_tenant_id)

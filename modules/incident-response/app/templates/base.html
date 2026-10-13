@@ -27,6 +27,7 @@
     <nav class="nav">
       <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Dashboard</a>
       <a href="/cases" class="{{ 'active' if p.startswith('/cases') }}">{{ icon('case') }} Cases</a>
+      <a href="/findings" class="{{ 'active' if p.startswith('/findings') }}">{{ icon('grid') }} Findings</a>
       <a href="/declare" class="{{ 'active' if p.startswith('/declare') }}">{{ icon('bolt') }} Declare incident</a>
       <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients and retainers</a>
       <div class="sep"></div>

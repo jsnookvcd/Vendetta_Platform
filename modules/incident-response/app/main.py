@@ -18,7 +18,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, board, hub, notify, oidc, provision
+from . import auth, board, findings as findings_mod, hub, notify, oidc, provision
 from .config import WORKSTREAMS, settings
 from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Task, Workstream,
                  ensure_seq_counter, init_db, open_case, utcnow)
@@ -231,6 +231,35 @@ def case_detail(cid: str, request: Request, user: str = auth.RequireUser, db: Se
     return render(request, "case.html", user=user, case=case, statuses=CASE_STATUSES, ws_statuses=WS_STATUSES,
                   lanes=board.lanes(case), latest=latest, counts=counts, bsum=board.summary(case),
                   today=dt.date.today())
+
+
+@app.get("/findings", response_class=HTMLResponse)
+def findings_page(request: Request, client_id: str = "", user: str = auth.RequireUser,
+                  db: Session = Depends(get_db)):
+    """Cross-module findings pulled live from each enabled module, optionally scoped
+    to one client. Degrades gracefully if a module is unreachable."""
+    if client_id:
+        c = db.get(Client, client_id)
+        if not c:
+            raise HTTPException(404)
+        pulled = findings_mod.for_client(c)
+        scope = c.name
+    else:
+        pulled = findings_mod.pull_all()
+        scope = ""
+    clients = db.execute(select(Client).where(Client.active.is_(True)).order_by(Client.name)).scalars().all()
+    return render(request, "findings.html", user=user, findings=pulled["findings"],
+                  sources=pulled["sources"], clients=clients, scope=scope, client_id=client_id)
+
+
+@app.get("/api/findings-pull")
+def api_findings_pull(client_id: str = "", _: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    if client_id:
+        c = db.get(Client, client_id)
+        if not c:
+            raise HTTPException(404)
+        return JSONResponse(findings_mod.for_client(c))
+    return JSONResponse(findings_mod.pull_all())
 
 
 @app.get("/cases/{cid}/chain/verify")
