@@ -39,11 +39,34 @@ def _pull_one(source: dict, transport: httpx.BaseTransport | None = None) -> dic
         return {"name": name, "reachable": False, "findings": [], "detail": f"unreachable: {type(e).__name__}"}
 
 
+def discover_sources(transport: httpx.BaseTransport | None = None) -> list[dict]:
+    """When FINDINGS_SOURCES is not set, ask the control plane for the finding-serving
+    modules (base URL and token), so sources are configured once on the platform's
+    Connections page. Returns [] if the platform is not configured or unreachable."""
+    if not settings.platform_url:
+        return []
+    headers = {"Authorization": f"Bearer {settings.platform_token}"} if settings.platform_token else {}
+    url = f"{settings.platform_url.rstrip('/')}/api/platform/modules"
+    try:
+        with httpx.Client(timeout=6.0, transport=transport, headers=headers) as http:
+            r = http.get(url)
+        if r.status_code != 200:
+            log.warning("findings: platform module directory HTTP %s", r.status_code)
+            return []
+        return [{"name": m["name"], "base_url": m["base_url"].rstrip("/"), "token": m.get("token", "")}
+                for m in (r.json().get("modules") or []) if m.get("base_url")]
+    except (httpx.HTTPError, ValueError) as e:  # noqa: BLE001
+        log.warning("findings: platform module directory unreachable: %s", type(e).__name__)
+        return []
+
+
 def pull_all(sources: list[dict] | None = None, transport: httpx.BaseTransport | None = None,
              force: bool = False) -> dict:
     """Pull findings from every source, cached per source. Returns
-    {sources: [...], findings: [...]} where each finding carries its source name."""
-    sources = sources if sources is not None else settings.finding_source_list()
+    {sources: [...], findings: [...]} where each finding carries its source name.
+    Sources come from FINDINGS_SOURCES, else from the control-plane module directory."""
+    if sources is None:
+        sources = settings.finding_source_list() or discover_sources(transport)
     now = time.time()
     source_status, findings = [], []
     for s in sources:

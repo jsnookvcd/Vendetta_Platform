@@ -410,6 +410,24 @@ def provision_clients(module: str = "", user: str = Depends(auth.api_user), db: 
     return {"module": module or "all", "clients": out}
 
 
+@app.get("/api/platform/modules")
+def platform_modules(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The directory of finding-serving modules the hub pulls from. Returns each
+    enabled, connected module that serves the shared finding model, with its base
+    URL and bearer token, so finding sources are configured once here (on the
+    Connections page) rather than duplicated in the hub's own config."""
+    from .registry import FINDING_MODULES
+
+    rows = db.execute(select(Module).where(Module.key.in_(FINDING_MODULES))).scalars().all()
+    out = []
+    for m in rows:
+        if not m.base_url or m.status == "planned":
+            continue
+        out.append({"name": m.key, "display_name": m.display_name,
+                    "base_url": m.base_url, "token": m.api_token, "findings_path": "/api/findings"})
+    return {"modules": out}
+
+
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     mods = db.execute(select(Module)).scalars().all()

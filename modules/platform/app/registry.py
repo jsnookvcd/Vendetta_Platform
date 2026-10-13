@@ -15,11 +15,16 @@ DEFAULT_MODULES = [
     ("incident-response", "Incident Response", "engagement-hub", "in-progress", True, 10),
     ("dark-web-monitoring", "Dark Web Monitoring", "managed-security", "production", True, 20),
     ("managed-services", "Managed Services", "managed-security", "in-progress", True, 30),
-    ("vulnerability-management", "Vulnerability Management", "managed-security", "planned", False, 40),
-    ("penetration-testing", "Penetration Testing", "offensive-security", "planned", False, 50),
+    ("vulnerability-management", "Vulnerability Management", "managed-security", "in-progress", True, 40),
+    ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
     ("mdr", "Managed Detection and Response", "managed-security", "planned", False, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
+
+# Modules that serve the shared finding model at /api/findings. The hub pulls from
+# these as its finding sources (discovered via GET /api/platform/modules).
+FINDING_MODULES = {"dark-web-monitoring", "managed-services", "vulnerability-management",
+                   "penetration-testing"}
 
 # key: (display_name, kind, owner_module)
 DEFAULT_TOOLS = [
@@ -50,6 +55,18 @@ PROBE = {
         "manifest": "/api/module",
         "items": "/api/findings",
         "label": "open alerts",
+        "severity_key": "severity",
+    },
+    "vulnerability-management": {
+        "manifest": "/api/module",
+        "items": "/api/findings",
+        "label": "open findings",
+        "severity_key": "severity",
+    },
+    "penetration-testing": {
+        "manifest": "/api/module",
+        "items": "/api/findings",
+        "label": "open findings",
         "severity_key": "severity",
     },
 }

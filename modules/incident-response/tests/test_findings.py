@@ -75,3 +75,30 @@ def test_unreachable_module_degrades_gracefully(client):
 def test_findings_page_renders(admin):
     r = admin.get("/findings")
     assert r.status_code == 200 and "Findings" in r.text
+
+
+# ---------------------------------------------------------------- platform discovery
+def test_discovers_sources_from_platform_when_unset(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "platform_url", "https://platform.local")
+    monkeypatch.setattr(settings, "platform_token", "ptok")
+    monkeypatch.setattr(settings, "findings_sources", "")  # force discovery
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/api/platform/modules":
+            assert req.headers["authorization"] == "Bearer ptok"
+            return httpx.Response(200, json={"modules": [
+                {"name": "vulnerability-management", "base_url": "https://vuln.local", "token": "vtok",
+                 "findings_path": "/api/findings"},
+                {"name": "penetration-testing", "base_url": "https://pentest.local", "token": "ptok2",
+                 "findings_path": "/api/findings"}]})
+        if req.url.path == "/api/findings":
+            if req.url.host == "vuln.local":
+                return httpx.Response(200, json=[_finding("v1", "vulnerability-management", "plat-a", "Alpha")])
+            return httpx.Response(200, json=[_finding("p1", "penetration-testing", "plat-a", "Alpha")])
+        raise AssertionError(req.url)
+
+    out = fm.pull_all(transport=httpx.MockTransport(handler), force=True)
+    names = {s["name"] for s in out["sources"]}
+    assert names == {"vulnerability-management", "penetration-testing"}
+    assert {f["id"] for f in out["findings"]} == {"v1", "p1"}

@@ -93,8 +93,14 @@ four modules are up and the provisioning loop works.
 ## 3. Wire the module endpoints and tokens
 
 On the control plane (`localhost:8300`), open Connections and for each module paste
-its base URL (`http://localhost:8100`, `:8200`, `:8000`) and its bearer token (each
-module's own Settings page). The overview should then show live health and counts.
+its base URL (`http://localhost:8100`, `:8200`, `:8000`, and the vulnerability and
+pentest modules on their own ports) and its bearer token (each module's own Settings
+page). The overview should then show live health and counts. This directory is also
+how the IR hub discovers its finding sources: once the finding-serving modules
+(dark web, managed services, vulnerability management, penetration testing) are
+connected here, the hub pulls their findings into its per-client view and /findings
+page automatically, with no second list to maintain. Leave the hub's FINDINGS_SOURCES
+unset to use this discovery; set it only to override.
 
 Set each module's token to reach the control plane:
 
@@ -189,5 +195,8 @@ SSM instead; the SSO page then shows source "env" and lets you override in place
   services yet; test them on the deployed host.
 - Per-tech RBAC beyond admin/analyst/client.
 - A real `terraform plan` against the target account before the first apply.
-- The four planned modules (MDR, network operations, pentest, vulnerability
-  management) are still scaffolds.
+- MDR and network operations are still scaffolds (vulnerability management and
+  penetration testing are now built).
+- The scanner-to-API path exposes POST /api/scans with a reference adapter
+  (modules/vulnerability-management/scripts), but has not run against the live Go
+  scanner service yet; the first real scan is its shakeout.
