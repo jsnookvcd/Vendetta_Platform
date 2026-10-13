@@ -31,7 +31,15 @@ Dark Web Monitoring implements all of this today; treat its module.yaml, its /ap
 
 infra/terraform stands the whole platform up on one AWS host behind a single load balancer that routes to each module by hostname; see infra/terraform/README.md. Each module can also run alone. GO_LIVE.md is the sequenced runbook from deploy to one real client, and infra/verify.sh checks a running stack.
 
-docs/ARCHITECTURE.md describes the shared finding model, the engagement hub contract, module enablement, the role families, and how a module plugs in. Read it before starting a new module.
+docs/ARCHITECTURE.md describes the shared finding model, the engagement hub contract, module enablement, the role families, the tenant isolation standard, the executive and technical portal views, and how a module plugs in. Read it before starting a new module.
+
+## Evidence integrity
+
+The incident-response case timeline and the managed-services response-action log are each bound into a signed, tamper-evident chain of custody. Every record is hash-chained to the one before it and signed with an Ed25519 key as it is written, so altering, reordering, inserting or deleting any record is detectable. Verification needs only the records and the public key, so staff, clients and opposing counsel can check it independently; each module exposes a verify endpoint and a downloadable proof. See the chain-of-custody sections in docs/ARCHITECTURE.md.
+
+## Tests and CI
+
+Each built module has its own test suite that runs against a real Postgres, including cross-tenant isolation suites and the evidence-chain suites. GitHub Actions (.github/workflows/ci.yml) stands up Postgres, creates each module's test role and database, and runs every suite on push and pull request. To run one locally, start Postgres, create the module's test database (for example platform_test owned by role platform), and run pytest in the module directory.
 
 ## Repository layout
 

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: platform
+            role: platform
+            db: platform_test
+          - module: incident-response
+            role: irhub
+            db: irhub_test
+          - module: managed-services
+            role: msp
+            db: msp_test
+          - module: dark-web-monitoring
+            role: darkweb
+            db: darkweb_test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System libraries for PDF rendering (dark web only)
+        if: matrix.module == 'dark-web-monitoring'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev libcairo2
+
+      - name: Create test role and database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 <<SQL
+          CREATE ROLE ${{ matrix.role }} LOGIN PASSWORD '${{ matrix.role }}';
+          CREATE DATABASE ${{ matrix.db }} OWNER ${{ matrix.role }};
+          SQL
+
+      - name: Install dependencies
+        working-directory: modules/${{ matrix.module }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        working-directory: modules/${{ matrix.module }}
+        run: pytest -q
