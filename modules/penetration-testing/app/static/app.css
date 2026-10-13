@@ -287,3 +287,6 @@ ol.checklist li.done .ck-body span { color: var(--muted); text-decoration: line-
 .check { width: 24px; height: 24px; border-radius: 6px; border: 1.5px solid var(--line-2); background: transparent; color: #8fd98a; font-weight: 800; cursor: pointer; flex: none; }
 ol.checklist li.done .check { background: rgba(47,90,52,0.25); border-color: #2f5a34; }
 .ck-body { display: flex; flex-direction: column; gap: 2px; }
+.coc-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+.coc-ok { color: #8fd98a; border: 1px solid #2f5a34; background: rgba(47,90,52,0.14); }
+.coc-broken { color: #ff9ba6; border: 1px solid #6a2430; background: rgba(106,36,48,0.16); }

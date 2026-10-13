@@ -16,7 +16,8 @@ from . import auth, oidc, platform as platform_mod, provision, sso
 from .config import (ENGAGEMENT_STATES, ENGAGEMENT_TYPES, OPEN_STATUSES, SEVERITIES, STATUSES,
                      cvss_to_severity, settings, severity_rank)
 from .db import (AuditLog, Client, Engagement, Finding, RemediationStep, SessionLocal, User,
-                 init_db, severity_trend, utcnow)
+                 build_event_proof, client_event_records, init_db, record_event, severity_trend,
+                 utcnow)
 
 log = logging.getLogger(__name__)
 app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
@@ -297,6 +298,31 @@ def add_engagement(cid: str, name: str = Form(...), kind: str = Form("external")
     return RedirectResponse(f"/engagements/{e.id}", status_code=302)
 
 
+@app.get("/clients/{cid}/evidence/verify")
+def client_evidence_verify(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from . import evidence
+    c = _get_client(db, cid)
+    result = evidence.verify_chain(client_event_records(db, c.id))
+    _audit(db, user, "evidence.verify", f"{c.name} ok={result['ok']}")
+    return JSONResponse(result)
+
+
+@app.get("/clients/{cid}/evidence/proof.json")
+def client_evidence_proof(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = _get_client(db, cid)
+    _audit(db, user, "evidence.proof", c.name)
+    return JSONResponse(build_event_proof(db, c), headers={
+        "Content-Disposition": f'attachment; filename="finding_events_{c.id}.json"'})
+
+
+@app.get("/api/clients/{cid}/evidence/verify")
+def api_client_evidence_verify(cid: str, _: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    from . import evidence
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    return JSONResponse(evidence.verify_chain(client_event_records(db, cid)))
+
+
 @app.get("/engagements/{eid}", response_class=HTMLResponse)
 def engagement_page(eid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     e = _get_engagement(db, eid)
@@ -309,6 +335,7 @@ def engagement_edit(eid: str, status: str = Form(...), published: bool = Form(Fa
                     lead: str = Form(""), summary: str = Form(""), user: str = auth.RequireUser,
                     db: Session = Depends(get_db)):
     e = _get_engagement(db, eid)
+    was_published = e.published
     if status in ENGAGEMENT_STATES:
         if status == "closed" and e.status != "closed":
             e.closed_at = utcnow()
@@ -316,6 +343,8 @@ def engagement_edit(eid: str, status: str = Form(...), published: bool = Form(Fa
         e.status = status
     e.published = bool(published)
     e.scope, e.lead, e.summary = scope.strip(), lead.strip(), summary.strip()
+    if e.published and not was_published:
+        record_event(db, e.client_id, None, "published", user, f"engagement shared: {e.name}")
     db.commit()
     _audit(db, user, "engagement.edit", f"{e.name} -> {e.status}")
     return RedirectResponse(f"/engagements/{eid}?msg=saved", status_code=302)
@@ -340,6 +369,8 @@ def add_finding(eid: str, title: str = Form(...), asset: str = Form(""), cve: st
     e.findings.append(f)  # via the relationship so recount sees it
     db.flush()
     e.recount()
+    record_event(db, e.client_id, f.id, "created", user, f"{sev} {title}",
+                 {"severity": sev, "asset": f.asset, "engagement": e.name})
     db.commit()
     _audit(db, user, "finding.add", f"{e.name}: {title}")
     return RedirectResponse(f"/findings/{f.id}", status_code=302)
@@ -356,6 +387,7 @@ def finding_edit(fid: str, status: str = Form(...), severity: str = Form(...), c
                  description: str = Form(""), impact: str = Form(""), remediation: str = Form(""),
                  retest_note: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     f = _get_finding(db, fid)
+    prev_status = f.status
     if status in STATUSES:
         was_open = f.status in OPEN_STATUSES
         f.status = status
@@ -371,6 +403,9 @@ def finding_edit(fid: str, status: str = Form(...), severity: str = Form(...), c
     f.description, f.impact, f.remediation, f.retest_note = (description.strip(), impact.strip(),
                                                              remediation.strip(), retest_note.strip())
     f.engagement.recount()
+    if status in STATUSES and status != prev_status:
+        record_event(db, f.client_id, f.id, "status", user, f"{prev_status} -> {status}",
+                     {"from": prev_status, "to": status})
     db.commit()
     _audit(db, user, "finding.edit", f"{f.title} -> {f.status}")
     return RedirectResponse(f"/findings/{fid}?msg=saved", status_code=302)
@@ -383,6 +418,7 @@ def finding_add_step(fid: str, text: str = Form(...), user: str = auth.RequireUs
     if text:
         pos = max((s.position for s in f.steps), default=-1) + 1
         db.add(RemediationStep(finding_id=f.id, position=pos, text=text[:2000]))
+        record_event(db, f.client_id, f.id, "step_added", user, text[:200])
         db.commit()
     return RedirectResponse(f"/findings/{fid}", status_code=302)
 
@@ -438,8 +474,19 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
     open_findings = [f for e in engagements for f in e.findings if f.is_open]
     by_sev = {s: sum(1 for f in open_findings if f.severity == s) for s in SEVERITIES}
     trend = severity_trend(db, c.id)
+    from . import evidence
+    chain = evidence.verify_chain(client_event_records(db, c.id))
     return render(request, "portal.html", user=ident.email, portal=True, client=c, engagements=engagements,
-                  open_findings=open_findings, by_sev=by_sev, trend=trend, exec_view=ident.is_executive)
+                  open_findings=open_findings, by_sev=by_sev, trend=trend, exec_view=ident.is_executive,
+                  chain=chain)
+
+
+@app.get("/portal/evidence/proof.json")
+def portal_evidence_proof(ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    c = _portal_client(db, ident)
+    _audit(db, ident.email, "portal.evidence.proof", c.name)
+    return JSONResponse(build_event_proof(db, c), headers={
+        "Content-Disposition": f'attachment; filename="finding_events_{c.id}.json"'})
 
 
 @app.get("/portal/findings/{fid}", response_class=HTMLResponse)
@@ -471,6 +518,7 @@ def portal_toggle_step(fid: str, sid: str, ident: auth.Identity = Depends(auth.r
     s.done = not s.done
     s.done_at = utcnow() if s.done else None
     s.done_by = ident.email if s.done else ""
+    record_event(db, f.client_id, f.id, "step_done" if s.done else "step_reopened", ident.email, s.text[:200])
     db.commit()
     return RedirectResponse(f"/portal/findings/{fid}", status_code=302)
 

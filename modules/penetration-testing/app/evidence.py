@@ -1,104 +1,136 @@
-"""Evidence preservation. Every capture is stored as raw bytes plus a JSON manifest
-with SHA-256, timestamp, URL, HTTP status and response headers. S3 Object Lock in
-compliance mode (see Terraform) keeps the objects immutable for the retention period."""
+"""Evidence integrity: a tamper-evident, signed chain of custody.
+
+Every evidentiary record (a case timeline entry here, a response action in managed
+services) is bound into a per-subject hash chain. Each record carries:
+
+  chain_seq     1-based position in its subject's chain
+  prev_hash     the content_hash of the record before it (GENESIS for the first)
+  content_hash  sha256 over the record's immutable fields plus prev_hash
+  signature     an Ed25519 signature over content_hash
+  key_id        fingerprint of the signing key, so a rotated key is identifiable
+
+Because each hash commits to the one before it, changing, reordering, inserting or
+deleting any record breaks every hash after it, and the signature proves the chain
+was produced by the holder of the signing key. Verification needs only the records
+and the public key, so a client or opposing counsel can check it independently.
+
+This module holds the crypto and the verification. The binding to a specific table
+(which fields are hashed, how the chain head is found) lives with that table.
+"""
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
-from pathlib import Path
+from functools import lru_cache
 
-from sqlalchemy.orm import Session
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from .config import settings
-from .db import Evidence, utcnow
-from .fetch import FetchResult, fetch, html_to_text
 
 log = logging.getLogger(__name__)
 
-
-def _s3():
-    import boto3
-
-    return boto3.client("s3", region_name=settings.aws_region)
+GENESIS = "0" * 64
+SCHEME = "ed25519-sha256-v1"
 
 
-def _store(key: str, data: bytes, content_type: str) -> str:
-    if settings.evidence_bucket:
-        _s3().put_object(
-            Bucket=settings.evidence_bucket,
-            Key=key,
-            Body=data,
-            ContentType=content_type,
-            ChecksumAlgorithm="SHA256",
-        )
-        return f"s3://{settings.evidence_bucket}/{key}"
-    path = Path(settings.evidence_local_dir) / key
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return f"file://{path}"
+@lru_cache(maxsize=1)
+def _private_key() -> Ed25519PrivateKey:
+    raw = (settings.evidence_signing_key or "").strip()
+    if raw:
+        try:
+            seed = bytes.fromhex(raw)
+        except ValueError:
+            raise RuntimeError("evidence_signing_key must be 32 bytes hex (64 hex chars)")
+        if len(seed) != 32:
+            raise RuntimeError("evidence_signing_key must be 32 bytes hex (64 hex chars)")
+        return Ed25519PrivateKey.from_private_bytes(seed)
+    # No dedicated key: derive one deterministically from secret_key so the same
+    # deployment verifies its own chain across restarts. Flag it; production should
+    # set evidence_signing_key so the key is backed up and rotatable on its own.
+    log.warning("evidence: no EVIDENCE_SIGNING_KEY set; deriving a chain key from secret_key. "
+                "Set a dedicated key in production.")
+    seed = hashlib.sha256(b"vendetta-pentest-evidence-v1:" + settings.secret_key.encode()).digest()
+    return Ed25519PrivateKey.from_private_bytes(seed)
 
 
-def preserve(
-    db: Session,
-    url: str,
-    client_id: str | None = None,
-    item_id: str | None = None,
-    captured_by: str = "system",
-    note: str = "",
-    result: FetchResult | None = None,
-) -> Evidence:
-    """Fetch (or reuse a fetch) and preserve the response with hashes."""
-    res = result or fetch(url)
-    ts = utcnow()
-    sha = hashlib.sha256(res.content).hexdigest()
-    stamp = ts.strftime("%Y/%m/%d/%H%M%S")
-    base = f"captures/{client_id or 'unassigned'}/{stamp}-{sha[:12]}"
-    ctype = res.headers.get("content-type", "application/octet-stream").split(";")[0]
-    raw_uri = _store(f"{base}/response.bin", res.content, ctype)
-    manifest = {
-        "url": url,
-        "final_url": res.url,
-        "captured_at": ts.isoformat(),
-        "captured_by": captured_by,
-        "http_status": res.status,
-        "sha256": sha,
-        "size_bytes": len(res.content),
-        "headers": res.headers,
-        "error": res.error,
-        "note": note,
-        "tool": settings.app_name,
-    }
-    _store(f"{base}/manifest.json", json.dumps(manifest, indent=2).encode(), "application/json")
-    excerpt = html_to_text(res.text)[:4000] if res.text else ""
-    ev = Evidence(
-        client_id=client_id,
-        item_id=item_id,
-        url=url,
-        captured_at=ts,
-        captured_by=captured_by,
-        http_status=res.status,
-        sha256=sha,
-        size_bytes=len(res.content),
-        storage_uri=raw_uri,
-        text_excerpt=excerpt,
-        note=note,
-        headers=res.headers,
-    )
-    db.add(ev)
-    db.commit()
-    log.info("preserved %s sha256=%s -> %s", url, sha[:12], raw_uri)
-    return ev
+def public_key_hex() -> str:
+    pub = _private_key().public_key()
+    return pub.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
 
 
-def read_evidence_bytes(ev: Evidence) -> bytes:
-    if ev.storage_uri.startswith("s3://"):
-        _, _, rest = ev.storage_uri.partition("s3://")
-        bucket, _, key = rest.partition("/")
-        return _s3().get_object(Bucket=bucket, Key=key)["Body"].read()
-    return Path(ev.storage_uri.removeprefix("file://")).read_bytes()
+@lru_cache(maxsize=8)
+def _key_id_for(pub_hex: str) -> str:
+    return hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()[:16]
 
 
-def verify(ev: Evidence) -> bool:
-    return hashlib.sha256(read_evidence_bytes(ev)).hexdigest() == ev.sha256
+def key_id() -> str:
+    return _key_id_for(public_key_hex())
+
+
+def _canonical(fields: dict, prev_hash: str) -> bytes:
+    """Deterministic bytes for hashing: sorted keys, no whitespace, prev bound in."""
+    body = {"scheme": SCHEME, "prev": prev_hash, "fields": fields}
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=False).encode("utf-8")
+
+
+def compute(fields: dict, prev_hash: str) -> tuple[str, str, str]:
+    """Return (content_hash, signature_hex, key_id) for a record with these fields
+    chained onto prev_hash."""
+    digest = hashlib.sha256(_canonical(fields, prev_hash)).hexdigest()
+    sig = _private_key().sign(bytes.fromhex(digest)).hex()
+    return digest, sig, key_id()
+
+
+def verify_one(fields: dict, prev_hash: str, content_hash: str, signature_hex: str,
+               pub_hex: str | None = None) -> tuple[bool, str]:
+    """Recompute the hash from fields+prev_hash, confirm it matches, and confirm the
+    signature over it. Returns (ok, reason)."""
+    expected = hashlib.sha256(_canonical(fields, prev_hash)).hexdigest()
+    if expected != content_hash:
+        return False, "content hash does not match the record"
+    pub_hex = pub_hex or public_key_hex()
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(pub_hex)).verify(
+            bytes.fromhex(signature_hex), bytes.fromhex(content_hash))
+    except (InvalidSignature, ValueError):
+        return False, "signature is not valid for this record"
+    return True, "ok"
+
+
+def verify_chain(records: list[dict], pub_hex: str | None = None) -> dict:
+    """Verify an ordered list of chain records. Each record is a dict with keys
+    'prev_hash', 'content_hash', 'signature', and 'fields'. When 'fields' is None the
+    record is sealed (its content is withheld): linkage and the signature over the
+    content hash are still checked, which proves the record was not added, removed or
+    reordered and that we signed it, without revealing the content. Returns a result
+    with the first break, if any."""
+    pub_hex = pub_hex or public_key_hex()
+    prev = GENESIS
+    sealed = 0
+    for i, r in enumerate(records, start=1):
+        if r["prev_hash"] != prev:
+            return {"ok": False, "length": len(records), "verified": i - 1, "sealed": sealed,
+                    "broken_at": i, "reason": "chain link broken (a record was inserted, removed or reordered)",
+                    "key_id": _key_id_for(pub_hex), "public_key": pub_hex}
+        if r.get("fields") is None:
+            # Sealed: verify the signature over the stored hash and the linkage only.
+            try:
+                Ed25519PublicKey.from_public_bytes(bytes.fromhex(pub_hex)).verify(
+                    bytes.fromhex(r["signature"]), bytes.fromhex(r["content_hash"]))
+            except (InvalidSignature, ValueError):
+                return {"ok": False, "length": len(records), "verified": i - 1, "sealed": sealed,
+                        "broken_at": i, "reason": "signature is not valid for this record",
+                        "key_id": _key_id_for(pub_hex), "public_key": pub_hex}
+            sealed += 1
+        else:
+            ok, reason = verify_one(r["fields"], r["prev_hash"], r["content_hash"], r["signature"], pub_hex)
+            if not ok:
+                return {"ok": False, "length": len(records), "verified": i - 1, "sealed": sealed,
+                        "broken_at": i, "reason": reason,
+                        "key_id": _key_id_for(pub_hex), "public_key": pub_hex}
+        prev = r["content_hash"]
+    return {"ok": True, "length": len(records), "verified": len(records), "sealed": sealed,
+            "broken_at": None, "reason": "intact", "key_id": _key_id_for(pub_hex), "public_key": pub_hex}
