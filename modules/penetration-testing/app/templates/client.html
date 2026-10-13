@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">{{ client.name }}</h1>
+  <span class="faint" style="font-size:12px">{{ client.industry }}{% if client.portal_enabled %} · portal enabled{% endif %}</span></div>
+
+<div class="section-head"><h2>Findings trend</h2><span class="count">closed engagements over time</span></div>
+<div class="panel pad" style="margin-bottom:16px">
+  {% if trend %}{{ trendbars(trend) }}
+  <p class="faint" style="font-size:12px; margin:8px 0 0">Stacked by severity per closed engagement, oldest to newest.</p>
+  {% else %}<p class="faint" style="margin:0">No closed engagements yet.</p>{% endif %}
+</div>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Engagements</h2><span class="count">{{ engagements|length }}</span></div>
+    <div class="panel"><div class="table-wrap">
+    {% if engagements %}
+    <table><thead><tr><th>Engagement</th><th>Type</th><th>Status</th><th>Findings</th><th>Shared</th></tr></thead><tbody>
+    {% for e in engagements %}<tr>
+      <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a></td>
+      <td class="nowrap faint">{{ e.kind }}</td>
+      <td class="nowrap">{{ e.status }}</td>
+      <td class="nowrap">{{ e.n_total if e.status == 'closed' else e.findings|length }}</td>
+      <td class="nowrap faint">{{ 'yes' if e.published else '' }}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty"><p>No engagements yet.</p></div>{% endif %}
+    </div></div>
+  </div>
+  <div>
+    <div class="section-head"><h2>New engagement</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/engagements">
+        <label class="field">Name<input name="name" required placeholder="2026 External Network Test"></label>
+        <label class="field" style="margin-top:8px">Type
+          <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:8px">Lead tester<input name="lead" placeholder="responder"></label>
+        <label class="field" style="margin-top:8px">Scope<textarea name="scope" placeholder="In-scope ranges, apps, rules of engagement"></textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-primary">Create engagement</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

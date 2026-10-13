@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile {{ 'crit' if by_sev.critical }}"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical</div></div>
+  <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High</div></div>
+  <div class="tile"><div class="n">{{ by_sev.medium }}</div><div class="l">Medium</div></div>
+  <div class="tile"><div class="n">{{ by_sev.low }}</div><div class="l">Low</div></div>
+  <div class="tile"><div class="n">{{ by_sev.info }}</div><div class="l">Info</div></div>
+</div>
+
+<div class="section-head"><h2>Engagements</h2></div>
+<div class="panel"><div class="table-wrap">
+{% if engagements %}
+<table>
+  <thead><tr><th>Engagement</th><th>Client</th><th>Type</th><th>Status</th><th>Findings</th><th>Shared</th></tr></thead>
+  <tbody>
+  {% for e in engagements %}<tr>
+    <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a></td>
+    <td class="nowrap">{{ e.client.name }}</td>
+    <td class="nowrap faint">{{ e.kind }}</td>
+    <td class="nowrap"><span class="cstate">{{ e.status }}</span></td>
+    <td class="nowrap">{{ e.n_total if e.status == 'closed' else e.findings|length }}</td>
+    <td class="nowrap faint">{{ 'yes' if e.published else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No engagements</h3><p>Create one on a client.</p></div>{% endif %}
+</div></div>
+{% endblock %}

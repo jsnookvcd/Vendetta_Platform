@@ -6,8 +6,8 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 
 - platform: the control plane and front door. System of record for the client directory, which modules are on per client, and how each client maps into the tools, with a live cross-module overview. Built; managed-services consumes it. See modules/platform.
 - dark-web-monitoring: leak-site, forum, credential and certificate monitoring with evidence preservation and a client portal. In production. See modules/dark-web-monitoring.
-- vulnerability-management: scan ingest, enrichment and risk scoring, with findings and client-owned remediation status. Wraps the existing Go scanner service. Planned.
-- penetration-testing: engagement findings as records (severity, asset, evidence, remediation, retest), with the report rendered from them at close. Planned.
+- vulnerability-management: scan ingest (POST /api/scans), findings deduped across scans, a client portal with an exposure trend over time and click-through remediation steps, and escalation to the hub. Built and tested. See modules/vulnerability-management.
+- penetration-testing: engagements and findings with a retest loop, the report rendered from findings at close, a client portal with a cross-engagement trend and click-through remediation, and escalation to the hub. Built and tested. See modules/penetration-testing.
 - incident-response: IR cases and retainers; the engagement hub spine, with the five-workstream case template, one-button incident declaration, a client portal and the escalation API. Built; first deploy pending.
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
 - mdr: managed detection and response: investigations with verdicts and analyst actions rather than raw alerts, convertible to an IR case. Planned.

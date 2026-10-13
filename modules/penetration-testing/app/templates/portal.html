@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Penetration Testing, {{ client.name }}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+{% macro trendbars(trend, h=54) %}
+{% set mx = [1, (trend | map(attribute='total') | max) if trend else 1] | max %}
+<div class="trendbars" style="height:{{ h }}px">
+  {% for p in trend %}<div class="tb" title="{{ p.label }}: {{ p.total }}">
+    {% for s in ['critical','high','medium','low'] %}{% set v = p[s] %}{% if v %}<span class="seg seg-{{ s }}" style="height:{{ (v / mx * (h-2)) | round(1) }}px"></span>{% endif %}{% endfor %}
+  </div>{% endfor %}
+</div>
+{% endmacro %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Penetration Testing<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <span class="toolchip" style="margin-right:8px">{{ 'Executive view' if exec_view else 'Technical view' }}</span>
+  <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:1040px; margin:0 auto">
+
+  <div class="trend" style="margin:4px 2px 16px">
+    <span class="faint">Findings across your engagements over time</span>
+    {% if trend %}{{ trendbars(trend) }}{% else %}<span class="faint" style="font-size:12px">no closed engagements yet</span>{% endif %}
+  </div>
+
+  <div class="tiles">
+    <div class="tile {{ 'alert' if by_sev.critical }}"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical</div></div>
+    <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High</div></div>
+    <div class="tile"><div class="n">{{ by_sev.medium }}</div><div class="l">Medium</div></div>
+    <div class="tile"><div class="n">{{ open_findings|length }}</div><div class="l">Open findings</div></div>
+  </div>
+
+  {% if exec_view %}
+  <div class="section-head"><h2>Security posture</h2><span class="count">executive summary</span></div>
+  <div class="panel pad">
+    {% if open_findings %}
+    <p class="muted" style="margin:0">Across your shared engagements there {{ 'is' if open_findings|length == 1 else 'are' }} {{ open_findings|length }} open finding{{ '' if open_findings|length == 1 else 's' }}{% if by_sev.critical or by_sev.high %}, including {{ by_sev.critical + by_sev.high }} at high or critical severity{% endif %}. Your technical contacts have the finding detail, remediation steps and the full reports.</p>
+    {% else %}<div class="empty"><h3>No open findings</h3><p>Your shared engagements have no open findings right now.</p></div>{% endif %}
+  </div>
+  {% else %}
+  {% for e in engagements %}
+  <div class="section-head"><h2>{{ e.name }}</h2><span class="count">{{ e.kind }} · {{ e.status }}</span>
+    <span class="grow"></span><a class="btn btn-sm btn-ghost" href="/portal/engagements/{{ e.id }}/report">Report</a></div>
+  <div class="panel" style="margin-bottom:16px"><div class="table-wrap">
+  {% set open = e.findings | selectattr('is_open') | list %}
+  {% if open %}
+  <table><thead><tr><th>Severity</th><th>Finding</th><th>Asset</th><th>Remediation</th></tr></thead><tbody>
+  {% for f in open %}{% set done = f.steps|selectattr('done')|list|length %}<tr>
+    <td class="nowrap"><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td><a href="/portal/findings/{{ f.id }}">{{ f.title }}</a></td>
+    <td class="nowrap faint">{{ f.asset }}</td>
+    <td class="nowrap faint">{% if f.steps %}{{ done }}/{{ f.steps|length }} steps{% else %}see detail{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty" style="padding:18px"><p>No open findings in this engagement.</p></div>{% endif %}
+  </div></div>
+  {% else %}
+  <div class="panel pad"><div class="empty"><h3>No shared engagements yet</h3><p>Your penetration test results appear here once your Vendetta team shares them.</p></div></div>
+  {% endfor %}
+  {% endif %}
+
+  <p class="faint" style="font-size:12px; margin-top:14px; max-width:70ch">This portal shows the penetration test results Vendetta has shared with you. For questions on any finding, contact your Vendetta team.</p>
+</main>
+</body>
+</html>

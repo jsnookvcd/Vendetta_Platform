@@ -25,6 +25,12 @@ jobs:
           - module: dark-web-monitoring
             role: darkweb
             db: darkweb_test
+          - module: vulnerability-management
+            role: vulnmgmt
+            db: vulnmgmt_test
+          - module: penetration-testing
+            role: pentest
+            db: pentest_test
 
     services:
       postgres:

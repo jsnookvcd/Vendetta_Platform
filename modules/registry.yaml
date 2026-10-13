@@ -28,15 +28,26 @@ modules:
   - name: vulnerability-management
     display_name: Vulnerability Management
     service_lines: [managed-security, vciso, pci-asv]
-    status: planned
+    status: in-progress
     enablement: MODULE_ENABLED
-    notes: Wraps the existing Go scanner service (Greenbone/Nuclei/Nessus ingest, EPSS/KEV enrichment).
+    manifest: /api/module
+    findings: /api/findings
+    notes: >-
+      Scans ingest from the Go scanner service (POST /api/scans), findings dedupe
+      across scans, client portal with an exposure trend over time and click-through
+      remediation steps. Built and tested.
 
   - name: penetration-testing
     display_name: Penetration Testing
     service_lines: [offensive-security]
-    status: planned
+    status: in-progress
     enablement: MODULE_ENABLED
+    manifest: /api/module
+    findings: /api/findings
+    notes: >-
+      Engagements and findings with a retest loop, report rendered from findings,
+      client portal with a cross-engagement trend and click-through remediation.
+      Built and tested.
 
   - name: incident-response
     display_name: Incident Response and Case Management

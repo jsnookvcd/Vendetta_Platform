@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ e.name }} — Report</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">{{ e.name }}<span>{{ e.client.name }}</span></div>
+  <span class="spacer"></span>
+  <a href="{{ '/portal' if portal else '/engagements/' ~ e.id }}" class="faint" style="font-size:12px">Back</a>
+</header>
+<main class="content" style="max-width:860px; margin:0 auto">
+  <div class="title-row"><h1 style="font-size:22px">Penetration test report</h1></div>
+  <p class="faint" style="margin:2px 0 16px">{{ e.kind }} · {{ e.client.name }}{% if e.closed_at %} · closed {{ e.closed_at.strftime('%b %d, %Y') }}{% endif %}{% if e.lead %} · lead {{ e.lead }}{% endif %}</p>
+
+  <div class="tiles">
+    <div class="tile {{ 'crit' if counts.critical }}"><div class="n">{{ counts.critical }}</div><div class="l">Critical</div></div>
+    <div class="tile"><div class="n">{{ counts.high }}</div><div class="l">High</div></div>
+    <div class="tile"><div class="n">{{ counts.medium }}</div><div class="l">Medium</div></div>
+    <div class="tile"><div class="n">{{ counts.low }}</div><div class="l">Low</div></div>
+  </div>
+
+  {% if e.scope %}
+  <div class="section-head"><h2>Scope</h2></div>
+  <div class="panel pad" style="margin-bottom:14px"><p class="muted" style="margin:0; white-space:pre-wrap">{{ e.scope }}</p></div>
+  {% endif %}
+  {% if e.summary %}
+  <div class="section-head"><h2>Executive summary</h2></div>
+  <div class="panel pad" style="margin-bottom:14px"><p class="muted" style="margin:0; white-space:pre-wrap">{{ e.summary }}</p></div>
+  {% endif %}
+
+  <div class="section-head"><h2>Findings</h2><span class="count">{{ e.findings|length }}</span></div>
+  {% for f in e.findings %}
+  <div class="panel pad" style="margin-bottom:12px">
+    <div class="row" style="align-items:center; gap:8px"><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span>
+      <strong>{{ f.title }}</strong><span class="grow"></span>
+      <span class="faint" style="font-size:12px">CVSS {{ '%.1f'|format(f.cvss) }}{% if f.cve %} · {{ f.cve }}{% endif %} · {{ f.status }}</span></div>
+    {% if f.asset %}<p class="faint" style="font-size:12px; margin:6px 0 0">Affected: {{ f.asset }}</p>{% endif %}
+    {% if f.description %}<p class="muted" style="margin:8px 0 0; white-space:pre-wrap">{{ f.description }}</p>{% endif %}
+    {% if f.impact %}<p class="muted" style="margin:8px 0 0; white-space:pre-wrap"><b>Impact.</b> {{ f.impact }}</p>{% endif %}
+    {% if f.remediation %}<p class="muted" style="margin:8px 0 0; white-space:pre-wrap"><b>Remediation.</b> {{ f.remediation }}</p>{% endif %}
+  </div>
+  {% else %}<div class="empty"><p>No findings recorded.</p></div>{% endfor %}
+</main>
+</body>
+</html>

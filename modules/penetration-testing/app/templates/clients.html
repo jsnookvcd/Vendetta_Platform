@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<div class="row" style="gap:12px; align-items:flex-end; margin-bottom:16px; flex-wrap:wrap">
+  <form method="post" action="/clients" class="row" style="gap:8px; align-items:flex-end">
+    <label class="field">Client name<input name="name" required></label>
+    <label class="field">Industry<input name="industry" placeholder="optional"></label>
+    <button class="btn btn-primary">Add client</button>
+  </form>
+  <span class="grow"></span>
+  {% if platform_configured %}
+  <form method="post" action="/clients/pull"><button class="btn btn-ghost">Pull from platform</button></form>
+  {% else %}<span class="faint" style="font-size:12px">Set PLATFORM_URL to pull the roster from the control plane.</span>{% endif %}
+</div>
+
+<div class="panel"><div class="table-wrap">
+{% if clients %}
+<table>
+  <thead><tr><th>Client</th><th>Industry</th><th>Engagements</th><th>Portal</th></tr></thead>
+  <tbody>
+  {% for c in clients %}<tr>
+    <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+    <td class="nowrap faint">{{ c.industry }}</td>
+    <td class="nowrap">{{ counts[c.id] }}</td>
+    <td class="nowrap faint">{{ 'enabled' if c.portal_enabled else 'off' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No clients</h3><p>Add one above or pull the roster from the control plane.</p></div>{% endif %}
+</div></div>
+{% endblock %}
