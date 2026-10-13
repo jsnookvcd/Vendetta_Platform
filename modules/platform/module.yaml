@@ -1,0 +1,47 @@
+# Vendetta Platform control-plane descriptor.
+# The front door and system of record for clients, per-client module enablement,
+# and per-client tool mapping. Modules pull their roster and config from it; the
+# overview reads their live counts back. See README.md and /docs/ARCHITECTURE.md.
+module:
+  name: platform
+  display_name: Vendetta Platform
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  role: control-plane
+  status: in-progress          # built and tested; adoption by all modules in progress
+  enablement: MODULE_ENABLED
+  staff_only: true             # clients use each module's own portal, not the control plane
+
+system_of_record:
+  clients: canonical directory, one row per client with a stable platform id
+  entitlement: per-client module on/off (ClientModule)
+  tool_mapping: per-client tenancy per tool (ClientTool), pushed to managed-services
+  secrets: none                # tool credentials stay in the owning module
+
+provisioning_api:
+  endpoint: GET /api/platform/clients?module=<key>
+  auth: Bearer (shared platform token)
+  returns: active clients enabled for that module; tool map included for managed-services
+  consumed_by: [managed-services]        # incident-response, dark-web-monitoring next
+
+overview:
+  reads: each module's /api/module (health) and items endpoint (counts)
+  probe:
+    dark-web-monitoring: /api/findings
+    incident-response: /api/ir-cases
+    managed-services: /api/findings
+  graceful: a down module shows unreachable, never breaks the screen
+  cache_seconds: PROBE_CACHE_SECONDS
+
+connections:
+  modules: base_url + bearer token per module, with live health
+  tools: [superops, sentinelone, crowdstrike, huntress, acronis]  # health from managed-services
+
+api:
+  module_manifest: GET /api/module
+  provisioning: GET /api/platform/clients
+  docs: /api/docs
+
+roles:
+  admin: full
+  analyst: full

@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<div class="title-row">
+  <h1>{{ client.name }}</h1>
+  {% if client.industry %}<span class="chip">{{ client.industry }}</span>{% endif %}
+  {% if not client.active %}<span class="faint">paused</span>{% endif %}
+</div>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Modules</h2><span class="count">turn on what this client gets</span></div>
+    <div class="panel" style="margin-bottom:16px">
+      <ul class="modlist">
+      {% for m in modules %}{% set on = m.key in enabled %}{% set o = ov.get(m.key, {}) %}
+      <li class="{{ 'on' if on }}">
+        <div class="ml-main">
+          <div class="ml-name">{{ statusdot(m.key, ov) }}<b>{{ m.display_name }}</b> {{ statuschip(m.status) }}</div>
+          <div class="ml-sub faint">
+            {% if on and o.reachable and o.open is not none %}{{ o.open }} {{ o.label }} for all clients{% if m.base_url %} · <a class="alink" href="{{ m.base_url }}" target="_blank" rel="noopener">open console</a>{% endif %}
+            {% elif m.status == 'planned' %}not built yet
+            {% elif on %}activated{% else %}available{% endif %}
+          </div>
+        </div>
+        <form method="post" action="/clients/{{ client.id }}/modules/{{ m.key }}" class="ml-toggle">
+          <input type="hidden" name="enabled" value="{{ 'false' if on else 'true' }}">
+          <button class="btn btn-sm {{ 'btn-ghost' if on else 'btn-primary' }}" {{ 'disabled' if m.status == 'planned' and not on }}>{{ 'Deactivate' if on else 'Activate' }}</button>
+        </form>
+      </li>
+      {% endfor %}
+      </ul>
+    </div>
+
+    {% if ms_on %}
+    <div class="section-head"><h2>Tool mapping</h2><span class="count">this client's tenancy in each tool, pushed to Managed Services</span></div>
+    <div class="panel pad">
+      {% for t in TOOLS %}{% set row = tool_map.get(t) %}
+      <form method="post" action="/clients/{{ client.id }}/tool/{{ t }}" class="toolrow">
+        <div class="tr-name">{{ TOOL_NAMES[t] }}{% if row and row.enabled %}<span class="hdot up" style="margin-left:6px"></span>{% endif %}</div>
+        <input name="tenancy" value="{{ row.tenancy if row else '' }}" placeholder="{{ TOOL_HINTS[t] }}" class="mono">
+        <label class="chkmini"><input type="checkbox" name="enabled" value="true" {{ 'checked' if not row or row.enabled }}> on</label>
+        <button class="btn btn-xs">Save</button>
+      </form>
+      {% endfor %}
+      <p class="faint" style="font-size:12px; margin:10px 0 0">Managed Services pulls these mappings; the tool credentials themselves stay in that module.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="section-head"><h2>Client</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/edit">
+        <label class="field">Industry<input name="industry" value="{{ client.industry }}"></label>
+        <label class="field" style="margin-top:9px">Portal email domains<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org"></label>
+        <label class="field chk" style="margin-top:9px"><input type="checkbox" name="active" value="true" {{ 'checked' if client.active }}> Active</label>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal domains flow to each module's client portal so this client's staff can sign in there.</p>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save</button></div>
+      </form>
+    </div>
+    <div class="section-head" style="margin-top:14px"><h2>Identity</h2></div>
+    <div class="panel pad">
+      <dl class="kv">
+        <dt>Platform ID</dt><dd class="mono">{{ client.id }}</dd>
+        <dt>Slug</dt><dd class="mono">{{ client.slug }}</dd>
+        <dt>Added</dt><dd>{{ client.created_at.strftime('%b %d, %Y') }}</dd>
+      </dl>
+      <p class="faint" style="font-size:12px; margin:8px 0 0">This is the client's canonical ID across the platform. Modules key their own records to it.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

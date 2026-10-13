@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
+  <form class="row" method="post" action="/clients">
+    <label class="field">Client name<input name="name" required placeholder="Riverbend Credit Union" style="min-width:260px"></label>
+    <label class="field">Industry<input name="industry" placeholder="credit union"></label>
+    <button class="btn btn-primary">Add client</button>
+  </form>
+</div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Client</th><th>Industry</th><th>Modules</th><th>Tools mapped</th><th>Portal domains</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for c in clients %}{% set en = c.enabled_modules() %}<tr>
+    <td class="nowrap"><a href="/clients/{{ c.id }}"><b>{{ c.name }}</b></a></td>
+    <td class="faint">{{ c.industry }}</td>
+    <td>{% for m in modules if m.key in en %}<span class="modchip">{{ m.display_name }}</span>{% else %}<span class="faint">none</span>{% endfor %}</td>
+    <td class="num">{{ c.tool_map()|length }}</td>
+    <td class="faint">{{ c.portal_domains }}</td>
+    <td class="faint">{{ 'active' if c.active else 'paused' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

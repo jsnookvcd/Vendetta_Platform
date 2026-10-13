@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act
-from . import auth, connectors, messaging, oidc, sync
+from . import auth, connectors, messaging, oidc, provision, sync
 from .config import DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, TOOL_NAMES, TOOLS, settings
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
                  get_channel, init_db, utcnow)
@@ -205,7 +205,8 @@ def clients_page(request: Request, user: str = auth.RequireUser, db: Session = D
     for cid, n in db.execute(select(Alert.client_id, func.count(Alert.id))
                              .where(Alert.status != "resolved").group_by(Alert.client_id)):
         counts.setdefault(cid, {"devices": 0, "alerts": 0})["alerts"] = n
-    return render(request, "clients.html", user=user, clients=rows, counts=counts)
+    return render(request, "clients.html", user=user, clients=rows, counts=counts,
+                  platform_on=provision.configured())
 
 
 @app.post("/clients")
@@ -216,6 +217,22 @@ def add_client(name: str = Form(...), industry: str = Form(""), user: str = auth
     db.commit()
     _audit(db, user, "client.add", name)
     return RedirectResponse(f"/clients/{c.id}", status_code=302)
+
+
+@app.post("/clients/pull")
+def pull_from_platform(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Pull the client roster and tool mappings from the platform control plane."""
+    if not provision.configured():
+        return _back("/clients", False, "No platform control plane is configured (set PLATFORM_URL).")
+    try:
+        summ = provision.pull(db)
+    except provision.ProvisionError as e:
+        _audit(db, user, "platform.pull.failed", str(e))
+        return _back("/clients", False, f"Platform pull failed: {e}")
+    _audit(db, user, "platform.pull", str(summ))
+    return _back("/clients", True,
+                 f"Pulled {summ['roster']} clients ({summ['added']} new, {summ['updated']} updated"
+                 + (f", {summ['deactivated']} deactivated" if summ['deactivated'] else "") + ").")
 
 
 def _get_client(db: Session, cid: str) -> Client:

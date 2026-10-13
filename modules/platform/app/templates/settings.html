@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Configuration</h2><span class="count">read from the environment / SSM</span></div>
+<div class="panel pad" style="margin-bottom:14px">
+  <dl class="kv">
+    <dt>Control plane</dt><dd>{{ 'enabled' if cfg.module_enabled else 'disabled' }}</dd>
+    <dt>Sign-in</dt><dd>{{ cfg.sso }}</dd>
+    <dt>Overview cache</dt><dd>{{ cfg.probe_cache }} seconds</dd>
+    <dt>Staff accounts</dt><dd>{{ n_users }}</dd>
+  </dl>
+</div>
+
+<div class="section-head"><h2>Provisioning API</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 10px">Modules pull their roster and per-client config from the control plane. A module calls <span class="mono">GET /api/platform/clients?module=&lt;key&gt;</span> with the bearer below and gets the clients it is enabled for, Managed Services also getting each client's tool mapping.</p>
+  <pre class="body" style="max-height:none">Authorization: Bearer {{ api_token }}</pre>
+  <p class="faint" style="margin:8px 0 0">The platform reaches each module with the token set on the Connections page; this token is how modules reach the platform. Endpoints: /api/platform/clients · /api/module · docs at /api/docs</p>
+</div>
+{% endblock %}

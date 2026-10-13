@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% block title %}Overview{% endblock %}
+{% block topbar %}
+<form method="post" action="/refresh"><button class="btn btn-sm">Refresh</button></form>
+{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ n_clients }}</div><div class="l">Active clients</div></div>
+  <div class="tile"><div class="n">{{ live }}</div><div class="l">Modules live</div></div>
+  <div class="tile {{ 'crit' if total_crit }}"><div class="n">{{ total_crit }}</div><div class="l">Critical / high open</div></div>
+  <div class="tile"><div class="n">{{ total_open }}</div><div class="l">Open items across modules</div></div>
+  <div class="tile"><div class="n">{{ tools_ok }}<span class="sub">/{{ tools|length }}</span></div><div class="l">Tools connected</div></div>
+</div>
+
+<div class="section-head"><h2>Modules</h2><span class="count">the platform at a glance</span></div>
+<div class="modgrid">
+  {% for m in modules %}{% set o = ov.get(m.key, {}) %}
+  <div class="modcard {{ 'planned' if m.status == 'planned' }}">
+    <div class="modtop">{{ statusdot(m.key, ov) }}<b>{{ m.display_name }}</b>{{ statuschip(m.status) }}</div>
+    <div class="modnums">
+      {% if o.reachable and o.open is not none %}
+      <span class="big {{ 'crit' if o.critical }}">{{ o.open }}</span><span class="lab">{{ o.label }}{% if o.critical %} · {{ o.critical }} crit/high{% endif %}</span>
+      {% elif m.status == 'planned' %}
+      <span class="lab faint">planned</span>
+      {% elif o.detail %}
+      <span class="lab faint">{{ o.detail }}</span>
+      {% else %}
+      <span class="lab faint">not connected</span>
+      {% endif %}
+    </div>
+    <div class="modfoot"><span class="faint">{{ enabled_counts.get(m.key, 0) }} client{{ 's' if enabled_counts.get(m.key,0) != 1 }}</span>
+      {% if m.base_url %}<a class="alink" href="{{ m.base_url }}" target="_blank" rel="noopener">Open</a>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="section-head" style="margin-top:18px"><h2>Clients</h2><span class="count">{{ clients|length }}</span><a class="alink" href="/clients" style="margin-left:auto">Manage</a></div>
+<div class="panel"><div class="table-wrap">
+{% if clients %}
+<table>
+  <thead><tr><th>Client</th><th>Industry</th><th>Active modules</th><th>Tools</th></tr></thead>
+  <tbody>
+  {% for c in clients %}{% set en = c.enabled_modules() %}<tr>
+    <td class="nowrap"><a href="/clients/{{ c.id }}"><b>{{ c.name }}</b></a></td>
+    <td class="faint">{{ c.industry }}</td>
+    <td>{% for m in modules if m.key in en %}<span class="modchip">{{ m.display_name }}</span>{% else %}<span class="faint">none</span>{% endfor %}</td>
+    <td class="faint">{{ c.tool_map()|length }} mapped</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No clients yet</h3><p>Add a client, then activate the modules and tools they use.</p></div>{% endif %}
+</div></div>
+{% endblock %}

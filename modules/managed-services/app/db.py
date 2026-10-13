@@ -54,6 +54,8 @@ class Client(Base):
     industry: Mapped[str] = mapped_column(String(100), default="")
     portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     portal_domains: Mapped[str] = mapped_column(String(500), default="")
+    # Set when this client is provisioned from the platform control plane.
+    platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -219,6 +221,10 @@ class AuditLog(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    from sqlalchemy import text as _text
+    with engine.begin() as conn:
+        conn.execute(_text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS platform_client_id VARCHAR(32) DEFAULT ''"))
+        conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_clients_platform_client_id ON clients (platform_client_id)"))
 
 
 def get_channel(db, client_id: str, desk: str) -> Channel:

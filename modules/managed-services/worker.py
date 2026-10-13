@@ -7,6 +7,7 @@ import time
 
 from app.config import settings
 from app.db import SessionLocal, init_db
+from app import provision
 from app.sync import sync_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -20,6 +21,11 @@ def main() -> None:
         if settings.module_enabled:
             db = SessionLocal()
             try:
+                if provision.configured():
+                    try:
+                        log.info("platform pull: %s", provision.pull(db))
+                    except provision.ProvisionError as e:
+                        log.warning("platform pull failed: %s", e)
                 counts = sync_all(db)
                 log.info("sync: %s", counts)
             except Exception:  # noqa: BLE001

@@ -34,9 +34,20 @@ workstream    the IR workstream a finding attaches to when escalated
 
 The hub reads findings at GET /api/findings on each module and the manifest at GET /api/module. A module keeps its own richer native shape too (the dark web module also serves /api/hits); the finding model is the common denominator the hub and client views rely on.
 
+## The control plane
+
+The control plane (modules/platform) is the front door and the system of record for three things the modules used to each own separately: the canonical client directory, which modules are turned on per client, and how each client maps into the tools. It holds no vendor secrets; those stay with the module that uses them. It reaches each module over HTTP with a per-module bearer token.
+
+Two integration points, opposite directions:
+
+- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services consumes this today; incident-response and dark-web-monitoring adopt the same contract next.
+- Overview (it reads from modules): the control plane calls each module's /api/module for health and its items endpoint for live counts, cached briefly and degrading gracefully.
+
+The canonical client id lives here. The end state is every module keying its own records to it; today managed-services stores it and the others match by name, as the engagement hub does.
+
 ## The engagement hub
 
-The hub is the spine of the platform and the system of record for clients and IR cases. Modules feed it; it does not reach into their databases. Two integration points:
+The hub is the spine for findings and cases, and a system of record for IR cases and retainers. (Client identity and module entitlement belong to the control plane above; the hub owns the case lifecycle.) Modules feed it; it does not reach into their databases. Two integration points:
 
 - Findings: the hub pulls findings from each enabled module to present a single view per client and to drive client-facing surfaces.
 - Escalation: a module can open or link an IR case for a finding by POSTing to the hub, attaching it to a workstream. IR cases use a fixed five-workstream template: Scoping and Containment, Forensics and Analysis, Recovery and Restoration, Notification and Legal, Resilience and Hardening.

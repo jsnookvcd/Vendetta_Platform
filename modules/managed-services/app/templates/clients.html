@@ -1,11 +1,18 @@
 {% extends "base.html" %}{% block title %}Clients{% endblock %}
 {% block body %}
 <div class="panel pad" style="margin-bottom:14px">
+  {% if platform_on %}
+  <div class="row" style="align-items:center; gap:12px">
+    <div style="flex:1"><b>Clients are managed in the Vendetta Platform.</b><div class="faint" style="font-size:12px">Activate clients and map their tools there; pull the roster and mappings here.</div></div>
+    <form method="post" action="/clients/pull"><button class="btn btn-primary">Pull from platform</button></form>
+  </div>
+  {% else %}
   <form class="row" method="post" action="/clients">
     <label class="field">Client name<input name="name" required placeholder="Riverbend Credit Union" style="min-width:260px"></label>
     <label class="field">Industry<input name="industry" placeholder="credit union"></label>
     <button class="btn btn-primary">Add client</button>
   </form>
+  {% endif %}
 </div>
 <div class="panel"><div class="table-wrap">
 <table>

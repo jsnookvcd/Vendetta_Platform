@@ -4,6 +4,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 
 ## Modules
 
+- platform: the control plane and front door. System of record for the client directory, which modules are on per client, and how each client maps into the tools, with a live cross-module overview. Built; managed-services consumes it. See modules/platform.
 - dark-web-monitoring: leak-site, forum, credential and certificate monitoring with evidence preservation and a client portal. In production. See modules/dark-web-monitoring.
 - vulnerability-management: scan ingest, enrichment and risk scoring, with findings and client-owned remediation status. Wraps the existing Go scanner service. Planned.
 - penetration-testing: engagement findings as records (severity, asset, evidence, remediation, retest), with the report rendered from them at close. Planned.

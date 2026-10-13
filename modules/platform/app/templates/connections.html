@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Connections{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Modules</h2><span class="count">how the platform reaches each module</span></div>
+<div class="panel" style="margin-bottom:18px"><div class="table-wrap">
+<table>
+  <thead><tr><th>Module</th><th>Status</th><th>Health</th><th>Endpoint and token</th></tr></thead>
+  <tbody>
+  {% for m in modules %}{% set o = ov.get(m.key, {}) %}<tr>
+    <td class="nowrap"><b>{{ m.display_name }}</b><div class="faint mono" style="font-size:11px">{{ m.key }}</div></td>
+    <td>{{ statuschip(m.status) }}</td>
+    <td class="nowrap">{{ statusdot(m.key, ov) }} <span class="faint">{% if o.reachable %}reachable{% elif o.detail %}{{ o.detail }}{% else %}no endpoint{% endif %}</span></td>
+    <td>
+      <form class="row" method="post" action="/connections/module/{{ m.key }}" style="gap:6px; align-items:flex-end">
+        <label class="field" style="flex:1; min-width:220px">Base URL<input name="base_url" value="{{ m.base_url }}" placeholder="https://host:port" class="mono"></label>
+        <label class="field" style="min-width:160px">Bearer token<input name="api_token" value="" placeholder="{{ 'set' if m.api_token else 'paste token' }}" class="mono"></label>
+        <input type="hidden" name="status" value="{{ m.status }}">
+        <button class="btn btn-sm">Save</button>
+      </form>
+    </td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<div class="section-head"><h2>Tools</h2><span class="count">credentials live in Managed Services; this is their health</span>
+  <form class="inline" method="post" action="/connections/refresh" style="margin-left:auto"><button class="btn btn-sm">Refresh tool health</button></form>
+</div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Tool</th><th>Kind</th><th>Owner module</th><th>State</th><th>Checked</th></tr></thead>
+  <tbody>
+  {% for t in tools %}<tr>
+    <td class="nowrap"><b>{{ t.display_name }}</b></td>
+    <td class="faint">{{ t.kind }}</td>
+    <td class="faint">{{ t.owner_module }}</td>
+    <td class="nowrap">{% if t.configured %}<span class="hdot up"></span> connected{% else %}<span class="hdot idle"></span> not configured{% endif %}</td>
+    <td class="nowrap faint">{{ t.checked_at.strftime('%b %d %H:%M') if t.checked_at else 'never' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

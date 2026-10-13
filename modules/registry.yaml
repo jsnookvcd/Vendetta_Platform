@@ -4,6 +4,19 @@
 platform: Vendetta Platform
 
 modules:
+  - name: platform
+    display_name: Vendetta Platform
+    role: control-plane
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    provisioning: /api/platform/clients
+    notes: >-
+      The front door and system of record for clients, per-client module
+      enablement, and per-client tool mapping. Modules pull their roster from it;
+      the overview reads their live counts back. Built and tested; managed-services
+      consumes it today, the other modules adopt the same contract next.
+
   - name: dark-web-monitoring
     display_name: Dark Web Monitoring
     service_lines: [managed-security, incident-response, vciso, litigation-support]
