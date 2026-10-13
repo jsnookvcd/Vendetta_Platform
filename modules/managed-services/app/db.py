@@ -231,6 +231,21 @@ class AuditLog(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
 
 
+class ToolCredential(Base):
+    """A tool integration's credentials, entered in-app and encrypted at rest. The
+    decrypted JSON overlays the environment defaults (see creds.py). `connected`
+    reflects the last live test, so the Integrations page shows real status."""
+
+    __tablename__ = "tool_credentials"
+    tool: Mapped[str] = mapped_column(String(20), primary_key=True)
+    data: Mapped[str] = mapped_column(Text, default="")  # Fernet-encrypted JSON of fields
+    connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_tested_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_detail: Mapped[str] = mapped_column(String(500), default="")
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     from sqlalchemy import text as _text

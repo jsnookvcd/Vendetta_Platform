@@ -33,6 +33,7 @@
       <a href="/alerts" class="{{ 'active' if p.startswith('/alerts') }}">{{ icon('bell') }} Alerts</a>
       <a href="/messages" class="{{ 'active' if p.startswith('/messages') }}">{{ icon('chat') }} Messages{% if shell and shell.unread %} <span class="badge">{{ shell.unread }}</span>{% endif %}</a>
       <div class="sep"></div>
+      <a href="/integrations" class="{{ 'active' if p.startswith('/integrations') }}">{{ icon('settings') }} Integrations</a>
       <a href="/settings" class="{{ 'active' if p.startswith('/settings') }}">{{ icon('settings') }} Settings</a>
     </nav>
     <div class="foot"><div class="who">{{ user }}</div><a href="/logout" class="faint">Sign out</a></div>

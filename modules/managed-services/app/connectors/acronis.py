@@ -30,16 +30,18 @@ class Acronis:
     tool = "acronis"
 
     def __init__(self, transport: httpx.BaseTransport | None = None):
-        self.configured = bool(settings.acronis_dc_url and settings.acronis_client_id
-                               and settings.acronis_client_secret)
-        self.base = settings.acronis_dc_url.rstrip("/")
+        from .. import creds
+
+        self.cfg = creds.resolve("acronis")
+        self.configured = creds.configured("acronis")
+        self.base = (self.cfg["dc_url"] or "").rstrip("/")
         self._http = make_client(self.base, transport=transport)
         self._token: tuple[str, float] | None = None
 
     def _bearer(self) -> dict:
         if not self._token or self._token[1] < time.time() + 900:
             r = self._http.post("/api/2/idp/token",
-                                auth=(settings.acronis_client_id, settings.acronis_client_secret),
+                                auth=(self.cfg["client_id"], self.cfg["client_secret"]),
                                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                                 data={"grant_type": "client_credentials"})
             if r.status_code >= 400:
@@ -75,7 +77,7 @@ class Acronis:
 
     # ---------------------------------------------------------------- reads
     def tenants(self) -> list[dict]:
-        me = self._get(f"/api/2/clients/{settings.acronis_client_id}")
+        me = self._get(f"/api/2/clients/{self.cfg["client_id"]}")
         rows = self._get(f"/api/2/tenants/{me['tenant_id']}/children", {"include_details": "true"})
         return [{"id": t.get("id"), "name": t.get("name"), "kind": t.get("kind"), "enabled": t.get("enabled")}
                 for t in rows.get("items") or [] if isinstance(t, dict)]

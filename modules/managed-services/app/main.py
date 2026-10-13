@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act
-from . import auth, connectors, messaging, oidc, preflight, provision, sync
+from . import auth, connectors, creds, messaging, oidc, preflight, provision, sync
 from .config import DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, TOOL_NAMES, TOOLS, settings
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
                  get_channel, init_db, utcnow)
@@ -477,6 +477,81 @@ def channel_reply(chid: str, body: str = Form(...), user: str = auth.RequireUser
 
 
 # ---------------------------------------------------------------- settings
+@app.get("/integrations", response_class=HTMLResponse)
+def integrations_page(request: Request, user: str = auth.RequireUser):
+    """Wire a tool in one place: paste its credentials, Connect, and it is saved
+    encrypted and tested live, with no redeploy."""
+    q = request.query_params
+    status = creds.all_status()
+    msg = err = ""
+    if q.get("connected"):
+        t = q["connected"]
+        err = ""
+        msg = f"{TOOL_NAMES.get(t, t)} connected. {status.get(t, {}).get('last_detail', '')}".strip()
+    elif q.get("testfail"):
+        t = q["testfail"]
+        err = f"{TOOL_NAMES.get(t, t)} saved but the test failed: {status.get(t, {}).get('last_detail', '')}".strip()
+    elif q.get("disconnected"):
+        t = q["disconnected"]
+        msg = f"{TOOL_NAMES.get(t, t)} disconnected."
+    return render(request, "integrations.html", user=user, fields=creds.FIELDS,
+                  tool_names=TOOL_NAMES, tools=TOOLS, status=status, msg=msg, err=err)
+
+
+@app.post("/integrations/{tool}")
+async def integrations_save(tool: str, request: Request, user: str = auth.RequireUser,
+                            db: Session = Depends(get_db)):
+    """Save a tool's credentials and immediately run its live connectivity test, so
+    wiring a tool in is one step: enter the credential, Connect, see the result."""
+    if tool not in creds.FIELDS:
+        raise HTTPException(404)
+    form = await request.form()
+    values = {f["key"]: (form.get(f["key"]) or "") for f in creds.FIELDS[tool]}
+    # A blank secret field means "leave the stored secret as it is" (never silently
+    # adopt an env secret into the database).
+    saved = creds.stored(tool)
+    for f in creds.FIELDS[tool]:
+        if f["secret"] and not values[f["key"]].strip() and saved.get(f["key"]):
+            values[f["key"]] = saved[f["key"]]
+    # A required field is satisfied by the form, a kept stored value, or the
+    # environment default; it is missing only when none of those provide it.
+    missing = [f["label"] for f in creds.FIELDS[tool]
+               if f["required"] and not (values[f["key"]].strip() or creds.env_value(tool, f["key"]))]
+    if missing:
+        _audit(db, user, "integration.save.invalid", f"{tool}: missing {', '.join(missing)}")
+        return RedirectResponse(f"/integrations?err={tool}+needs+{'+'.join(missing)}", status_code=302)
+
+    creds.save(tool, values, user)
+    connectors.reset()  # rebuild the connector from the new credentials
+    result = preflight.run([tool])[0]
+    creds.set_status(tool, result.ok, result.detail)
+    _audit(db, user, "integration.save", f"{tool} tested={'ok' if result.ok else 'fail'}: {result.detail}")
+    flag = "connected" if result.ok else "testfail"
+    return RedirectResponse(f"/integrations?{flag}={tool}", status_code=302)
+
+
+@app.post("/integrations/{tool}/test")
+def integrations_test(tool: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Re-run the live test for an already-wired tool."""
+    if tool not in creds.FIELDS:
+        raise HTTPException(404)
+    connectors.reset()
+    result = preflight.run([tool])[0]
+    creds.set_status(tool, result.ok, result.detail)
+    _audit(db, user, "integration.test", f"{tool} {'ok' if result.ok else 'fail'}: {result.detail}")
+    return RedirectResponse(f"/integrations?{'connected' if result.ok else 'testfail'}={tool}", status_code=302)
+
+
+@app.post("/integrations/{tool}/disconnect")
+def integrations_disconnect(tool: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if tool not in creds.FIELDS:
+        raise HTTPException(404)
+    creds.clear(tool, user)
+    connectors.reset()
+    _audit(db, user, "integration.disconnect", tool)
+    return RedirectResponse(f"/integrations?disconnected={tool}", status_code=302)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, user: str = auth.RequireUser):
     tools_cfg = {t: getattr(connectors.get(t), "configured", False) for t in TOOLS}

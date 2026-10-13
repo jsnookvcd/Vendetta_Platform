@@ -26,16 +26,19 @@ class CrowdStrike:
     tool = "crowdstrike"
 
     def __init__(self, transport: httpx.BaseTransport | None = None):
-        self.configured = bool(settings.crowdstrike_client_id and settings.crowdstrike_client_secret)
-        self._http = make_client(settings.crowdstrike_base_url.rstrip("/"), transport=transport)
+        from .. import creds
+
+        self.cfg = creds.resolve("crowdstrike")
+        self.configured = creds.configured("crowdstrike")
+        self._http = make_client((self.cfg["base_url"] or "").rstrip("/"), transport=transport)
         self._tokens: dict[str, tuple[str, float]] = {}
 
     def _token(self, member_cid: str) -> str:
         cached = self._tokens.get(member_cid)
         if cached and cached[1] > time.time() + 60:
             return cached[0]
-        form = {"client_id": settings.crowdstrike_client_id,
-                "client_secret": settings.crowdstrike_client_secret}
+        form = {"client_id": self.cfg["client_id"],
+                "client_secret": self.cfg["client_secret"]}
         if member_cid:
             form["member_cid"] = member_cid.lower().split("-")[0]
         r = self._http.post("/oauth2/token", data=form,
@@ -96,7 +99,7 @@ class CrowdStrike:
                     "status": status,
                     "agent_version": d.get("agent_version") or "",
                     "last_seen": last_seen,
-                    "link": f"{settings.crowdstrike_console_url}/hosts/detail/{d.get('device_id')}",
+                    "link": f"{self.cfg["console_url"]}/hosts/detail/{d.get('device_id')}",
                     "raw": {"cs_status": cs_status},
                 })
             offset = (body.get("meta", {}).get("pagination") or {}).get("next") or (body.get("meta", {}).get("pagination") or {}).get("offset")

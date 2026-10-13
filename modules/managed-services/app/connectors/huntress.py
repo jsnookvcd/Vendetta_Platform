@@ -27,9 +27,12 @@ class Huntress:
     tool = "huntress"
 
     def __init__(self, transport: httpx.BaseTransport | None = None):
-        self.configured = bool(settings.huntress_api_key and settings.huntress_api_secret)
+        from .. import creds
+
+        self.cfg = creds.resolve("huntress")
+        self.configured = creds.configured("huntress")
         self._http = make_client("https://api.huntress.io/v1",
-                                 auth=(settings.huntress_api_key, settings.huntress_api_secret),
+                                 auth=(self.cfg["api_key"], self.cfg["api_secret"]),
                                  transport=transport)
 
     def _get(self, path: str, params: dict | None = None) -> dict:
@@ -91,7 +94,7 @@ class Huntress:
                 "status": status,
                 "agent_version": a.get("version") or "",
                 "last_seen": last,
-                "link": settings.huntress_base_url,
+                "link": self.cfg["base_url"],
                 "raw": {"edr_version": a.get("edr_version"), "defender_status": a.get("defender_status"),
                         "firewall_status": fw},
             })
@@ -112,7 +115,7 @@ class Huntress:
                 "detail": (ir.get("summary") or "")[:2000],
                 "tool_status": ir.get("status") or "",
                 "occurred_at": parse_dt(ir.get("sent_at")) or parse_dt(ir.get("updated_at")),
-                "link": settings.huntress_base_url,
+                "link": self.cfg["base_url"],
                 "resolved": status in RESOLVED_STATUSES,
                 "device_external_id": str(ir.get("agent_id") or ""),
                 "raw": {"indicator_types": ir.get("indicator_types"),

@@ -28,11 +28,14 @@ class SentinelOne:
     tool = "sentinelone"
 
     def __init__(self, transport: httpx.BaseTransport | None = None):
-        self.configured = bool(settings.sentinelone_url and settings.sentinelone_api_token)
-        self.base = settings.sentinelone_url.rstrip("/")
+        from .. import creds
+
+        self.cfg = creds.resolve("sentinelone")
+        self.configured = creds.configured("sentinelone")
+        self.base = (self.cfg["url"] or "").rstrip("/")
         self._http = make_client(
             f"{self.base}/web/api/v2.1",
-            headers={"Authorization": f"ApiToken {settings.sentinelone_api_token}"},
+            headers={"Authorization": f"ApiToken {self.cfg['api_token']}"},
             transport=transport,
         )
 

@@ -31,12 +31,15 @@ class SuperOps:
     tool = "superops"
 
     def __init__(self, transport: httpx.BaseTransport | None = None):
-        self.configured = bool(settings.superops_api_token and settings.superops_subdomain)
+        from .. import creds
+
+        self.cfg = creds.resolve("superops")
+        self.configured = creds.configured("superops")
         self._http = make_client(
-            settings.superops_api_url,
+            self.cfg["api_url"],
             headers={
-                "Authorization": f"Bearer {settings.superops_api_token}",
-                "CustomerSubDomain": settings.superops_subdomain,
+                "Authorization": f"Bearer {self.cfg['api_token']}",
+                "CustomerSubDomain": self.cfg["subdomain"],
                 "Content-Type": "application/json",
             },
             transport=transport,
@@ -93,7 +96,7 @@ class SuperOps:
                 "status": "online" if (a.get("status") or "").upper() == "ONLINE" else "offline",
                 "agent_version": a.get("agentVersion") or "",
                 "last_seen": parse_dt(a.get("lastCommunicatedTime")),
-                "link": settings.superops_base_url,
+                "link": self.cfg["base_url"],
                 "raw": a,
             })
         return out
@@ -115,7 +118,7 @@ class SuperOps:
                 "detail": " · ".join(x for x in [al.get("description"), asset.get("name")] if x),
                 "tool_status": al.get("status") or "",
                 "occurred_at": parse_dt(al.get("createdTime")),
-                "link": settings.superops_base_url,
+                "link": self.cfg["base_url"],
                 "resolved": status == "resolved",
                 "raw": al,
             })
@@ -139,8 +142,8 @@ class SuperOps:
         }
         if requester_user_id:
             inp["requester"] = {"userId": requester_user_id}
-        if settings.superops_default_techgroup_id:
-            inp["techGroup"] = {"groupId": settings.superops_default_techgroup_id}
+        if self.cfg["default_techgroup_id"]:
+            inp["techGroup"] = {"groupId": self.cfg["default_techgroup_id"]}
         if priority:
             inp["priority"] = priority
         data = self.gql(

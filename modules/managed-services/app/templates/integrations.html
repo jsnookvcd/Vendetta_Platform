@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% block title %}Integrations{% endblock %}
+{% block body %}
+<div class="title-row"><h1>Integrations</h1></div>
+<p class="faint" style="margin:2px 0 16px">Wire a tool in one place. Enter its credentials and click Connect; it is saved encrypted and tested against the live API right away. No redeploy. A tool with its credentials in the environment already shows as connected and can be overridden here.</p>
+
+{% for tool in tools %}{% set s = status[tool] %}
+<div class="panel pad" style="margin-bottom:16px">
+  <div class="row" style="align-items:center; gap:10px; margin-bottom:10px">
+    <h2 style="font-size:16px; margin:0">{{ tool_names[tool] }}</h2>
+    {% if s.connected %}<span class="coc-badge coc-ok">CONNECTED</span>
+    {% elif s.configured %}<span class="coc-badge coc-broken">NEEDS TEST</span>
+    {% else %}<span class="coc-badge" style="color:var(--muted); border:1px solid var(--line-2)">NOT CONFIGURED</span>{% endif %}
+    <span class="faint" style="font-size:12px">source: {{ s.source }}</span>
+    <span class="grow"></span>
+    {% if s.last_tested_at %}<span class="faint" style="font-size:12px">last test {{ s.last_tested_at.strftime('%b %d %H:%M') }} UTC{% if s.last_detail %}: {{ s.last_detail }}{% endif %}</span>{% endif %}
+  </div>
+
+  <form method="post" action="/integrations/{{ tool }}">
+    <div class="fieldgrid">
+      {% for f in fields[tool] %}
+      <label class="field">{{ f.label }}{% if f.required %} <span class="req">*</span>{% endif %}
+        {% if f.secret %}
+          <input type="password" name="{{ f.key }}" autocomplete="off"
+                 placeholder="{{ '••••••• (leave blank to keep)' if s.values[f.key] else (f.placeholder or '') }}">
+        {% else %}
+          <input name="{{ f.key }}" value="{{ s.values[f.key] }}" placeholder="{{ f.placeholder }}" autocomplete="off">
+        {% endif %}
+        {% if f.help %}<span class="hint">{{ f.help }}</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="row" style="margin-top:12px; gap:8px">
+      <button class="btn btn-primary">Connect and test</button>
+    </div>
+  </form>
+
+  {% if s.configured %}
+  <div class="row" style="margin-top:8px; gap:8px">
+    <form method="post" action="/integrations/{{ tool }}/test"><button class="btn btn-sm btn-ghost">Test again</button></form>
+    <form method="post" action="/integrations/{{ tool }}/disconnect"
+          onsubmit="return confirm('Disconnect {{ tool_names[tool] }}? Stored credentials are removed; it falls back to the environment if set there.')">
+      <button class="btn btn-sm btn-ghost">Disconnect</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

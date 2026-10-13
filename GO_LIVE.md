@@ -106,20 +106,21 @@ aws ssm put-parameter --type SecureString --name /vendetta/managed-services/PLAT
 
 ## 4. Wire the first tool (low risk)
 
-Pick SuperOps or Acronis first. Put its real credentials in SSM, then redeploy
-managed services (or reboot the host) so they load:
+Pick SuperOps or Acronis first. On managed services, open **Integrations**, find the
+tool, paste its credentials, and click **Connect and test**. The credentials are
+saved encrypted in the database and the tool is tested against its live API right
+then, reporting what came back ("N clients visible") or a precise error. Fix and
+re-save until it shows CONNECTED. This is the live shakeout for that tool, it takes
+effect with no redeploy, and it touches nothing on a client machine.
 
-```bash
-# SuperOps example
-aws ssm put-parameter --type SecureString --name /vendetta/managed-services/SUPEROPS_API_TOKEN --value "<token>"
-aws ssm put-parameter --type String       --name /vendetta/managed-services/SUPEROPS_SUBDOMAIN  --value "<subdomain>"
-aws ssm put-parameter --type String       --name /vendetta/managed-services/SUPEROPS_BASE_URL   --value "https://<subdomain>.superops.ai"
-```
+Every integration works this way: one screen, enter the credential, Connect, done.
+Stored credentials override anything set in the environment, and a blank secret
+field on a re-save keeps the stored secret. Disconnect removes the stored credential
+and falls back to the environment if one is set there.
 
-On managed services, open Settings and click **Test connections**. It makes the
-lightest real read against the tool and reports what came back ("N clients visible")
-or a precise error. Fix credentials until it is green. This is the live shakeout for
-that tool, and it touches nothing.
+Credentials in the environment still work as a fallback, so you can pre-seed a tool
+through SSM instead if you prefer; the Integrations page then shows it as connected
+from source "env" and lets you override it in place.
 
 ## 5. Bring one client through
 
@@ -136,9 +137,9 @@ Nothing has touched a client machine. Read-only mode is still on.
 
 ## 6. Add an EDR, still read-only
 
-Wire SentinelOne or CrowdStrike the same way (credentials in SSM, Test connections,
-map the client's site IDs or child CID, sync). Confirm threats and host state render.
-Still no action can fire.
+Wire SentinelOne or CrowdStrike the same way on the Integrations page (paste
+credentials, Connect and test), map the client's site IDs or child CID, sync.
+Confirm threats and host state render. Still no action can fire.
 
 ## 7. Turn actions on
 

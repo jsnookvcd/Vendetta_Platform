@@ -323,3 +323,7 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .coc-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
 .coc-ok { color: #8fd98a; border: 1px solid #2f5a34; background: rgba(47,90,52,0.14); }
 .coc-broken { color: #ff9ba6; border: 1px solid #6a2430; background: rgba(106,36,48,0.16); }
+.fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.fieldgrid .field { margin: 0; }
+.req { color: #ff9ba6; }
+.hint { display: block; font-size: 11px; color: var(--faint); margin-top: 3px; }
