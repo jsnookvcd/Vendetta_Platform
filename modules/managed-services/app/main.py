@@ -243,6 +243,38 @@ def _get_client(db: Session, cid: str) -> Client:
     return c
 
 
+@app.get("/clients/{cid}/actions/verify")
+def client_actions_verify(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Verify the per-client response-action chain of custody (staff)."""
+    from .db import client_chain_records
+    from . import evidence
+
+    c = _get_client(db, cid)
+    result = evidence.verify_chain(client_chain_records(db, c.id))
+    _audit(db, user, "actions.verify", f"{c.name} ok={result['ok']}")
+    return JSONResponse(result)
+
+
+@app.get("/clients/{cid}/actions/proof.json")
+def client_actions_proof(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import build_action_proof
+
+    c = _get_client(db, cid)
+    _audit(db, user, "actions.proof", c.name)
+    return JSONResponse(build_action_proof(db, c), headers={
+        "Content-Disposition": f'attachment; filename="response_actions_{c.id}.json"'})
+
+
+@app.get("/api/clients/{cid}/actions/verify")
+def api_client_actions_verify(cid: str, _: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    from .db import client_chain_records
+    from . import evidence
+
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    return JSONResponse(evidence.verify_chain(client_chain_records(db, cid)))
+
+
 @app.get("/clients/{cid}", response_class=HTMLResponse)
 def client_page(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     c = _get_client(db, cid)
@@ -496,10 +528,26 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
     devices = db.execute(select(Device).where(Device.client_id == c.id)).scalars().all()
     channels = {d: db.query(Channel).filter_by(client_id=c.id, desk=d).one_or_none() for d in DESKS}
     by_sev = {s_: sum(1 for a in open_alerts if a.severity == s_) for s_ in SEVERITIES}
+    from .db import client_chain_records
+    from . import evidence
+
+    chain = evidence.verify_chain(client_chain_records(db, c.id))
     return render(request, "portal.html", user=ident.email, portal=True, client=c,
                   open_alerts=open_alerts, resolved=resolved, feed=feed, channels=channels,
                   n_devices=len(devices), n_online=sum(1 for d in devices if d.status == "online"),
-                  exec_view=ident.is_executive, by_sev=by_sev)
+                  exec_view=ident.is_executive, by_sev=by_sev, chain=chain)
+
+
+@app.get("/portal/actions/proof.json")
+def portal_action_proof(ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    """The client's downloadable, verifiable record of every response action taken
+    on their systems."""
+    from .db import build_action_proof
+
+    c = _portal_client(db, ident)
+    _audit(db, ident.email, "portal.action_proof", c.name)
+    return JSONResponse(build_action_proof(db, c), headers={
+        "Content-Disposition": f'attachment; filename="response_actions_{c.id}.json"'})
 
 
 @app.get("/portal/alerts/{aid}", response_class=HTMLResponse)

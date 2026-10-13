@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     module_enabled: bool = True
     database_url: str = "postgresql+psycopg://msp:msp@db:5432/msp"
     secret_key: str = "change-me"
+    # Ed25519 private key (32 bytes, hex) that signs the per-client action chain of
+    # custody. Blank derives a stable key from secret_key; set a dedicated key in
+    # production so it can be backed up and rotated independently.
+    evidence_signing_key: str = ""
     cookie_secure: bool = False
     login_max_attempts: int = 8
     login_window_seconds: int = 300

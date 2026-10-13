@@ -162,6 +162,15 @@ class ActionLog(Base):
     client_visible: Mapped[bool] = mapped_column(Boolean, default=False)
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # Chain of custody: a signed, tamper-evident chain per client (the tenant), so
+    # every response action against a client carries proof of who, what, when and
+    # which tenant. Filled automatically at flush (see the before_flush hook).
+    chain_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    signature: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    key_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     alert: Mapped[Alert | None] = relationship(back_populates="actions")
     device: Mapped[Device | None] = relationship()
 
@@ -229,6 +238,135 @@ def init_db() -> None:
         conn.execute(_text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS platform_client_id VARCHAR(32) DEFAULT ''"))
         conn.execute(_text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS executive_emails VARCHAR(1000) DEFAULT ''"))
         conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_clients_platform_client_id ON clients (platform_client_id)"))
+        # Chain-of-custody columns on the action log.
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS chain_seq INTEGER"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS prev_hash VARCHAR(64)"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS signature VARCHAR(160)"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS key_id VARCHAR(32)"))
+        conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_action_log_content_hash ON action_log (content_hash)"))
+
+
+# ---------------------------------------------------------------- chain of custody
+_GLOBAL_CHAIN = "_module"  # chain key for actions with no client (module-level)
+
+
+def action_fields(a: "ActionLog") -> dict:
+    """The immutable, evidentiary fields of an action, in the exact shape the chain
+    hashes. Write and verify both go through this so the two always agree."""
+    return {
+        "id": a.id,
+        "client_id": a.client_id,
+        "alert_id": a.alert_id,
+        "device_id": a.device_id,
+        "tool": a.tool,
+        "action": a.action,
+        "actor": a.actor,
+        "detail": a.detail,
+        "result": a.result,
+        "client_visible": bool(a.client_visible),
+        "at": a.at.isoformat() if a.at is not None else None,
+    }
+
+
+def _chain_new_actions(session) -> None:
+    from collections import defaultdict
+
+    from sqlalchemy import select as _select
+
+    from . import evidence
+
+    pending = [o for o in session.new if isinstance(o, ActionLog) and o.content_hash is None]
+    if not pending:
+        return
+    by_client: dict[str, list[ActionLog]] = defaultdict(list)
+    for a in pending:
+        # Materialise insert-time defaults onto the object so what we sign is exactly
+        # what gets stored.
+        if a.id is None:
+            a.id = new_id()
+        if a.at is None:
+            a.at = utcnow()
+        if a.actor is None:
+            a.actor = "system"
+        if a.action is None:
+            a.action = ""
+        if a.tool is None:
+            a.tool = ""
+        if a.detail is None:
+            a.detail = ""
+        if a.result is None:
+            a.result = "ok"
+        if a.client_visible is None:
+            a.client_visible = False
+        by_client[a.client_id or _GLOBAL_CHAIN].append(a)
+
+    with session.no_autoflush:
+        for key, rows in by_client.items():
+            prev_seq, prev_hash = 0, evidence.GENESIS
+            q = _select(ActionLog.chain_seq, ActionLog.content_hash).where(ActionLog.content_hash.isnot(None))
+            q = q.where(ActionLog.client_id == key) if key != _GLOBAL_CHAIN else q.where(ActionLog.client_id.is_(None))
+            head = session.execute(q.order_by(ActionLog.chain_seq.desc()).limit(1)).first()
+            if head:
+                prev_seq, prev_hash = head[0], head[1]
+            for a in sorted(rows, key=lambda x: (x.at, x.id)):
+                prev_seq += 1
+                a.chain_seq = prev_seq
+                a.prev_hash = prev_hash
+                a.content_hash, a.signature, a.key_id = evidence.compute(action_fields(a), prev_hash)
+                prev_hash = a.content_hash
+
+
+def client_chain_records(db, client_id: str) -> list[dict]:
+    from sqlalchemy import select as _select
+
+    rows = db.execute(
+        _select(ActionLog).where(ActionLog.client_id == client_id, ActionLog.content_hash.isnot(None))
+        .order_by(ActionLog.chain_seq)
+    ).scalars().all()
+    return [{"fields": action_fields(a), "prev_hash": a.prev_hash,
+             "content_hash": a.content_hash, "signature": a.signature} for a in rows]
+
+
+def build_action_proof(db, client) -> dict:
+    """A self-contained, verifiable proof of every response action taken for a
+    client. All fields are included; actions are operator records, not client
+    secrets."""
+    from sqlalchemy import select as _select
+
+    from . import evidence
+
+    rows = db.execute(
+        _select(ActionLog).where(ActionLog.client_id == client.id, ActionLog.content_hash.isnot(None))
+        .order_by(ActionLog.chain_seq)
+    ).scalars().all()
+    verify_input, entries = [], []
+    for a in rows:
+        f = action_fields(a)
+        verify_input.append({"fields": f, "prev_hash": a.prev_hash,
+                             "content_hash": a.content_hash, "signature": a.signature})
+        entries.append({"chain_seq": a.chain_seq, "prev_hash": a.prev_hash,
+                        "content_hash": a.content_hash, "signature": a.signature, **f})
+    result = evidence.verify_chain(verify_input)
+    return {
+        "document": "Vendetta Cyber Defense response action proof",
+        "scheme": evidence.SCHEME,
+        "generated_at": utcnow().isoformat(),
+        "key_id": evidence.key_id(),
+        "public_key": evidence.public_key_hex(),
+        "client": {"id": client.id, "name": client.name},
+        "entry_count": len(entries),
+        "verification": result,
+        "entries": entries,
+    }
+
+
+from sqlalchemy import event as _event  # noqa: E402
+
+
+@_event.listens_for(SessionLocal, "before_flush")
+def _evidence_before_flush(session, flush_context, instances):  # noqa: ANN001
+    _chain_new_actions(session)
 
 
 def get_channel(db, client_id: str, desk: str) -> Channel:
