@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ a.title|truncate(60) }}{% endblock %}
 {% block heading %}Alert{% endblock %}
+{% macro approver_field() %}<select name="approver" class="appr"{{ ' required' if not can_self_approve }}>{% if can_self_approve %}<option value="">Approve myself</option>{% else %}<option value="">Approver…</option>{% endif %}{% for u in approvers %}<option value="{{ u.email }}">{{ u.name or u.email }}</option>{% endfor %}</select>{% endmacro %}
 {% block body %}
 <div class="title-row">
   {{ sev(a.severity) }}
@@ -25,7 +26,7 @@
         {% for act in ALERT_ACTIONS.get(a.tool, []) %}
         <form class="inline {{ 'confirm' if act.danger }}" method="post" action="/alerts/{{ a.id }}/action"{% if act.danger %} data-confirm="This runs on the live client system: {{ act.label }}. Continue?"{% endif %}>
           <input type="hidden" name="action_id" value="{{ act.id }}">
-          {% if act.danger %}<input type="hidden" name="confirm" value="true">{% endif %}
+          {% if act.danger %}<input type="hidden" name="confirm" value="true">{{ approver_field() }}{% endif %}
           {% if act.needs_comment %}<input name="comment" placeholder="reason" required style="width:160px; font-size:12px">{% endif %}
           <button class="btn btn-sm {{ 'btn-primary' if act.danger }}">{{ act.label }}</button>
         </form>
@@ -35,7 +36,7 @@
       <p class="faint" style="font-size:12px; margin:12px 0 6px">Host: <b style="color:var(--fg)">{{ a.device.hostname }}</b> {{ devdot(a.device.status) }} {{ a.device.status }}</p>
       <div class="row" style="gap:7px; flex-wrap:wrap">
         {% for act in DEVICE_ACTIONS.get(a.device.tool, []) %}
-        <form class="inline {{ 'confirm' if act.danger }}" method="post" action="/alerts/{{ a.id }}/action"{% if act.danger %} data-confirm="This runs on the live host {{ a.device.hostname }}: {{ act.label }}. Continue?"{% endif %}><input type="hidden" name="action_id" value="{{ act.id }}">{% if act.danger %}<input type="hidden" name="confirm" value="true">{% endif %}<button class="btn btn-sm {{ 'danger btn-ghost' if act.danger }}">{{ act.label }}</button></form>
+        <form class="inline {{ 'confirm' if act.danger }}" method="post" action="/alerts/{{ a.id }}/action"{% if act.danger %} data-confirm="This runs on the live host {{ a.device.hostname }}: {{ act.label }}. Continue?"{% endif %}><input type="hidden" name="action_id" value="{{ act.id }}">{% if act.danger %}<input type="hidden" name="confirm" value="true">{{ approver_field() }}{% endif %}<button class="btn btn-sm {{ 'danger btn-ghost' if act.danger }}">{{ act.label }}</button></form>
         {% endfor %}
       </div>
       {% endif %}

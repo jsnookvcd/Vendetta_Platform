@@ -158,6 +158,7 @@ class ActionLog(Base):
     tool: Mapped[str] = mapped_column(String(20), default="")
     action: Mapped[str] = mapped_column(String(60))
     actor: Mapped[str] = mapped_column(String(320), default="system")
+    approver: Mapped[str] = mapped_column(String(320), default="")  # who authorized a destructive action
     detail: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(String(20), default="ok")  # ok | failed
     client_visible: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -219,6 +220,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(30), default="analyst")  # admin | analyst | client
     client_id: Mapped[str | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Response-action capabilities. can_act: may run tool actions at all. can_approve:
+    # may authorize a destructive action (the second-person control). Admin implies both.
+    can_act: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_approve: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -282,6 +287,9 @@ def init_db() -> None:
         conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS signature VARCHAR(160)"))
         conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS key_id VARCHAR(32)"))
         conn.execute(_text("CREATE INDEX IF NOT EXISTS ix_action_log_content_hash ON action_log (content_hash)"))
+        conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_act BOOLEAN DEFAULT true"))
+        conn.execute(_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_approve BOOLEAN DEFAULT false"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS approver VARCHAR(320) DEFAULT ''"))
 
 
 # ---------------------------------------------------------------- chain of custody
@@ -299,6 +307,7 @@ def action_fields(a: "ActionLog") -> dict:
         "tool": a.tool,
         "action": a.action,
         "actor": a.actor,
+        "approver": a.approver,
         "detail": a.detail,
         "result": a.result,
         "client_visible": bool(a.client_visible),
@@ -328,6 +337,8 @@ def _chain_new_actions(session) -> None:
             a.actor = "system"
         if a.action is None:
             a.action = ""
+        if a.approver is None:
+            a.approver = ""
         if a.tool is None:
             a.tool = ""
         if a.detail is None:

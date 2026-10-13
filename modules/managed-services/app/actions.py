@@ -77,13 +77,18 @@ DEVICE_ACTIONS: dict[str, list[Action]] = {
 _ALL = {a.id: a for acts in list(ALERT_ACTIONS.values()) + list(DEVICE_ACTIONS.values()) for a in acts}
 
 
-def _blocked(action: "Action", confirm: bool) -> str:
+def _blocked(action: "Action", confirm: bool, *, can_act: bool = True, approved: bool = True) -> str:
     """Refusal reason for an action, or "" when it may run. Read-only mode blocks
-    every tool write; destructive actions also need an explicit confirm."""
+    every tool write; the actor must be allowed to run actions; destructive actions
+    also need an explicit confirm and an authorized approver."""
     if settings.actions_readonly:
         return "read-only mode is on: tool actions are disabled while this client is being validated"
+    if not can_act:
+        return "you do not have permission to run response actions"
     if action.danger and not confirm:
         return "needs confirmation"
+    if action.danger and not approved:
+        return "a destructive action needs approval from an authorized responder"
     return ""
 
 
@@ -114,11 +119,12 @@ def _ref(alert_or_device, client) -> str:
     return client.tool_ref(alert_or_device.tool)
 
 
-def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comment: str = "", confirm: bool = False) -> tuple[bool, str]:
+def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comment: str = "",
+                     confirm: bool = False, can_act: bool = True, approver: str = "") -> tuple[bool, str]:
     action = _ALL.get(action_id)
     if not action or action not in ALERT_ACTIONS.get(alert.tool, []):
         return False, "that action does not apply to this alert"
-    blocked = _blocked(action, confirm)
+    blocked = _blocked(action, confirm, can_act=can_act, approved=bool(approver))
     if blocked:
         db.add(ActionLog(client_id=alert.client_id, alert_id=alert.id, device_id=alert.device_id,
                          tool=alert.tool, action=action.label, actor=actor, detail=blocked, result="blocked"))
@@ -176,7 +182,7 @@ def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comm
         ok, detail = False, str(e)
     visible = ok and action.shared and alert.published
     db.add(ActionLog(client_id=alert.client_id, alert_id=alert.id, device_id=alert.device_id,
-                     tool=alert.tool, action=action.label, actor=actor,
+                     tool=alert.tool, action=action.label, actor=actor, approver=approver,
                      detail=_portal_text(action, alert, None) if visible else (detail or comment[:500]),
                      result="ok" if ok else "failed", client_visible=visible))
     db.commit()
@@ -184,11 +190,12 @@ def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comm
 
 
 def run_device_action(db: Session, device: Device, action_id: str, actor: str,
-                      alert: Alert | None = None, comment: str = "", confirm: bool = False) -> tuple[bool, str]:
+                      alert: Alert | None = None, comment: str = "", confirm: bool = False,
+                      can_act: bool = True, approver: str = "") -> tuple[bool, str]:
     action = _ALL.get(action_id)
     if not action or action not in DEVICE_ACTIONS.get(device.tool, []):
         return False, "that action does not apply to this device"
-    blocked = _blocked(action, confirm)
+    blocked = _blocked(action, confirm, can_act=can_act, approved=bool(approver))
     if blocked:
         db.add(ActionLog(client_id=device.client_id, alert_id=alert.id if alert else None, device_id=device.id,
                          tool=device.tool, action=action.label, actor=actor, detail=blocked, result="blocked"))
@@ -223,7 +230,7 @@ def run_device_action(db: Session, device: Device, action_id: str, actor: str,
         ok, detail = False, str(e)
     visible = ok and action.shared and (alert.published if alert else True)
     db.add(ActionLog(client_id=device.client_id, alert_id=alert.id if alert else None, device_id=device.id,
-                     tool=device.tool, action=action.label, actor=actor,
+                     tool=device.tool, action=action.label, actor=actor, approver=approver,
                      detail=_portal_text(action, alert, device) if visible else (detail or comment[:500]),
                      result="ok" if ok else "failed", client_visible=visible))
     db.commit()

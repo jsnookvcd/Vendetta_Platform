@@ -23,7 +23,7 @@ from . import actions as act, sso
 from . import auth, connectors, creds, messaging, oidc, preflight, provision, sync
 from .config import DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, TOOL_NAMES, TOOLS, settings
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
-                 get_channel, init_db, utcnow)
+                 User, get_channel, init_db, utcnow)
 
 log = logging.getLogger(__name__)
 _APP_DIR = Path(__file__).resolve().parent
@@ -424,7 +424,12 @@ def _get_alert(db: Session, aid: str) -> Alert:
 @app.get("/alerts/{aid}", response_class=HTMLResponse)
 def alert_page(aid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     a = _get_alert(db, aid)
-    return render(request, "alert.html", user=user, a=a, hub_ready=bool(settings.platform_hub_url))
+    can_act, can_approve = _caps(db, user)
+    approvers = db.execute(select(User).where(User.active.is_(True), User.role != "client")).scalars().all()
+    approvers = [u for u in approvers if u.role == "admin" or u.can_approve]
+    return render(request, "alert.html", user=user, a=a, hub_ready=bool(settings.platform_hub_url),
+                  can_act=can_act, can_self_approve=can_approve and not settings.require_second_approver,
+                  approvers=approvers, require_second=settings.require_second_approver)
 
 
 @app.post("/alerts/{aid}/triage")
@@ -451,17 +456,80 @@ def triage(aid: str, op: str = Form(...), client_note: str = Form(""),
     return _back(f"/alerts/{aid}", True, f"{label}.")
 
 
+def _caps(db: Session, email: str) -> tuple[bool, bool]:
+    """(can_act, can_approve) for an internal user. Admin implies both."""
+    if email == settings.admin_user:
+        return True, True
+    u = db.query(User).filter_by(email=email).one_or_none()
+    if not u:
+        return False, False
+    if u.role == "admin":
+        return True, True
+    return bool(u.can_act), bool(u.can_approve)
+
+
+def _resolve_approver(db: Session, actor: str, can_approve: bool, form_approver: str) -> str:
+    """The authorized approver for a destructive action, or "" if none is valid. A
+    named approver must be an active internal user who can approve; without one, the
+    actor self-approves unless strict two-person control is on."""
+    form_approver = (form_approver or "").strip().lower()
+    if form_approver:
+        if form_approver == settings.admin_user:
+            ok = True
+        else:
+            au = db.query(User).filter_by(email=form_approver).one_or_none()
+            ok = bool(au and au.active and (au.role == "admin" or au.can_approve))
+        if ok and not (settings.require_second_approver and form_approver == actor.lower()):
+            return form_approver
+        return ""
+    if can_approve and not settings.require_second_approver:
+        return actor  # self-approval, recorded as such in the signed log
+    return ""
+
+
 @app.post("/alerts/{aid}/action")
 def alert_action(aid: str, action_id: str = Form(...), comment: str = Form(""), confirm: bool = Form(False),
-                 user: str = auth.RequireUser, db: Session = Depends(get_db)):
+                 approver: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     a = _get_alert(db, aid)
     spec = act.spec(action_id)
+    can_act, can_approve = _caps(db, user)
+    appr = _resolve_approver(db, user, can_approve, approver) if (spec and spec.danger) else ""
     if spec and a.device and spec in act.DEVICE_ACTIONS.get(a.device.tool, []):
-        ok, detail = act.run_device_action(db, a.device, action_id, user, alert=a, comment=comment, confirm=confirm)
+        ok, detail = act.run_device_action(db, a.device, action_id, user, alert=a, comment=comment,
+                                           confirm=confirm, can_act=can_act, approver=appr)
     else:
-        ok, detail = act.run_alert_action(db, a, action_id, user, comment=comment, confirm=confirm)
+        ok, detail = act.run_alert_action(db, a, action_id, user, comment=comment, confirm=confirm,
+                                          can_act=can_act, approver=appr)
     _audit(db, user, "alert.action", f"{a.id} {action_id}: {detail}")
     return _back(f"/alerts/{aid}", ok, f"{(spec.label if spec else action_id)}: {detail}")
+
+
+def _is_admin(db: Session, email: str) -> bool:
+    if email == settings.admin_user:
+        return True
+    u = db.query(User).filter_by(email=email).one_or_none()
+    return bool(u and u.role == "admin")
+
+
+@app.get("/team", response_class=HTMLResponse)
+def team_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    users = db.execute(select(User).where(User.role != "client").order_by(User.email)).scalars().all()
+    return render(request, "team.html", user=user, users=users, is_admin=_is_admin(db, user),
+                  require_second=settings.require_second_approver)
+
+
+@app.post("/team/{uid}/caps")
+def team_caps(uid: str, can_act: bool = Form(False), can_approve: bool = Form(False),
+              user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if not _is_admin(db, user):
+        raise HTTPException(403, "only an admin can change response capabilities")
+    u = db.get(User, uid)
+    if not u or u.role == "client":
+        raise HTTPException(404)
+    u.can_act, u.can_approve = bool(can_act), bool(can_approve)
+    db.commit()
+    _audit(db, user, "team.caps", f"{u.email} act={u.can_act} approve={u.can_approve}")
+    return RedirectResponse("/team?msg=saved", status_code=302)
 
 
 @app.post("/alerts/{aid}/escalate")
@@ -474,12 +542,16 @@ def escalate(aid: str, user: str = auth.RequireUser, db: Session = Depends(get_d
 
 @app.post("/devices/{did}/action")
 def device_action(did: str, action_id: str = Form(...), comment: str = Form(""), confirm: bool = Form(False),
-                  user: str = auth.RequireUser, db: Session = Depends(get_db)):
+                  approver: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     d = db.execute(select(Device).options(selectinload(Device.client))
                    .where(Device.id == did)).scalar_one_or_none()
     if not d:
         raise HTTPException(404)
-    ok, detail = act.run_device_action(db, d, action_id, user, comment=comment, confirm=confirm)
+    spec = act.spec(action_id)
+    can_act, can_approve = _caps(db, user)
+    appr = _resolve_approver(db, user, can_approve, approver) if (spec and spec.danger) else ""
+    ok, detail = act.run_device_action(db, d, action_id, user, comment=comment, confirm=confirm,
+                                       can_act=can_act, approver=appr)
     _audit(db, user, "device.action", f"{d.hostname} {action_id}: {detail}")
     return _back(f"/clients/{d.client_id}", ok, f"{d.hostname}: {detail}")
 

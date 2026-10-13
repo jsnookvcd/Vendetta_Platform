@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     # Turn it on to bring a new client in and watch data flow without touching a
     # single host; turn it off once the integration is validated.
     actions_readonly: bool = False
+    # Strict two-person control: when true, a destructive action's approver must be a
+    # different internal user (no self-approval). Off by default so a lone on-call
+    # responder can still act, with the self-approval recorded in the signed log.
+    require_second_approver: bool = False
 
     # Sync and escalation
     sync_interval_seconds: int = 300

@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block title %}Team{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">Team and response permissions</h1></div>
+<p class="faint" style="margin:2px 0 16px">Who may run tool response actions, and who may authorize a destructive one. Admins always have both. {% if require_second %}Strict two-person control is on: a destructive action needs a second person as approver.{% else %}A responder who can approve may self-approve their own destructive action; it is recorded as self-approved in the signed log.{% endif %}</p>
+
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>User</th><th>Role</th><th>Can run actions</th><th>Can approve destructive</th>{% if is_admin %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for u in users %}
+  <form method="post" action="/team/{{ u.id }}/caps">
+  <tr>
+    <td>{{ u.name or u.email }}<div class="faint" style="font-size:12px">{{ u.email }}</div></td>
+    <td class="nowrap">{{ u.role }}</td>
+    {% if u.role == 'admin' %}
+    <td class="faint">yes (admin)</td><td class="faint">yes (admin)</td>{% if is_admin %}<td></td>{% endif %}
+    {% else %}
+    <td><input type="checkbox" name="can_act" value="true" {{ 'checked' if u.can_act }} {{ '' if is_admin else 'disabled' }}></td>
+    <td><input type="checkbox" name="can_approve" value="true" {{ 'checked' if u.can_approve }} {{ '' if is_admin else 'disabled' }}></td>
+    {% if is_admin %}<td><button class="btn btn-xs">Save</button></td>{% endif %}
+    {% endif %}
+  </tr>
+  </form>
+  {% else %}
+  <tr><td colspan="5" class="faint">No internal users yet. They appear here after their first SSO sign-in.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% if not is_admin %}<p class="faint" style="font-size:12px; margin-top:10px">Only an admin can change these.</p>{% endif %}
+{% endblock %}
