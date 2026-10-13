@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     platform_hub_url: str = ""
     platform_hub_token: str = ""
 
+    # Vendetta Platform control plane: where this module pulls its client roster.
+    platform_url: str = ""
+    platform_token: str = ""
+
 
 settings = Settings()
 

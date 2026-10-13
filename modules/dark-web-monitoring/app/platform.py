@@ -65,6 +65,7 @@ def escalate(hit: Hit, db: Session) -> dict:
     payload = {
         "source_module": "dark-web-monitoring",
         "client_id": hit.client_id,
+        "platform_client_id": hit.client.platform_client_id,
         "case_ref": hit.client.case_ref,
         "severity": hit.severity,
         "summary": f"Dark web {hit.reason} finding: {hit.item.title}"[:250],

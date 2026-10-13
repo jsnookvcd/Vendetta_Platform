@@ -89,6 +89,12 @@ page in the console:
 A tool counts as deployed for a client once its mapping is set, and only then does
 sync touch it.
 
+## Platform roster and preflight
+
+When PLATFORM_URL is set, this module pulls its client roster and per-client tool mapping from the control plane (clients are activated there, pulled here with "Pull from platform" or on the worker's interval). Without it, clients are managed in this console directly.
+
+Before a live run, Settings has a "Test connections" button (and `python -m app.preflight`) that makes the lightest real read against each configured tool and reports what came back, so dropping in real credentials and confirming them is one action.
+
 ## Run it
 
 ```bash

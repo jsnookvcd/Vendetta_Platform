@@ -55,6 +55,8 @@ class Client(Base):
     portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     portal_domains: Mapped[str] = mapped_column(String(500), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Set when provisioned from the platform control plane; the shared client id.
+    platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     retainer: Mapped[Retainer | None] = relationship(back_populates="client", uselist=False, cascade="all, delete-orphan")
@@ -199,6 +201,8 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     # create_all does not add columns to existing tables; keep older databases current.
     with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE clients ADD COLUMN IF NOT EXISTS platform_client_id VARCHAR(32) DEFAULT ''"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_clients_platform_client_id ON clients (platform_client_id)"))
         conn.execute(text(
             "ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS task_id VARCHAR(32) "
             "REFERENCES tasks(id) ON DELETE SET NULL"))

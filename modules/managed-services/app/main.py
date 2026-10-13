@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act
-from . import auth, connectors, messaging, oidc, provision, sync
+from . import auth, connectors, messaging, oidc, preflight, provision, sync
 from .config import DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, TOOL_NAMES, TOOLS, settings
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
                  get_channel, init_db, utcnow)
@@ -454,7 +454,22 @@ def settings_page(request: Request, user: str = auth.RequireUser):
         "sync_interval": settings.sync_interval_seconds,
     }
     return render(request, "settings.html", user=user, cfg=cfg, tools_cfg=tools_cfg,
-                  api_token=auth.api_token())
+                  api_token=auth.api_token(), preflight=None)
+
+
+@app.post("/settings/preflight", response_class=HTMLResponse)
+def run_preflight(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    results = preflight.run()
+    _audit(db, user, "preflight", ", ".join(f"{r.tool}:{'ok' if r.ok else ('-' if not r.configured else 'fail')}" for r in results))
+    tools_cfg = {t: getattr(connectors.get(t), "configured", False) for t in TOOLS}
+    cfg = {
+        "module_enabled": settings.module_enabled,
+        "sso": f"Entra ID tenant {settings.entra_tenant_id}" if settings.oidc_enabled else "off (local admin login)",
+        "hub": settings.platform_hub_url or "not connected",
+        "sync_interval": settings.sync_interval_seconds,
+    }
+    return render(request, "settings.html", user=user, cfg=cfg, tools_cfg=tools_cfg,
+                  api_token=auth.api_token(), preflight=results)
 
 
 # ---------------------------------------------------------------- client portal

@@ -315,3 +315,7 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .cstate-open { color: var(--brand-2); }
 .cstate-contained { color: var(--high); }
 .cstate-closed { color: var(--faint); }
+.hdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); vertical-align: middle; }
+.hdot.up { background: var(--ok); }
+.hdot.down { background: var(--brand); }
+.hdot.idle { background: var(--line-2); }

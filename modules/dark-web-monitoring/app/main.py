@@ -15,7 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from . import auth, evidence, iab, oidc, platform, profiles, report as report_mod
+from . import auth, evidence, iab, oidc, platform, profiles, provision, report as report_mod
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -199,7 +199,18 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
 @app.get("/clients", response_class=HTMLResponse)
 def clients(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     rows = db.execute(select(Client).options(selectinload(Client.terms)).order_by(Client.name)).scalars().all()
-    return render(request, "clients.html", user=user, clients=rows)
+    return render(request, "clients.html", user=user, clients=rows, platform_on=provision.configured())
+
+
+@app.post("/clients/pull")
+def pull_from_platform(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if not provision.configured():
+        return RedirectResponse("/clients", status_code=302)
+    try:
+        _audit(db, user, "platform.pull", str(provision.pull(db)))
+    except provision.ProvisionError as e:
+        _audit(db, user, "platform.pull.failed", str(e))
+    return RedirectResponse("/clients", status_code=302)
 
 
 @app.post("/clients")

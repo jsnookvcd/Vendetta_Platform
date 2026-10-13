@@ -20,15 +20,24 @@ from .db import AuditLog, Case, CaseUpdate, Client, open_case
 VALID_SEV = {"low", "medium", "high", "critical"}
 
 
-def resolve_client(db: Session, client_id: str, name: str) -> Client:
-    c = db.get(Client, client_id) if client_id else None
-    if c:
-        return c
-    if name:
+def resolve_client(db: Session, client_id: str, name: str, platform_client_id: str = "") -> Client:
+    """Resolution order: the shared platform client id, then this hub's own id,
+    then an exact name match, then create. A client resolved by hub id or name is
+    stamped with the platform id so later escalations match on it directly."""
+    c = None
+    if platform_client_id:
+        c = db.execute(select(Client).where(Client.platform_client_id == platform_client_id)).scalar_one_or_none()
+    if c is None and client_id:
+        c = db.get(Client, client_id)
+    if c is None and name:
         c = db.execute(select(Client).where(func.lower(Client.name) == name.strip().lower())).scalar_one_or_none()
-        if c:
-            return c
-    c = Client(name=(name or f"Unmapped client {client_id[:8]}").strip()[:200], notes="Created from a module escalation.")
+    if c is not None:
+        if platform_client_id and not c.platform_client_id:
+            c.platform_client_id = platform_client_id
+            db.commit()
+        return c
+    c = Client(name=(name or f"Unmapped client {(platform_client_id or client_id)[:8]}").strip()[:200],
+               platform_client_id=platform_client_id, notes="Created from a module escalation.")
     db.add(c)
     db.commit()
     return c
@@ -47,7 +56,8 @@ def escalate(db: Session, payload: dict, actor: str) -> tuple[Case, bool]:
     finding = payload.get("finding") or {}
     subject = finding.get("subject") or {}
     client = resolve_client(db, payload.get("client_id") or subject.get("client_id") or "",
-                            subject.get("client") or payload.get("client") or "")
+                            subject.get("client") or payload.get("client") or "",
+                            payload.get("platform_client_id") or subject.get("platform_client_id") or "")
     sev = payload.get("severity") or finding.get("severity") or "high"
     sev = sev if sev in VALID_SEV else "high"
     ws = payload.get("workstream") or finding.get("workstream") or WORKSTREAMS[0]

@@ -51,6 +51,8 @@ class Client(Base):
     portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     portal_domains: Mapped[str] = mapped_column(String(500), default="")  # comma-separated email domains
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Set when provisioned from the platform control plane; the shared client id.
+    platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     # Profile used for initial access broker (IAB) matching. Brokers rarely name the
     # victim; they advertise "US credit union, $400M revenue, 300 hosts, VPN access".
     industry: Mapped[str] = mapped_column(String(100), default="")  # e.g. credit union, bank, healthcare, manufacturing
@@ -220,6 +222,8 @@ def init_db() -> None:
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_domains VARCHAR(500) DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS client_id VARCHAR(32)",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS platform_client_id VARCHAR(32) DEFAULT ''",
+            "CREATE INDEX IF NOT EXISTS ix_clients_platform_client_id ON clients (platform_client_id)",
         ):
             conn.execute(text(stmt))
         # Generated tsvector column plus GIN index for the research console search.

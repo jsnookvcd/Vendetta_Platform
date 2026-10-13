@@ -53,6 +53,7 @@ def escalate(alert: Alert, db: Session) -> dict:
     payload = {
         "source_module": "managed-services",
         "client_id": alert.client_id,
+        "platform_client_id": alert.client.platform_client_id,
         "case_ref": "",
         "severity": alert.severity if alert.severity != "info" else "low",
         "summary": f"{TOOL_NAMES.get(alert.tool, alert.tool)} {alert.kind}: {alert.title}"[:250],

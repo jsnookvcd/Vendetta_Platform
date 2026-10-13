@@ -10,12 +10,27 @@
   </dl>
 </div>
 
-<div class="section-head"><h2>Tool connections</h2></div>
+<div class="section-head"><h2>Tool connections</h2>
+  <form class="inline" method="post" action="/settings/preflight" style="margin-left:auto"><button class="btn btn-sm btn-primary">Test connections</button></form>
+</div>
 <div class="panel pad" style="margin-bottom:14px">
+  {% if preflight %}
+  <ul class="feed" style="margin-bottom:12px">
+    {% for r in preflight %}
+    <li class="{{ 'failed' if r.configured and not r.ok }}">
+      <span class="hdot {{ 'up' if r.ok else ('idle' if not r.configured else 'down') }}" style="margin-right:7px"></span>
+      <b>{{ TOOL_NAMES[r.tool] }}</b>
+      <span class="faint">{{ r.detail }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
   <dl class="kv">
     {% for t in TOOLS %}<dt>{{ TOOL_NAMES[t] }}</dt><dd>{{ 'connected' if tools_cfg[t] else 'not configured' }}</dd>{% endfor %}
   </dl>
+  {% endif %}
   <p class="muted" style="margin:10px 0 0; font-size:12.5px">Credentials live in the environment: SUPEROPS_API_TOKEN and SUPEROPS_SUBDOMAIN, SENTINELONE_URL and SENTINELONE_API_TOKEN, CROWDSTRIKE_CLIENT_ID and CROWDSTRIKE_CLIENT_SECRET, HUNTRESS_API_KEY and HUNTRESS_API_SECRET, ACRONIS_DC_URL with ACRONIS_CLIENT_ID and ACRONIS_CLIENT_SECRET. Map each client's tenancy on their client page.</p>
+  <p class="faint" style="margin:6px 0 0; font-size:12px">Test connections makes the lightest real read against each configured tool and reports what came back. Also available as <span class="mono">python -m app.preflight</span>.</p>
 </div>
 
 <div class="section-head"><h2>Platform API</h2></div>

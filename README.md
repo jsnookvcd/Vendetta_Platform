@@ -29,21 +29,27 @@ Dark Web Monitoring implements all of this today; treat its module.yaml, its /ap
 
 ## Architecture
 
+infra/terraform stands the whole platform up on one AWS host behind a single load balancer that routes to each module by hostname; see infra/terraform/README.md. Each module can also run alone.
+
 docs/ARCHITECTURE.md describes the shared finding model, the engagement hub contract, module enablement, the role families, and how a module plugs in. Read it before starting a new module.
 
 ## Repository layout
 
 ```
 modules/
+  platform/              control plane and front door (built)
   dark-web-monitoring/   reference module (in production)
+  incident-response/     engagement hub (built)
+  managed-services/      console over the client's deployed tools (built)
   vulnerability-management/
   penetration-testing/
-  incident-response/
   mdr/
   network-operations/
   registry.yaml          module catalog with status and enablement
+infra/
+  terraform/             platform-wide deploy: one host, one ALB, all modules
 docs/
   ARCHITECTURE.md        shared contracts
 ```
 
-Each module owns its own runtime, Dockerfiles, infrastructure and deployment. They are composed by the engagement hub, not by a shared binary.
+Each module owns its own runtime and Dockerfiles. The control plane is the system of record for clients and per-client module enablement; the engagement hub owns the case lifecycle. infra/terraform runs every module on one host, and a module can also run alone.

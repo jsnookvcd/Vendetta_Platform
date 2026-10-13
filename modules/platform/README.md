@@ -105,15 +105,13 @@ name, deactivation of dropped clients, and typed errors.
 
 Verified end to end against running modules: the platform probed managed-services
 and showed all five tools connected and live IR and managed-services counts on the
-overview; managed-services then pulled the roster and bound all three of its
-clients to their platform ids with the mappings synced.
+overview; all three built modules then pulled the roster and bound their clients to
+their platform ids (managed-services with the tool mappings synced).
 
 ## Not built yet
 
 - Push provisioning (the platform notifying a module to pull now) rather than the
   module pulling on its interval.
-- incident-response and dark-web-monitoring consuming the roster (same small
-  change managed-services already has).
 - Promoting the platform client id to the shared id in every module's own tables
   (managed-services stores it now; the others match by name as the IR hub does).
 - Centralizing tool secrets here rather than in managed-services, if that is ever

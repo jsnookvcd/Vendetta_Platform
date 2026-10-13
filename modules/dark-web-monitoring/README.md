@@ -54,6 +54,10 @@ Sign-in
 Hardening
 - Security headers on every response (CSP, X-Frame-Options DENY, nosniff, no-referrer). In-memory login throttle per IP. Session cookie carries the secure flag when COOKIE_SECURE is set for TLS. Access is still expected to be behind SSM port forwarding or a VPN; these are layers, not the only control.
 
+## Platform roster
+
+When PLATFORM_URL is set, the module pulls its client roster from the Vendetta Platform control plane ("Pull from platform" on the Clients page); clients are activated there. The pull sets only the platform-owned fields (name, portal domains) and never touches watch terms, the IAB business profile or case_ref, so onboarding and tuning survive. Escalations carry the shared platform_client_id so the IR hub lines the client up across modules.
+
 ## Monthly cost, us-east-1, on-demand
 
 EC2 t4g.small: about 12.26

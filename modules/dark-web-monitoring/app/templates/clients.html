@@ -1,12 +1,19 @@
 {% extends "base.html" %}{% block title %}Clients{% endblock %}
 {% block body %}
 <div class="panel pad" style="margin-bottom:14px">
+{% if platform_on %}
+<div class="row" style="align-items:center; gap:12px">
+  <div style="flex:1"><b>Clients come from the Vendetta Platform.</b><div class="faint" style="font-size:12px">Activate dark web monitoring for a client there; pull the roster here, then add watch terms and the business profile.</div></div>
+  <form method="post" action="/clients/pull"><button class="btn btn-primary">Pull from platform</button></form>
+</div>
+{% else %}
 <form class="row" method="post" action="/clients">
   <label class="field">Client name<input name="name" required style="min-width:220px"></label>
   <label class="field">Case or contract ref<input name="case_ref" placeholder="VCD-IR-2026-7xx or MSSP ref"></label>
   <label class="field">Type<select name="kind"><option value="managed">Managed services</option><option value="ir">IR matter</option></select></label>
   <button class="btn btn-primary">Add client</button>
 </form>
+{% endif %}
 </div>
 <div class="panel"><div class="table-wrap">
 {% if clients %}

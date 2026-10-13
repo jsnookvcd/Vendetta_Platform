@@ -18,7 +18,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, board, hub, notify, oidc
+from . import auth, board, hub, notify, oidc, provision
 from .config import WORKSTREAMS, settings
 from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Task, Workstream,
                  ensure_seq_counter, init_db, open_case, utcnow)
@@ -411,7 +411,21 @@ def declare(client_id: str = Form(...), description: str = Form(""), severity: s
 @app.get("/clients", response_class=HTMLResponse)
 def clients(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     rows = db.execute(select(Client).options(selectinload(Client.retainer), selectinload(Client.cases)).order_by(Client.name)).scalars().all()
-    return render(request, "clients.html", user=user, clients=rows)
+    return render(request, "clients.html", user=user, clients=rows, platform_on=provision.configured())
+
+
+@app.post("/clients/pull")
+def pull_from_platform(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Pull the client roster from the platform control plane."""
+    if not provision.configured():
+        _audit(db, user, "platform.pull.skip", "no PLATFORM_URL")
+        return RedirectResponse("/clients", status_code=302)
+    try:
+        summ = provision.pull(db)
+        _audit(db, user, "platform.pull", str(summ))
+    except provision.ProvisionError as e:
+        _audit(db, user, "platform.pull.failed", str(e))
+    return RedirectResponse("/clients", status_code=302)
 
 
 @app.post("/clients")

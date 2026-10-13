@@ -64,6 +64,10 @@ Sign-in and roles
 Module switch
 - MODULE_ENABLED=false shows a disabled notice on every page, /api/module reports enabled false, and /healthz stays up for the load balancer.
 
+## Platform roster
+
+When PLATFORM_URL is set, the hub pulls its client roster from the control plane ("Pull from platform" on the Clients page); clients are activated there. The pull sets only the platform-owned fields (name, industry, portal domains) and never touches retainers or cases. Escalations that carry a platform_client_id resolve the case's client by that shared id first, so a client lines up across every module.
+
 ## Connect the dark web module
 
 1. Open Settings in the IR hub and copy the bearer token.

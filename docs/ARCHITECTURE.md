@@ -40,10 +40,10 @@ The control plane (modules/platform) is the front door and the system of record 
 
 Two integration points, opposite directions:
 
-- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services consumes this today; incident-response and dark-web-monitoring adopt the same contract next.
+- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services, incident-response and dark-web-monitoring all consume it. A module's pull is authoritative only for the platform-owned fields (name, portal domains, and for managed-services the tool mapping); each module's own data (IR retainers and cases, dark web watch terms and the IAB profile, managed-services sync history) is never touched.
 - Overview (it reads from modules): the control plane calls each module's /api/module for health and its items endpoint for live counts, cached briefly and degrading gracefully.
 
-The canonical client id lives here. The end state is every module keying its own records to it; today managed-services stores it and the others match by name, as the engagement hub does.
+The canonical client id lives here, and every built module stores it on its own client rows. Escalations carry it too: a module sends its platform_client_id, and the engagement hub resolves the case's client by that shared id first, falling back to name.
 
 ## The engagement hub
 
@@ -52,7 +52,7 @@ The hub is the spine for findings and cases, and a system of record for IR cases
 - Findings: the hub pulls findings from each enabled module to present a single view per client and to drive client-facing surfaces.
 - Escalation: a module can open or link an IR case for a finding by POSTing to the hub, attaching it to a workstream. IR cases use a fixed five-workstream template: Scoping and Containment, Forensics and Analysis, Recovery and Restoration, Notification and Legal, Resilience and Hardening.
 
-The hub is the incident-response module (modules/incident-response). Escalation is live: POST {PLATFORM_HUB_URL}/api/ir-cases with Bearer PLATFORM_HUB_TOKEN, the token shown on the hub's settings page. The hub resolves the module's client by name, links to the open case named in case_ref or opens a new one, raises but never lowers severity, and records the finding internal-only on the requested workstream. The payload and response are documented in modules/incident-response/README.md. The findings pull is not built yet.
+The hub is the incident-response module (modules/incident-response). Escalation is live: POST {PLATFORM_HUB_URL}/api/ir-cases with Bearer PLATFORM_HUB_TOKEN, the token shown on the hub's settings page. The hub resolves the module's client by the shared platform_client_id when the escalation carries one, then by name, links to the open case named in case_ref or opens a new one, raises but never lowers severity, and records the finding internal-only on the requested workstream. The payload and response are documented in modules/incident-response/README.md. The findings pull is not built yet.
 
 A module whose PLATFORM_HUB_URL is blank runs standalone; escalation is a no-op.
 

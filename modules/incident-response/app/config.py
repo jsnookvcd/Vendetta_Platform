@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     platform_hub_url: str = ""
     platform_hub_token: str = ""
 
+    # Vendetta Platform control plane: where this module pulls its client roster.
+    platform_url: str = ""
+    platform_token: str = ""
+
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.entra_client_id and self.entra_tenant_id)
