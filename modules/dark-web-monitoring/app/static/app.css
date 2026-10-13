@@ -235,6 +235,12 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .login-card .field + .field { margin-top: 12px; }
 .login-err { color: #ff9ba6; font-size: 13px; margin: 0 0 12px; }
 
+/* ---------------------------------------------------------------- client portal */
+.portaltop { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.portaltop .spacer { flex: 1; }
+.pt-title { font-weight: 700; letter-spacing: 0.02em; font-size: 14px; line-height: 1.1; }
+.pt-title span { display: block; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: 0.02em; }
+
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }

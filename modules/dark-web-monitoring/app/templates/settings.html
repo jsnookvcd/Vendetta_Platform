@@ -3,6 +3,7 @@
 <div class="section-head"><h2>Configuration</h2><span class="count">read from the environment / SSM Parameter Store</span></div>
 <div class="panel pad">
   <dl class="kv">
+    <dt>Module</dt><dd>{{ 'enabled' if cfg.module_enabled else 'disabled' }}</dd>
     <dt>Sign-in</dt><dd>{{ cfg.sso }}</dd>
     <dt>Alert threshold</dt><dd>{{ cfg.alert_min_severity }}</dd>
     <dt>SNS (email / SMS)</dt><dd>{{ 'configured' if cfg.sns else 'off' }}</dd>

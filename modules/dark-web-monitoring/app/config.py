@@ -8,6 +8,14 @@ class Settings(BaseSettings):
 
     # Core
     app_name: str = "Vendetta Dark Web Monitoring"
+    # Platform on/off for this module. When false the console shows a disabled
+    # notice, the API reports enabled:false, and the collector idles. The hub
+    # flips this to turn the capability on or off.
+    module_enabled: bool = True
+    # Email domains treated as internal Vendetta staff (full console access).
+    internal_email_domains: str = "vendettacd.io"
+    # Optional comma-separated emails granted the admin role.
+    admin_emails: str = ""
     database_url: str = "postgresql+psycopg://darkweb:darkweb@db:5432/darkweb"
     secret_key: str = "change-me"
     cookie_secure: bool = False  # set true once the console is served over TLS

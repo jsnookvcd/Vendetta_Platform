@@ -1,8 +1,9 @@
-"""Single shared analyst login with a signed session cookie. The instance sits
-behind SSM port forwarding or a VPN, so this is a second layer, not the only one.
-Swap for Entra ID OIDC when it moves onto a public hostname."""
+"""Session auth and identity. Logins come from the local admin account (break-glass)
+or Entra ID SSO. Every request resolves to an Identity carrying the role and, for
+client-portal users, the client they are scoped to."""
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import hmac
 
@@ -14,6 +15,21 @@ from .config import settings
 
 COOKIE = "vcd_session"
 _signer = URLSafeTimedSerializer(settings.secret_key, salt="session")
+
+
+@dataclasses.dataclass
+class Identity:
+    email: str
+    role: str  # admin | analyst | client
+    client_id: str | None = None
+
+    @property
+    def is_internal(self) -> bool:
+        return self.role in ("admin", "analyst")
+
+    @property
+    def is_client(self) -> bool:
+        return self.role == "client"
 
 
 def check_password(password: str) -> bool:
@@ -34,6 +50,59 @@ def current_user(request: Request) -> str:
         return _signer.loads(tok, max_age=60 * 60 * 12)["u"]
     except (BadSignature, KeyError):
         raise HTTPException(status_code=401, detail="login required")
+
+
+def _session_email(request: Request) -> str | None:
+    tok = request.cookies.get(COOKIE)
+    if not tok:
+        return None
+    try:
+        return _signer.loads(tok, max_age=60 * 60 * 12)["u"]
+    except (BadSignature, KeyError):
+        return None
+
+
+def resolve_identity(request: Request) -> Identity | None:
+    """Look up the signed-in user's role and client scope. Returns None if not signed in."""
+    email = _session_email(request)
+    if not email:
+        return None
+    if email == settings.admin_user:
+        return Identity(email=email, role="admin")
+    # Look up the User row written at SSO login for role and client scope.
+    from .db import SessionLocal, User  # local import to avoid a cycle
+
+    db = SessionLocal()
+    try:
+        from sqlalchemy import select
+
+        u = db.execute(select(User).where(User.email == email, User.active.is_(True))).scalar_one_or_none()
+        if not u:
+            return None
+        return Identity(email=u.email, role=u.role, client_id=u.client_id)
+    finally:
+        db.close()
+
+
+def require_identity(request: Request) -> Identity:
+    ident = resolve_identity(request)
+    if not ident:
+        raise HTTPException(status_code=401, detail="login required")
+    return ident
+
+
+def require_internal(request: Request) -> Identity:
+    ident = require_identity(request)
+    if not ident.is_internal:
+        raise HTTPException(status_code=403, detail="internal access only")
+    return ident
+
+
+def require_client(request: Request) -> Identity:
+    ident = require_identity(request)
+    if not ident.is_client or not ident.client_id:
+        raise HTTPException(status_code=403, detail="client portal only")
+    return ident
 
 
 def api_token() -> str:

@@ -25,7 +25,7 @@ from sqlalchemy import select
 
 from . import auth
 from .config import settings
-from .db import AuditLog, SessionLocal, User, utcnow
+from .db import AuditLog, Client, SessionLocal, User, utcnow
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,21 +43,48 @@ if settings.oidc_enabled:
     )
 
 
-def _authorized(claims: dict) -> bool:
+def _email_domain(email: str) -> str:
+    return email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+
+
+def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
+    """Return (email, role, client_id) for an allowed sign-in, or None to deny.
+
+    Internal Vendetta staff get admin or analyst. Anyone else is allowed only if
+    their email domain matches a client that has the portal enabled, in which case
+    they get the read-only client role scoped to that client."""
     email = (claims.get("email") or claims.get("preferred_username") or "").lower()
-    allow = [e.strip().lower() for e in settings.entra_allowed_emails.split(",") if e.strip()]
-    if allow and email not in allow:
-        log.warning("oidc: %s not in allowed emails", email)
-        return False
-    if settings.entra_allowed_group:
-        groups = claims.get("groups") or []
-        if settings.entra_allowed_group not in groups:
-            log.warning("oidc: %s missing required group", email)
-            return False
-    return True
+    if not email:
+        return None
+    domain = _email_domain(email)
+
+    internal_domains = {d.strip().lower() for d in settings.internal_email_domains.split(",") if d.strip()}
+    allow_emails = {e.strip().lower() for e in settings.entra_allowed_emails.split(",") if e.strip()}
+    groups = claims.get("groups") or []
+    is_internal = (
+        domain in internal_domains
+        or email in allow_emails
+        or (settings.entra_allowed_group and settings.entra_allowed_group in groups)
+    )
+    if is_internal:
+        admins = {e.strip().lower() for e in settings.admin_emails.split(",") if e.strip()}
+        return email, ("admin" if email in admins else "analyst"), None
+
+    # Client portal: match the email domain to an enabled client.
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(Client).where(Client.portal_enabled.is_(True), Client.active.is_(True))).scalars().all()
+        for c in rows:
+            domains = {d.strip().lower() for d in (c.portal_domains or "").split(",") if d.strip()}
+            if domain in domains:
+                return email, "client", c.id
+    finally:
+        db.close()
+    log.warning("oidc: %s not internal and no enabled client portal for domain %s", email, domain)
+    return None
 
 
-def _upsert_user(email: str, name: str) -> None:
+def _upsert_user(email: str, name: str, role: str, client_id: str | None) -> None:
     db = SessionLocal()
     try:
         u = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
@@ -65,9 +92,11 @@ def _upsert_user(email: str, name: str) -> None:
         if u:
             u.last_seen = now
             u.name = name or u.name
+            u.role = role
+            u.client_id = client_id
         else:
-            db.add(User(email=email, name=name, source="entra", role="analyst"))
-        db.add(AuditLog(at=now, actor=email, action="login.sso", detail="entra"))
+            db.add(User(email=email, name=name, source="entra", role=role, client_id=client_id))
+        db.add(AuditLog(at=now, actor=email, action="login.sso", detail=f"entra role={role}"))
         db.commit()
     finally:
         db.close()
@@ -93,12 +122,14 @@ async def auth_callback(request: Request):
     claims = token.get("userinfo") or {}
     if not claims:
         claims = await oauth.entra.userinfo(token=token)
-    email = (claims.get("email") or claims.get("preferred_username") or "").lower()
     name = claims.get("name") or ""
-    if not email or not _authorized(claims):
+    mapped = _map_identity(claims)
+    if not mapped:
         return RedirectResponse("/login?sso=denied", status_code=302)
-    _upsert_user(email, name)
-    resp = RedirectResponse("/", status_code=302)
+    email, role, client_id = mapped
+    _upsert_user(email, name, role, client_id)
+    dest = "/portal" if role == "client" else "/"
+    resp = RedirectResponse(dest, status_code=302)
     resp.set_cookie(auth.COOKIE, auth.make_session(email), httponly=True, samesite="lax",
                     secure=settings.cookie_secure, max_age=12 * 3600)
     return resp

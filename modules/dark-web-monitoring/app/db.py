@@ -46,6 +46,10 @@ class Client(Base):
     case_ref: Mapped[str] = mapped_column(String(100), default="")  # IR case number or MSSP contract ref
     kind: Mapped[str] = mapped_column(String(20), default="managed")  # managed | ir
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Client-facing portal: when enabled, users whose email domain is listed in
+    # portal_domains can sign in via SSO and see only this client's findings.
+    portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    portal_domains: Mapped[str] = mapped_column(String(500), default="")  # comma-separated email domains
     notes: Mapped[str] = mapped_column(Text, default="")
     # Profile used for initial access broker (IAB) matching. Brokers rarely name the
     # victim; they advertise "US credit union, $400M revenue, 300 hosts, VPN access".
@@ -183,7 +187,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     source: Mapped[str] = mapped_column(String(20), default="entra")  # entra | local
-    role: Mapped[str] = mapped_column(String(30), default="analyst")  # analyst | admin
+    role: Mapped[str] = mapped_column(String(30), default="analyst")  # admin | analyst | client
+    client_id: Mapped[str | None] = mapped_column(ForeignKey("clients.id"), nullable=True)  # set for client-portal users
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -212,6 +217,9 @@ def init_db() -> None:
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS employees_max INTEGER DEFAULT 0",
             "ALTER TABLE sources ADD COLUMN IF NOT EXISTS profile VARCHAR(100) DEFAULT ''",
             "ALTER TABLE hits ADD COLUMN IF NOT EXISTS reason VARCHAR(20) DEFAULT 'term'",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_domains VARCHAR(500) DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS client_id VARCHAR(32)",
         ):
             conn.execute(text(stmt))
         # Generated tsvector column plus GIN index for the research console search.

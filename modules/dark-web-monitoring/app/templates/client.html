@@ -29,6 +29,16 @@
 </form>
 </div>
 
+<div class="section-head"><h2>Client portal</h2><span class="count">read-only 365 sign-in for this client</span></div>
+<div class="panel pad">
+<form class="row" method="post" action="/clients/{{ client.id }}/portal">
+  <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Enable portal</label>
+  <label class="field">Allowed email domains, comma separated<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="riverbendcu.org" style="min-width:300px"></label>
+  <button class="btn btn-primary">Save portal access</button>
+</form>
+<p class="page-intro" style="margin:10px 0 0">When enabled, anyone who signs in with a Microsoft 365 account on one of these domains sees a read-only view of this client's confirmed findings and the exposure report, and nothing else. Leave disabled to keep the client out entirely.</p>
+</div>
+
 <div class="section-head"><h2>Watch terms</h2><span class="count">{{ client.terms|length }}</span></div>
 <div class="panel pad">
 <form class="row" method="post" action="/clients/{{ client.id }}/terms">

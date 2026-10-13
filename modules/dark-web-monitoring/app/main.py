@@ -38,6 +38,33 @@ def _startup():
     init_db()
 
 
+_DISABLED_HTML = (
+    "<!doctype html><meta charset=utf-8><title>Module disabled</title>"
+    "<body style='background:#0A0D13;color:#e8ecf3;font-family:system-ui;display:grid;"
+    "place-items:center;height:100vh;margin:0'><div style='text-align:center;max-width:40ch'>"
+    "<h1 style='color:#e0122f'>Dark Web Monitoring is turned off</h1>"
+    "<p style='color:#93a0b4'>This module is currently disabled on the Vendetta Platform. "
+    "Contact your administrator to enable it.</p></div></body>"
+)
+
+
+@app.middleware("http")
+async def _access_gate(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static") or path == "/healthz":
+        return await call_next(request)
+    if not settings.module_enabled:
+        if path == "/api/module":  # let the hub read status while disabled
+            return await call_next(request)
+        return HTMLResponse(_DISABLED_HTML, status_code=503)
+    # Client-portal users are confined to the portal and auth paths.
+    ident = auth.resolve_identity(request)
+    if ident and ident.is_client:
+        if not path.startswith(("/portal", "/auth", "/logout")):
+            return RedirectResponse("/portal", status_code=302)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
     resp = await call_next(request)
@@ -226,6 +253,19 @@ def _hit_trend(db: Session, cid: str, days: int = 21) -> list[int]:
         if d in counts:
             counts[d] += 1
     return [counts[start + dt.timedelta(days=i)] for i in range(days)]
+
+
+@app.post("/clients/{cid}/portal")
+def update_portal(cid: str, portal_enabled: bool = Form(False), portal_domains: str = Form(""),
+                  user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = db.get(Client, cid)
+    if not c:
+        raise HTTPException(404)
+    c.portal_enabled = portal_enabled
+    c.portal_domains = portal_domains.strip()
+    db.commit()
+    _audit(db, user, "client.portal", f"{c.name} enabled={portal_enabled} domains={portal_domains}")
+    return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
 @app.post("/clients/{cid}/terms")
@@ -522,6 +562,7 @@ def settings_page(request: Request, user: str = auth.RequireUser):
         "evidence_bucket": settings.evidence_bucket or "(local disk)",
         "platform_hub": settings.platform_hub_url or "(standalone, not wired to hub)",
         "sso": f"Entra ID tenant {settings.entra_tenant_id}" if settings.oidc_enabled else "off (local admin login)",
+        "module_enabled": settings.module_enabled,
     }
     return render(request, "settings.html", user=user, cfg=cfg, api_token=auth.api_token())
 
@@ -572,6 +613,8 @@ def api_module(user: str = Depends(auth.api_user)):
         "module": "dark-web-monitoring",
         "display_name": "Dark Web Monitoring",
         "platform": "Vendetta Platform",
+        "enabled": settings.module_enabled,
+        "roles": ["admin", "analyst", "client"],
         "finding_reasons": ["term", "credential", "iab"],
         "severities": ["low", "medium", "high", "critical"],
         "statuses": ["new", "reviewing", "confirmed", "false_positive", "closed"],
@@ -622,6 +665,42 @@ def hit_escalate(hid: str, user: str = auth.RequireUser, db: Session = Depends(g
     platform.escalate(h, db)
     _audit(db, user, "finding.escalate", hid)
     return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+# ---------------------------------------------------------------- client portal (read-only)
+@app.get("/portal", response_class=HTMLResponse)
+def portal_home(request: Request, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    c = db.get(Client, ident.client_id)
+    if not c:
+        raise HTTPException(404)
+    # Only confirmed findings are shown to clients, so triage noise stays internal.
+    hits = db.execute(
+        select(Hit).options(selectinload(Hit.item), selectinload(Hit.term))
+        .where(Hit.client_id == c.id, Hit.status == "confirmed").order_by(desc(Hit.created_at)).limit(200)
+    ).scalars().all()
+    by_sev = {k: 0 for k in ("critical", "high", "medium", "low")}
+    for h in hits:
+        by_sev[h.severity] = by_sev.get(h.severity, 0) + 1
+    trend = _hit_trend(db, c.id, days=21)
+    return render(request, "portal.html", user=ident.email, portal=True, client=c, hits=hits, by_sev=by_sev, trend=trend)
+
+
+@app.get("/portal/report.pdf")
+def portal_report_pdf(request: Request, days: int = 30, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    c = db.get(Client, ident.client_id)
+    if not c:
+        raise HTTPException(404)
+    ctx = report_mod.build_report(db, c, days)
+    html = templates.env.get_template("report.html").render(request=request, **ctx)
+    try:
+        from weasyprint import HTML
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=501, detail="PDF engine not installed")
+    pdf = HTML(string=html, base_url=str(_APP_DIR)).write_pdf()
+    _audit(db, ident.email, "portal.report", c.name)
+    safe = "".join(ch for ch in c.name if ch.isalnum() or ch in " -_").strip().replace(" ", "_")
+    return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="Dark_Web_Exposure_{safe}.pdf"'})
 
 
 @app.get("/healthz")

@@ -19,6 +19,9 @@ log = logging.getLogger("worker")
 
 def _job(fn):
     def wrapped():
+        if not settings.module_enabled:
+            log.info("module disabled; skipping %s", fn.__module__)
+            return
         db = SessionLocal()
         try:
             fn(db)

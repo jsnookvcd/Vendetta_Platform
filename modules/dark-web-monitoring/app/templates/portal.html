@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dark Web Exposure — {{ client.name }}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Dark Web Exposure<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:1040px; margin:0 auto">
+
+  <div class="trend" style="margin:4px 2px 16px">
+    <span class="faint">Confirmed exposure, last 21 days</span>
+    {% set mx = trend|max %}{% set n = trend|length %}
+    {% if trend and trend|sum > 0 %}
+    <svg class="spark" width="180" height="34" viewBox="0 0 180 34" preserveAspectRatio="none" aria-label="exposure trend">
+      <polyline fill="none" stroke="#e0122f" stroke-width="1.6" points="{% for v in trend %}{{ (loop.index0 * (180/(n-1)))|round(2) }},{{ (34 - 3 - (v/mx)*(34-6))|round(2) }} {% endfor %}"/>
+    </svg>
+    {% else %}<span class="faint" style="font-size:12px">no confirmed findings in range</span>{% endif %}
+    <span class="grow"></span>
+    <a class="btn btn-sm btn-primary" href="/portal/report.pdf?days=30">Download exposure report</a>
+  </div>
+
+  <div class="tiles">
+    <div class="tile {{ 'alert' if by_sev.critical }}"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical</div></div>
+    <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High</div></div>
+    <div class="tile"><div class="n">{{ by_sev.medium }}</div><div class="l">Medium</div></div>
+    <div class="tile"><div class="n">{{ by_sev.low }}</div><div class="l">Low</div></div>
+    <div class="tile"><div class="n">{{ hits|length }}</div><div class="l">Confirmed findings</div></div>
+  </div>
+
+  <div class="section-head"><h2>Confirmed findings</h2></div>
+  <div class="panel"><div class="table-wrap">
+  {% if hits %}
+  <table>
+    <thead><tr><th>Severity</th><th>Type</th><th>Detail</th><th>Source</th><th>Identified</th></tr></thead>
+    <tbody>
+    {% for h in hits %}<tr>
+      <td class="nowrap"><span class="sev sev-{{ h.severity }}">{{ h.severity }}</span></td>
+      <td><span class="reason reason-{{ h.reason }}">{{ 'access broker' if h.reason=='iab' else h.reason }}</span></td>
+      <td>{% if h.reason in ('credential','term') and h.matched_text %}<span class="mono">{{ h.matched_text }}</span>{% else %}{{ h.item.title }}{% endif %}</td>
+      <td class="nowrap">{{ h.item.group_name or h.item.kind }}</td>
+      <td class="nowrap faint">{{ h.created_at.strftime('%b %d, %Y') }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty"><h3>No confirmed exposure</h3><p>Vendetta is monitoring your organization across leak sites, forums, credential sources and certificate transparency. Confirmed findings will appear here, and you will be alerted when they do.</p></div>
+  {% endif %}
+  </div></div>
+
+  <p class="faint" style="font-size:12px; margin-top:14px; max-width:70ch">This portal shows findings Vendetta analysts have confirmed. Credential details are shown with secrets masked. For the full investigation or to discuss a finding, contact your Vendetta team.</p>
+</main>
+</body>
+</html>

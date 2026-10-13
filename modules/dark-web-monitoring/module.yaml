@@ -17,6 +17,11 @@ module:
   platform: Vendetta Platform
   owner: Vendetta Cloud Team
   service_lines: [managed-security, incident-response, vciso, litigation-support]
+  # Platform on/off for the whole module. MODULE_ENABLED=false shows a disabled
+  # notice, idles collection, and the manifest at /api/module reports enabled:false.
+  enablement: MODULE_ENABLED
+  # Read-only client portal, enabled per client (portal_enabled + portal_domains).
+  client_portal: per-client
 
 # How a hit surfaces in the platform. The hub reads findings, not raw items.
 finding_model:
