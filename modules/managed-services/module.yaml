@@ -1,0 +1,67 @@
+# Vendetta Platform module descriptor.
+# The Managed Services console: one place for every tool a managed client has
+# deployed, with a client portal for alerts, actions taken and messaging the desks.
+# See /docs/ARCHITECTURE.md and README.md in this directory.
+module:
+  name: managed-services
+  display_name: Managed Services
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [managed-security, managed-it]
+  status: in-progress          # built and tested against canned vendor responses; live creds pending
+  enablement: MODULE_ENABLED
+  client_portal: per-client    # published alerts, actions feed, SOC/NOC/helpdesk messaging
+
+tools:                         # tenant-level credentials in env; per-client tenancy mapped in the console
+  superops:
+    kind: psa-rmm
+    map_field: superops_client_id       # accountId
+    actions: [resolve_alert, create_ticket, add_ticket_reply]
+  sentinelone:
+    kind: edr
+    map_field: sentinelone_site_ids
+    actions: [kill, quarantine, remediate, set_verdict, disconnect, reconnect]
+  crowdstrike:
+    kind: edr
+    map_field: crowdstrike_cid          # child CID via Flight Control
+    actions: [update_alert_status, contain, lift_containment]
+  huntress:
+    kind: mdr
+    map_field: huntress_org_id
+    actions: [approve_remediations, reject_remediations, resolve_report, isolate, release]
+  acronis:
+    kind: backup
+    map_field: acronis_tenant_id        # customer tenant UUID
+    actions: [run_backup, dismiss_alert]
+
+normalized:
+  device: {id: external_id, fields: [hostname, platform, status, agent_version, last_seen, link]}
+  alert: {id: external_id, fields: [kind, severity, title, detail, status, tool_status, occurred_at, link]}
+  severity: [info, low, medium, high, critical]
+
+desks: [soc, noc, helpdesk]    # helpdesk messages open and mirror a SuperOps ticket
+
+api:
+  module_manifest: GET /api/module
+  findings: GET /api/findings  # every alert in the platform finding model
+  docs: /api/docs
+  auth: Bearer token (shared platform token)
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  target: "${PLATFORM_HUB_URL}/api/ir-cases"
+  workstream_by_kind:
+    threat: Scoping and Containment
+    detection: Scoping and Containment
+    incident: Scoping and Containment
+    backup: Recovery and Restoration
+    rmm: Scoping and Containment
+
+sync:
+  mode: poll                   # no public webhook contract for SuperOps; worker on SYNC_INTERVAL_SECONDS
+  worker: worker.py
+
+roles:
+  admin: full
+  analyst: full
+  client: portal               # published alerts, actions feed, desk messaging, scoped to own client

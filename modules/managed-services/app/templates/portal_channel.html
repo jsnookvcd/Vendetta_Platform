@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}{{ DESK_NAMES[desk] }}{% endblock %}
+{% block portal %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Managed Services<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <a href="/portal" class="faint" style="font-size:12px">Overview</a> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:860px; margin:0 auto">
+  <div class="title-row">
+    <h1 style="font-size:18px">{{ DESK_NAMES[desk] }}</h1>
+    {% for d in DESKS %}{% if d != desk %}<a class="alink" href="/portal/messages/{{ d }}">{{ DESK_NAMES[d] }}</a>{% endif %}{% endfor %}
+    {% if ch.superops_ticket_display %}<span class="mono faint" style="font-size:12px">ticket {{ ch.superops_ticket_display }}</span>{% endif %}
+  </div>
+  <div class="panel" style="margin-top:10px">
+    <div class="chat">
+      {% for m in messages %}
+      <div class="bubble {{ 'b-tech' if m.sender_kind == 'client' else ('b-client' if m.sender_kind == 'tech' else 'b-system') }}">
+        {% if m.sender_kind != 'system' %}<div class="who">{{ 'You' if m.sender_kind == 'client' else 'Vendetta ' + DESK_NAMES[desk] }} · {{ m.at.strftime('%b %d %H:%M') }}</div>{% endif %}{{ m.body }}
+      </div>
+      {% else %}<p class="faint">Start the conversation. {{ {'soc': 'Your SOC watches around the clock.', 'noc': 'Network and infrastructure questions land with your NOC.', 'helpdesk': 'Helpdesk messages open a ticket automatically.'}[desk] }}</p>{% endfor %}
+    </div>
+    <form class="chatform" method="post" action="/portal/messages/{{ desk }}">
+      <textarea name="body" placeholder="Message the {{ DESK_NAMES[desk] }}" required></textarea>
+      <button class="btn btn-primary">Send</button>
+    </form>
+  </div>
+</main>
+{% endblock %}

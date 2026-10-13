@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}{{ ch.client.name }}: {{ DESK_NAMES[ch.desk] }}{% endblock %}
+{% block heading %}{{ ch.client.name }} · {{ DESK_NAMES[ch.desk] }}{% endblock %}
+{% block body %}
+<div class="title-row">
+  <a class="alink" href="/clients/{{ ch.client_id }}">Client page</a>
+  {% if ch.superops_ticket_display %}<span class="mono faint">SuperOps ticket {{ ch.superops_ticket_display }}</span>{% endif %}
+</div>
+<div class="panel" style="margin-top:10px">
+  <div class="chat">
+    {% for m in ch.messages %}
+    <div class="bubble b-{{ m.sender_kind }}">
+      {% if m.sender_kind != 'system' %}<div class="who">{{ m.sender }} · {{ m.at.strftime('%b %d %H:%M') }}</div>{% endif %}{{ m.body }}
+    </div>
+    {% else %}<p class="faint">No messages yet.</p>{% endfor %}
+  </div>
+  <form class="chatform" method="post" action="/messages/{{ ch.id }}">
+    <textarea name="body" placeholder="Reply to {{ ch.client.name }}" required></textarea>
+    <button class="btn btn-primary">Send</button>
+  </form>
+</div>
+<p class="faint" style="font-size:12px; margin-top:8px">Replies show on the client portal immediately{% if ch.desk == 'helpdesk' %} and are mirrored into the SuperOps ticket{% endif %}.</p>
+{% endblock %}

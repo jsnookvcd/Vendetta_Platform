@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+{% macro icon(name) %}
+<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+{% if name=='grid' %}<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+{% elif name=='clients' %}<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
+{% elif name=='bell' %}<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+{% elif name=='chat' %}<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+{% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>
+{% endif %}
+</svg>
+{% endmacro %}
+{% macro sev(s) %}<span class="sev sev-{{ s }}">{{ s }}</span>{% endmacro %}
+{% macro toolchip(t) %}<span class="toolchip tc-{{ t }}">{{ TOOL_NAMES[t] }}</span>{% endmacro %}
+{% macro devdot(s) %}<span class="devdot dd-{{ s }}" title="{{ s }}"></span>{% endmacro %}
+{% macro flash() %}{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}{% endmacro %}
+{% set p = request.url.path if request else '/' %}
+{% if user and not portal %}
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Managed<span>Services</span></div></div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Dashboard</a>
+      <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
+      <a href="/alerts" class="{{ 'active' if p.startswith('/alerts') }}">{{ icon('bell') }} Alerts</a>
+      <a href="/messages" class="{{ 'active' if p.startswith('/messages') }}">{{ icon('chat') }} Messages{% if shell and shell.unread %} <span class="badge">{{ shell.unread }}</span>{% endif %}</a>
+      <div class="sep"></div>
+      <a href="/settings" class="{{ 'active' if p.startswith('/settings') }}">{{ icon('settings') }} Settings</a>
+    </nav>
+    <div class="foot"><div class="who">{{ user }}</div><a href="/logout" class="faint">Sign out</a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
+      <span class="spacer"></span>
+      {% if shell %}
+      <div class="status-strip">
+        <span class="stat"><span class="dot {{ 'bad' if shell.critical else ('warn' if shell.open_alerts else 'ok') }}"></span><b>{{ shell.open_alerts }}</b> open alerts</span>
+        {% if shell.critical %}<span class="stat"><span class="dot bad"></span><b>{{ shell.critical }}</b> critical</span>{% endif %}
+      </div>
+      {% endif %}
+    </header>
+    <div class="content">{{ flash() }}{% block body %}{% endblock %}</div>
+  </div>
+</div>
+{% elif portal %}
+{% block portal %}{% endblock %}
+{% else %}
+{% block anon %}{% endblock %}
+{% endif %}
+</body>
+</html>

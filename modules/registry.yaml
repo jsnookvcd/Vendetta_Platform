@@ -41,6 +41,18 @@ modules:
     status: planned
     enablement: MODULE_ENABLED
 
+  - name: managed-services
+    display_name: Managed Services
+    service_lines: [managed-security, managed-it]
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    findings: /api/findings
+    notes: >-
+      Console over every tool a client has deployed (SuperOps, SentinelOne,
+      CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions
+      taken and messaging the SOC/NOC/helpdesk. Built and tested; live creds pending.
+
   - name: network-operations
     display_name: Network Operations
     service_lines: [managed-it, managed-security]

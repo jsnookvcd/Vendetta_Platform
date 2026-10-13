@@ -1,0 +1,87 @@
+{% extends "base.html" %}{% block title %}{{ a.title|truncate(60) }}{% endblock %}
+{% block heading %}Alert{% endblock %}
+{% block body %}
+<div class="title-row">
+  {{ sev(a.severity) }}
+  {{ toolchip(a.tool) }}
+  <span class="cstate cstate-{{ 'open' if a.status == 'open' else ('contained' if a.status == 'acknowledged' else 'closed') }}">{{ a.status }}</span>
+  {% if a.published %}<span class="lock">on client portal</span>{% endif %}
+  {% if a.escalated_case %}<span class="lock">IR {{ a.escalated_case }}</span>{% endif %}
+</div>
+<div class="title-row"><h1 style="font-size:19px">{{ a.title }}</h1></div>
+<p class="faint" style="margin:2px 0 10px">
+  <a href="/clients/{{ a.client_id }}">{{ a.client.name }}</a>
+  &nbsp; {{ a.kind }} from {{ TOOL_NAMES[a.tool] }}
+  {% if a.occurred_at %}&nbsp; occurred {{ a.occurred_at.strftime('%b %d, %Y %H:%M') }} UTC{% endif %}
+  &nbsp; vendor state: {{ a.tool_status or 'n/a' }}
+</p>
+{% if a.detail %}<div class="panel pad" style="margin-bottom:14px; font-size:13.5px; white-space:pre-wrap">{{ a.detail }}</div>{% endif %}
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Respond in {{ TOOL_NAMES[a.tool] }}</h2>{% if a.link %}<a class="alink" href="{{ a.link }}" target="_blank" rel="noopener" style="margin-left:auto">Open in vendor console</a>{% endif %}</div>
+    <div class="panel pad">
+      <div class="row" style="gap:7px; flex-wrap:wrap">
+        {% for act in ALERT_ACTIONS.get(a.tool, []) %}
+        <form class="inline" method="post" action="/alerts/{{ a.id }}/action">
+          <input type="hidden" name="action_id" value="{{ act.id }}">
+          {% if act.needs_comment %}<input name="comment" placeholder="reason" required style="width:160px; font-size:12px">{% endif %}
+          <button class="btn btn-sm {{ 'btn-primary' if act.danger }}">{{ act.label }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% if a.device %}
+      <p class="faint" style="font-size:12px; margin:12px 0 6px">Host: <b style="color:var(--fg)">{{ a.device.hostname }}</b> {{ devdot(a.device.status) }} {{ a.device.status }}</p>
+      <div class="row" style="gap:7px; flex-wrap:wrap">
+        {% for act in DEVICE_ACTIONS.get(a.device.tool, []) %}
+        <form class="inline" method="post" action="/alerts/{{ a.id }}/action"><input type="hidden" name="action_id" value="{{ act.id }}"><button class="btn btn-sm {{ 'danger btn-ghost' if act.danger }}">{{ act.label }}</button></form>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if a.raw.get('remediations') %}
+      <p class="faint" style="font-size:12px; margin:12px 0 4px">Huntress remediation plan</p>
+      <ul class="feed">{% for r in a.raw.remediations %}<li>{{ r.action }} <span class="faint">{{ r.type }} · {{ r.status }}</span></li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Activity on this alert</h2></div>
+    <div class="panel">
+      <ul class="feed">
+      {% for x in a.actions %}<li class="{{ 'failed' if x.result == 'failed' }}">
+        <div class="meta">{{ x.at.strftime('%b %d %H:%M') }} · {{ x.actor }}{% if x.client_visible %} · <span class="lock">shared with client</span>{% endif %}{% if x.result == 'failed' %} · failed{% endif %}</div>
+        {{ x.action }}{% if x.detail %} <span class="faint">{{ x.detail }}</span>{% endif %}
+      </li>{% else %}<li class="faint">No actions yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-head"><h2>Triage</h2></div>
+    <div class="panel pad">
+      <div class="row" style="gap:7px; flex-wrap:wrap">
+        {% if a.status == 'open' %}<form class="inline" method="post" action="/alerts/{{ a.id }}/triage"><input type="hidden" name="op" value="acknowledge"><button class="btn btn-sm">Acknowledge</button></form>{% endif %}
+        {% if a.status != 'resolved' %}<form class="inline" method="post" action="/alerts/{{ a.id }}/triage"><input type="hidden" name="op" value="resolve"><button class="btn btn-sm">Resolve here</button></form>
+        {% else %}<form class="inline" method="post" action="/alerts/{{ a.id }}/triage"><input type="hidden" name="op" value="reopen"><button class="btn btn-sm">Reopen</button></form>{% endif %}
+        {% if hub_ready and not a.escalated_case %}<form class="inline" method="post" action="/alerts/{{ a.id }}/escalate"><button class="btn btn-sm btn-primary">Escalate to IR case</button></form>{% endif %}
+      </div>
+      <p class="faint" style="font-size:12px; margin:10px 0 0">Resolve here closes it on this console only. The tool buttons close it at the source too.</p>
+    </div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Client portal</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/alerts/{{ a.id }}/triage">
+        <input type="hidden" name="op" value="publish">
+        <label class="field">What the client sees<textarea name="client_note" placeholder="Plain-language summary for the client">{{ a.client_note }}</textarea></label>
+        <div class="row" style="margin-top:8px; gap:7px">
+          <button class="btn btn-sm btn-primary">{{ 'Update on portal' if a.published else 'Publish to portal' }}</button>
+        </div>
+      </form>
+      {% if a.published %}<form method="post" action="/alerts/{{ a.id }}/triage" style="margin-top:7px"><input type="hidden" name="op" value="unpublish"><button class="btn btn-sm btn-ghost">Remove from portal</button></form>{% endif %}
+      <p class="faint" style="font-size:12px; margin:10px 0 0">Published alerts show on the client portal with this note, and shared response actions appear in their actions feed.</p>
+    </div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Vendor payload</h2></div>
+    <div class="panel pad"><pre class="body rawbox">{{ a.raw | tojson(indent=2) }}</pre></div>
+  </div>
+</div>
+{% endblock %}

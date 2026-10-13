@@ -1,0 +1,127 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<div class="title-row">
+  <h1>{{ client.name }}</h1>
+  {% if client.industry %}<span class="chip">{{ client.industry }}</span>{% endif %}
+  {% if client.portal_enabled %}<span class="ok-txt">portal on</span>{% endif %}
+</div>
+
+<div class="section-head"><h2>Deployed tools</h2><span class="count">every console one click away</span>
+  <form class="inline" method="post" action="/clients/{{ client.id }}/sync" style="margin-left:auto"><button class="btn btn-sm">Sync all now</button></form>
+</div>
+<div class="toolgrid" style="margin-bottom:18px">
+  {% for tc in tool_cards %}{% if tc.ref %}
+  <div class="toolcard {{ '' if tc.configured else 'off' }}">
+    <h3>{{ toolchip(tc.tool) }}{% if not tc.configured %}<span class="faint" style="font-weight:400">credentials missing</span>{% endif %}</h3>
+    <div class="nums">
+      <span><b>{{ tc.devices }}</b> devices</span>
+      <span><b>{{ tc.online }}</b> online</span>
+      {% if tc.isolated %}<span style="color:var(--brand-2)"><b>{{ tc.isolated }}</b> isolated</span>{% endif %}
+      <span><b>{{ tc.alerts }}</b> open alerts</span>
+    </div>
+    <div class="syncline {{ 'bad' if tc.last and not tc.last.ok }}">
+      {% if tc.last %}synced {{ tc.last.at.strftime('%H:%M') }} UTC{{ '' if tc.last.ok else ' · ' ~ tc.last.detail }}{% else %}not synced this session{% endif %}
+    </div>
+    <div class="acts">
+      {% if tc.link %}<a class="btn btn-xs" href="{{ tc.link }}" target="_blank" rel="noopener">Open console</a>{% endif %}
+      <a class="btn btn-xs btn-ghost" href="/alerts?client_id={{ client.id }}&tool={{ tc.tool }}">Alerts</a>
+      <form class="inline" method="post" action="/clients/{{ client.id }}/sync"><input type="hidden" name="tool" value="{{ tc.tool }}"><button class="btn btn-xs btn-ghost">Sync</button></form>
+    </div>
+  </div>
+  {% endif %}{% endfor %}
+  {% if not client.tools %}<div class="empty" style="grid-column:1/-1"><h3>No tools mapped</h3><p>Map this client's tenancy in each tool below, then sync.</p></div>{% endif %}
+</div>
+
+<div class="section-head"><h2>Message desks</h2></div>
+<div class="deskgrid" style="margin-bottom:18px">
+  {% for d in DESKS %}{% set ch = channels[d] %}
+  <a class="deskcard" href="{{ '/messages/' ~ ch.id if ch else '#' }}">
+    <h3>{{ DESK_NAMES[d] }}{% if ch and ch.tech_unread %} <span class="badge">{{ ch.tech_unread }}</span>{% endif %}
+    {% if ch and ch.superops_ticket_display %}<span class="mono faint" style="font-weight:400">{{ ch.superops_ticket_display }}</span>{% endif %}</h3>
+    <div class="preview">{{ ch.messages[-1].body if ch and ch.messages else 'No messages yet.' }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="section-head"><h2>Open alerts</h2><span class="count">{{ alerts|length }}</span><a class="alink" href="/alerts?client_id={{ client.id }}&status=all" style="margin-left:auto">History</a></div>
+<div class="panel" style="margin-bottom:18px"><div class="table-wrap">
+{% if alerts %}
+<table>
+  <thead><tr><th>Sev</th><th>Tool</th><th>Alert</th><th>Host</th><th>Status</th><th>Portal</th><th>When</th></tr></thead>
+  <tbody>
+  {% for a in alerts %}<tr>
+    <td>{{ sev(a.severity) }}</td>
+    <td class="nowrap">{{ toolchip(a.tool) }}</td>
+    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(80) }}</a>{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}</td>
+    <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+    <td class="nowrap faint">{{ a.status }}</td>
+    <td class="nowrap faint">{{ 'published' if a.published else '' }}</td>
+    <td class="nowrap faint">{{ a.occurred_at.strftime('%b %d %H:%M') if a.occurred_at else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><p>No open alerts for this client.</p></div>{% endif %}
+</div></div>
+
+<div class="section-head"><h2>Devices</h2><span class="count">{{ devices|length }}</span></div>
+<div class="panel" style="margin-bottom:18px"><div class="table-wrap">
+{% if devices %}
+<table>
+  <thead><tr><th>Host</th><th>Tool</th><th>Platform</th><th>State</th><th>Agent</th><th>Last seen</th><th></th></tr></thead>
+  <tbody>
+  {% for d in devices %}<tr>
+    <td class="nowrap"><b>{{ d.hostname or d.external_id }}</b></td>
+    <td class="nowrap">{{ toolchip(d.tool) }}</td>
+    <td class="faint">{{ d.platform|truncate(40) }}</td>
+    <td class="nowrap">{{ devdot(d.status) }} {{ d.status }}</td>
+    <td class="nowrap faint">{{ d.agent_version }}</td>
+    <td class="nowrap faint">{{ d.last_seen.strftime('%b %d %H:%M') if d.last_seen else '' }}</td>
+    <td class="nowrap">
+      {% for act in DEVICE_ACTIONS.get(d.tool, []) %}
+      {% if (act.danger and d.status in ('online','offline')) or (not act.danger and d.status in ('isolated','isolating')) %}
+      <form class="inline" method="post" action="/devices/{{ d.id }}/action"><input type="hidden" name="action_id" value="{{ act.id }}"><button class="btn btn-xs {{ 'danger btn-ghost' if act.danger else '' }}">{{ act.label }}</button></form>
+      {% endif %}{% endfor %}
+      {% if d.link %}<a class="btn btn-xs btn-ghost" href="{{ d.link }}" target="_blank" rel="noopener">Open</a>{% endif %}
+    </td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><p>No devices synced yet.</p></div>{% endif %}
+</div></div>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Tool mapping</h2><span class="count">this client's tenancy in each tool</span></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/map">
+        <label class="field">SuperOps client accountId<input name="superops_client_id" value="{{ client.superops_client_id }}" class="mono"></label>
+        <label class="field" style="margin-top:9px">SentinelOne site IDs, comma separated<input name="sentinelone_site_ids" value="{{ client.sentinelone_site_ids }}" class="mono"></label>
+        <label class="field" style="margin-top:9px">CrowdStrike child CID<input name="crowdstrike_cid" value="{{ client.crowdstrike_cid }}" class="mono"></label>
+        <label class="field" style="margin-top:9px">Huntress organization ID<input name="huntress_org_id" value="{{ client.huntress_org_id }}" class="mono"></label>
+        <label class="field" style="margin-top:9px">Acronis tenant UUID<input name="acronis_tenant_id" value="{{ client.acronis_tenant_id }}" class="mono"></label>
+        <div style="margin-top:12px"><button class="btn btn-primary">Save mapping</button></div>
+      </form>
+    </div>
+    <div class="section-head" style="margin-top:14px"><h2>Client portal</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/portal">
+        <label class="field chk"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Enable portal</label>
+        <label class="field" style="margin-top:9px">Allowed email domains<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org"></label>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal users see published alerts, the actions feed, and can message the SOC, NOC and helpdesk.</p>
+        <div style="margin-top:10px"><button class="btn btn-primary">Save portal access</button></div>
+      </form>
+    </div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Recent actions</h2></div>
+    <div class="panel">
+      <ul class="feed">
+      {% for x in recent_actions %}<li class="{{ 'failed' if x.result == 'failed' }}">
+        <div class="meta">{{ x.at.strftime('%b %d %H:%M') }} · {{ x.actor }}{% if x.client_visible %} · <span class="lock">shared</span>{% endif %}</div>
+        {{ x.action }}{% if x.detail %} <span class="faint">{{ x.detail|truncate(90) }}</span>{% endif %}
+      </li>{% else %}<li class="faint">Nothing yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

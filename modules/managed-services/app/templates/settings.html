@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Configuration</h2><span class="count">read from the environment / SSM</span></div>
+<div class="panel pad" style="margin-bottom:14px">
+  <dl class="kv">
+    <dt>Module</dt><dd>{{ 'enabled' if cfg.module_enabled else 'disabled' }}</dd>
+    <dt>Sign-in</dt><dd>{{ cfg.sso }}</dd>
+    <dt>Sync interval</dt><dd>{{ cfg.sync_interval }} seconds</dd>
+    <dt>Engagement hub</dt><dd>{{ cfg.hub }}</dd>
+  </dl>
+</div>
+
+<div class="section-head"><h2>Tool connections</h2></div>
+<div class="panel pad" style="margin-bottom:14px">
+  <dl class="kv">
+    {% for t in TOOLS %}<dt>{{ TOOL_NAMES[t] }}</dt><dd>{{ 'connected' if tools_cfg[t] else 'not configured' }}</dd>{% endfor %}
+  </dl>
+  <p class="muted" style="margin:10px 0 0; font-size:12.5px">Credentials live in the environment: SUPEROPS_API_TOKEN and SUPEROPS_SUBDOMAIN, SENTINELONE_URL and SENTINELONE_API_TOKEN, CROWDSTRIKE_CLIENT_ID and CROWDSTRIKE_CLIENT_SECRET, HUNTRESS_API_KEY and HUNTRESS_API_SECRET, ACRONIS_DC_URL with ACRONIS_CLIENT_ID and ACRONIS_CLIENT_SECRET. Map each client's tenancy on their client page.</p>
+</div>
+
+<div class="section-head"><h2>Platform API</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 10px">The engagement hub reads this module's findings at <span class="mono">/api/findings</span>. Escalation into IR cases uses PLATFORM_HUB_URL and PLATFORM_HUB_TOKEN from the hub's settings page.</p>
+  <pre class="body" style="max-height:none">Authorization: Bearer {{ api_token }}</pre>
+  <p class="faint" style="margin:8px 0 0">Endpoints: /api/findings · /api/module · docs at /api/docs</p>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile {{ 'crit' if by_sev.critical }}"><div class="n">{{ by_sev.critical }}</div><div class="l">Critical open</div></div>
+  <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High open</div></div>
+  <div class="tile"><div class="n">{{ alerts|length if alerts|length < 25 else shell.open_alerts }}</div><div class="l">Open alerts</div></div>
+  <div class="tile"><div class="n">{{ n_online }}<span class="sub">/{{ n_devices }}</span></div><div class="l">Devices online</div></div>
+  {% if n_isolated %}<div class="tile crit"><div class="n">{{ n_isolated }}</div><div class="l">Hosts isolated</div></div>{% endif %}
+  <div class="tile"><div class="n">{{ clients|length }}</div><div class="l">Managed clients</div></div>
+</div>
+
+<div class="section-head"><h2>Tool connections</h2></div>
+<div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:18px">
+  {% for t in TOOLS %}<span class="stat"><span class="dot {{ 'ok' if tools_up[t] else '' }}"></span>{{ toolchip(t) }} {{ 'connected' if tools_up[t] else 'not configured' }}</span>{% endfor %}
+</div>
+
+{% if channels %}
+<div class="section-head"><h2>Waiting on a reply</h2><span class="count">{{ channels|length }}</span></div>
+<div class="deskgrid" style="margin-bottom:18px">
+  {% for ch in channels %}
+  <a class="deskcard" href="/messages/{{ ch.id }}">
+    <h3>{{ ch.client.name }} <span class="toolchip">{{ DESK_NAMES[ch.desk] }}</span> <span class="badge">{{ ch.tech_unread }}</span></h3>
+    <div class="preview">{{ ch.messages[-1].body if ch.messages else '' }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="section-head"><h2>Open alerts, worst first</h2><a class="alink" href="/alerts" style="margin-left:auto">All alerts</a></div>
+<div class="panel"><div class="table-wrap">
+{% if alerts %}
+<table>
+  <thead><tr><th>Sev</th><th>Client</th><th>Tool</th><th>Alert</th><th>Host</th><th>Status</th><th>When</th></tr></thead>
+  <tbody>
+  {% for a in alerts %}<tr>
+    <td>{{ sev(a.severity) }}</td>
+    <td class="nowrap"><a href="/clients/{{ a.client_id }}">{{ a.client.name }}</a></td>
+    <td class="nowrap">{{ toolchip(a.tool) }}</td>
+    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(90) }}</a>{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}</td>
+    <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+    <td class="nowrap faint">{{ a.status }}</td>
+    <td class="nowrap faint">{{ a.occurred_at.strftime('%b %d %H:%M') if a.occurred_at else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No open alerts</h3><p>Everything synced is either quiet or resolved.</p></div>{% endif %}
+</div></div>
+
+<div class="section-head" style="margin-top:18px"><h2>Recent actions</h2></div>
+<div class="panel">
+  <ul class="feed">
+  {% for x in recent_actions %}<li class="{{ 'failed' if x.result == 'failed' }}">
+    <div class="meta">{{ x.at.strftime('%b %d %H:%M') }} · {{ x.actor }}{% if x.tool %} · {{ TOOL_NAMES.get(x.tool, x.tool) }}{% endif %}{% if x.result == 'failed' %} · failed{% endif %}</div>
+    {{ x.action }}{% if x.detail %} <span class="faint">{{ x.detail|truncate(120) }}</span>{% endif %}
+  </li>{% else %}<li class="faint">No actions yet.</li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}

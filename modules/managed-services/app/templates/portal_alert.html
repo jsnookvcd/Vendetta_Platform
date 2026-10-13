@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Alert{% endblock %}
+{% block portal %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Managed Services<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <a href="/portal" class="faint" style="font-size:12px">Overview</a> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:860px; margin:0 auto">
+  <div class="title-row">{{ sev(a.severity) }}<span class="cstate cstate-{{ 'closed' if a.status == 'resolved' else 'open' }}">{{ 'resolved' if a.status == 'resolved' else ('being worked' if a.status == 'acknowledged' else 'open') }}</span></div>
+  <div class="title-row"><h1 style="font-size:19px">{{ a.client_note or a.title }}</h1></div>
+  <p class="faint" style="margin:2px 0 14px">
+    {% if a.device %}System: {{ a.device.hostname }} &nbsp;{% endif %}
+    {% if a.occurred_at %}Detected {{ a.occurred_at.strftime('%b %d, %Y %H:%M') }} UTC{% endif %}
+  </p>
+  {% if a.client_note and a.client_note != a.title %}<div class="panel pad" style="margin-bottom:14px; font-size:13.5px; white-space:pre-wrap">{{ a.title }}</div>{% endif %}
+
+  <div class="section-head"><h2>What your team has done</h2></div>
+  <div class="panel" style="margin-bottom:16px">
+    <ul class="feed">
+    {% for x in feed %}<li><div class="meta">{{ x.at.strftime('%b %d %H:%M') }} UTC</div>{{ x.detail or x.action }}</li>
+    {% else %}<li class="faint">Actions will appear here as they are taken.</li>{% endfor %}
+    </ul>
+  </div>
+  <p class="muted" style="font-size:13px">Questions about this alert? <a href="/portal/messages/soc" class="alink">Message the SOC</a>.</p>
+</main>
+{% endblock %}

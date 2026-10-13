@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block title %}Messages{% endblock %}
+{% block body %}
+<div class="panel"><div class="table-wrap">
+{% if channels %}
+<table>
+  <thead><tr><th>Client</th><th>Desk</th><th>Ticket</th><th>Last message</th><th>Updated</th><th>Unread</th></tr></thead>
+  <tbody>
+  {% for ch in channels %}<tr>
+    <td class="nowrap"><a href="/messages/{{ ch.id }}"><b>{{ ch.client.name }}</b></a></td>
+    <td class="nowrap"><span class="toolchip">{{ DESK_NAMES[ch.desk] }}</span></td>
+    <td class="nowrap mono faint">{{ ch.superops_ticket_display }}</td>
+    <td class="faint">{{ ch.messages[-1].body|truncate(80) if ch.messages else '' }}</td>
+    <td class="nowrap faint">{{ ch.updated_at.strftime('%b %d %H:%M') }}</td>
+    <td>{% if ch.tech_unread %}<span class="badge">{{ ch.tech_unread }}</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No conversations</h3><p>Client messages from the portal land here, routed to the SOC, NOC or helpdesk.</p></div>{% endif %}
+</div></div>
+{% endblock %}

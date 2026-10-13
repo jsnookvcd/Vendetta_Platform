@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Alerts{% endblock %}
+{% block body %}
+<form class="row" method="get" action="/alerts" style="margin-bottom:12px; gap:8px">
+  <label class="field">Status<select name="status">{% for s in ['active','open','acknowledged','resolved','all'] %}<option value="{{ s }}" {{ 'selected' if s==status }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Severity<select name="severity"><option value="">any</option>{% for s in SEVERITIES|reverse %}<option value="{{ s }}" {{ 'selected' if s==severity }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Tool<select name="tool"><option value="">any</option>{% for t in TOOLS %}<option value="{{ t }}" {{ 'selected' if t==tool }}>{{ TOOL_NAMES[t] }}</option>{% endfor %}</select></label>
+  <label class="field">Client<select name="client_id"><option value="">any</option>{% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if c.id==client_id }}>{{ c.name }}</option>{% endfor %}</select></label>
+  <button class="btn btn-sm">Filter</button>
+</form>
+<div class="panel"><div class="table-wrap">
+{% if alerts %}
+<table>
+  <thead><tr><th>Sev</th><th>Client</th><th>Tool</th><th>Kind</th><th>Alert</th><th>Host</th><th>Status</th><th>Vendor state</th><th>When</th></tr></thead>
+  <tbody>
+  {% for a in alerts %}<tr>
+    <td>{{ sev(a.severity) }}</td>
+    <td class="nowrap"><a href="/clients/{{ a.client_id }}">{{ a.client.name }}</a></td>
+    <td class="nowrap">{{ toolchip(a.tool) }}</td>
+    <td class="nowrap faint">{{ a.kind }}</td>
+    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a>{% if a.published %} <span class="lock">portal</span>{% endif %}{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}</td>
+    <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+    <td class="nowrap faint">{{ a.status }}</td>
+    <td class="nowrap faint">{{ a.tool_status }}</td>
+    <td class="nowrap faint">{{ a.occurred_at.strftime('%b %d %H:%M') if a.occurred_at else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>Nothing matches</h3><p>Loosen the filters or sync a client.</p></div>{% endif %}
+</div></div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
+  <form class="row" method="post" action="/clients">
+    <label class="field">Client name<input name="name" required placeholder="Riverbend Credit Union" style="min-width:260px"></label>
+    <label class="field">Industry<input name="industry" placeholder="credit union"></label>
+    <button class="btn btn-primary">Add client</button>
+  </form>
+</div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Client</th><th>Industry</th><th>Tools deployed</th><th>Devices</th><th>Open alerts</th><th>Portal</th></tr></thead>
+  <tbody>
+  {% for c in clients %}<tr>
+    <td class="nowrap"><a href="/clients/{{ c.id }}"><b>{{ c.name }}</b></a>{% if not c.active %} <span class="faint">paused</span>{% endif %}</td>
+    <td class="faint">{{ c.industry }}</td>
+    <td>{% for t in c.tools %}{{ toolchip(t) }} {% else %}<span class="faint">none mapped</span>{% endfor %}</td>
+    <td class="num">{{ counts[c.id].devices }}</td>
+    <td class="num">{% if counts[c.id].alerts %}<b>{{ counts[c.id].alerts }}</b>{% else %}0{% endif %}</td>
+    <td class="faint">{{ 'enabled' if c.portal_enabled else 'off' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

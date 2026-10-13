@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% block title %}Managed Services, {{ client.name }}{% endblock %}
+{% block portal %}
+<header class="portaltop">
+  <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
+  <div class="pt-title">Managed Services<span>{{ client.name }}</span></div>
+  <span class="spacer"></span>
+  <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
+</header>
+<main class="content" style="max-width:1100px; margin:0 auto">
+  <div class="tiles">
+    <div class="tile {{ 'crit' if open_alerts }}"><div class="n">{{ open_alerts|length }}</div><div class="l">Active alerts</div></div>
+    <div class="tile"><div class="n">{{ n_online }}<span class="sub">/{{ n_devices }}</span></div><div class="l">Devices reporting</div></div>
+    <div class="tile"><div class="n">{{ feed|length }}</div><div class="l">Recent actions by your team</div></div>
+  </div>
+
+  <div class="section-head"><h2>Message your team</h2></div>
+  <div class="deskgrid" style="margin-bottom:18px">
+    {% for d in DESKS %}{% set ch = channels[d] %}
+    <a class="deskcard" href="/portal/messages/{{ d }}">
+      <h3>{{ DESK_NAMES[d] }}{% if ch and ch.client_unread %} <span class="badge">{{ ch.client_unread }}</span>{% endif %}</h3>
+      <div class="preview">{{ ch.messages[-1].body if ch and ch.messages else {'soc': 'Security questions and alert follow-ups.', 'noc': 'Network and infrastructure issues.', 'helpdesk': 'Anything else; opens a ticket automatically.'}[d] }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="section-head"><h2>Active alerts</h2><span class="count">{{ open_alerts|length }}</span></div>
+  <div class="panel" style="margin-bottom:18px"><div class="table-wrap">
+  {% if open_alerts %}
+  <table>
+    <thead><tr><th>Severity</th><th>Alert</th><th>System</th><th>Status</th><th>When</th></tr></thead>
+    <tbody>
+    {% for a in open_alerts %}<tr>
+      <td>{{ sev(a.severity) }}</td>
+      <td><a href="/portal/alerts/{{ a.id }}">{{ a.client_note or a.title }}</a></td>
+      <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
+      <td class="nowrap faint">{{ 'being worked' if a.status == 'acknowledged' else a.status }}</td>
+      <td class="nowrap faint">{{ a.occurred_at.strftime('%b %d %H:%M') if a.occurred_at else '' }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty"><h3>No active alerts</h3><p>Your Vendetta team has nothing requiring your attention right now.</p></div>{% endif %}
+  </div></div>
+
+  <div class="detail-grid">
+    <div>
+      <div class="section-head"><h2>Actions taken by your team</h2></div>
+      <div class="panel">
+        <ul class="feed">
+        {% for x in feed %}<li>
+          <div class="meta">{{ x.at.strftime('%b %d %H:%M') }} UTC</div>
+          {{ x.detail or x.action }}
+        </li>{% else %}<li class="faint">Response actions will appear here as your team takes them.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="section-head"><h2>Recently resolved</h2></div>
+      <div class="panel">
+        <ul class="feed">
+        {% for a in resolved %}<li>
+          <div class="meta">{{ a.updated_at.strftime('%b %d %H:%M') }} · {{ a.severity }}</div>
+          <a href="/portal/alerts/{{ a.id }}">{{ a.client_note or a.title }}</a>
+        </li>{% else %}<li class="faint">Nothing resolved recently.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</main>
+{% endblock %}
