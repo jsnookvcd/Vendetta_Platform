@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     module_enabled: bool = True
     database_url: str = "postgresql+psycopg://platform:platform@db:5432/platform"
     secret_key: str = "change-me"
+    # Fernet key (urlsafe base64 of 32 bytes) encrypting stored secrets at rest, such
+    # as per-module bearer tokens. Blank derives a key from secret_key; set a
+    # dedicated key in production so it can be rotated independently.
+    encryption_key: str = ""
     cookie_secure: bool = False
     login_max_attempts: int = 8
     login_window_seconds: int = 300

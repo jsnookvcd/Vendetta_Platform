@@ -32,6 +32,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from .config import settings
+from .crypto import EncryptedStr
 
 engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -89,7 +90,9 @@ class Module(Base):
     category: Mapped[str] = mapped_column(String(40), default="")
     status: Mapped[str] = mapped_column(String(20), default="planned")
     base_url: Mapped[str] = mapped_column(String(300), default="")
-    api_token: Mapped[str] = mapped_column(String(200), default="")
+    # Encrypted at rest; plain in Python. Ciphertext is longer than the token, so the
+    # column is widened to 512.
+    api_token: Mapped[str] = mapped_column(EncryptedStr(512), default="")
     has_portal: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -179,6 +182,15 @@ def init_db() -> None:
         )).first()
         if not have:
             conn.execute(_text("ALTER TABLE clients ADD COLUMN executive_emails VARCHAR(1000) DEFAULT ''"))
+        # Widen modules.api_token to hold encrypted ciphertext (was VARCHAR(200)).
+        # Check first so the ALTER only takes its table lock when the column is still
+        # narrow, which avoids an in-suite startup lock.
+        width = conn.execute(_text(
+            "SELECT character_maximum_length FROM information_schema.columns "
+            "WHERE table_name = 'modules' AND column_name = 'api_token'"
+        )).scalar()
+        if width is not None and width < 512:
+            conn.execute(_text("ALTER TABLE modules ALTER COLUMN api_token TYPE VARCHAR(512)"))
     from .registry import seed_registry
 
     db = SessionLocal()
