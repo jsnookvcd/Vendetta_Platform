@@ -85,6 +85,7 @@ def pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
         c.industry = entry.get("industry") or c.industry
         c.portal_domains = entry.get("portal_domains") or ""
         c.portal_enabled = bool(entry.get("portal_domains"))
+        c.executive_emails = entry.get("executive_emails") or ""
         c.active = True
         tools = entry.get("tools") or {}
         for t in TOOLS:

@@ -256,3 +256,4 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
   .detail-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.toolchip { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; }

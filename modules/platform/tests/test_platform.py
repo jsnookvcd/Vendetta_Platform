@@ -60,7 +60,9 @@ def test_activate_module_and_tool_per_client(admin):
 def test_provisioning_api_contract(admin):
     c = _client(admin)
     admin.post(f"/clients/{c.id}/edit", data={"industry": "credit union",
-                                              "portal_domains": "riverbendcu.org", "active": "true"})
+                                              "portal_domains": "riverbendcu.org",
+                                              "executive_emails": "CEO@riverbendcu.org, cfo@riverbendcu.org",
+                                              "active": "true"})
     admin.post(f"/clients/{c.id}/modules/managed-services", data={"enabled": "true"})
     admin.post(f"/clients/{c.id}/tool/sentinelone", data={"tenancy": "111,112", "enabled": "true"})
     # a second client without managed-services
@@ -78,6 +80,8 @@ def test_provisioning_api_contract(admin):
     assert names == ["Riverbend Credit Union"]  # only the one with managed-services on
     entry = ms["clients"][0]
     assert entry["id"] == c.id and entry["portal_domains"] == "riverbendcu.org"
+    # executive emails are normalised (lower-cased, sorted) and carried in the roster
+    assert entry["executive_emails"] == "ceo@riverbendcu.org,cfo@riverbendcu.org"
     assert entry["tools"] == {"sentinelone": "111,112"}
     assert [x["name"] for x in dw["clients"]] == ["Cedar Valley"]
     assert "tools" not in dw["clients"][0]  # tool map only for managed-services

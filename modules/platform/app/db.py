@@ -63,6 +63,8 @@ class Client(Base):
     industry: Mapped[str] = mapped_column(String(100), default="")
     # Email domains for the client's staff, pushed to each module's portal.
     portal_domains: Mapped[str] = mapped_column(String(500), default="")
+    # Individual emails that get the executive (summary-only) portal view; the rest get technical.
+    executive_emails: Mapped[str] = mapped_column(String(1000), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -165,6 +167,18 @@ class AuditLog(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    # Lightweight column migrations for tables created by an earlier schema version.
+    # Check first so we only take the ALTER's table lock when the column is truly
+    # missing; create_all already adds it on a fresh database.
+    from sqlalchemy import text as _text
+
+    with engine.begin() as conn:
+        have = conn.execute(_text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'clients' AND column_name = 'executive_emails'"
+        )).first()
+        if not have:
+            conn.execute(_text("ALTER TABLE clients ADD COLUMN executive_emails VARCHAR(1000) DEFAULT ''"))
     from .registry import seed_registry
 
     db = SessionLocal()

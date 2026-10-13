@@ -5,6 +5,7 @@
   <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
   <div class="pt-title">Incident Response<span>{{ client.name }}</span></div>
   <span class="spacer"></span>
+  <span class="toolchip" style="margin-right:8px">{{ 'Executive view' if exec_view else 'Technical view' }}</span>
   <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
 </header>
 <main class="content" style="max-width:1040px; margin:0 auto">

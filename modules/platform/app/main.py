@@ -220,7 +220,8 @@ def client_page(cid: str, request: Request, user: str = auth.RequireUser, db: Se
 
 
 @app.post("/clients/{cid}/edit")
-def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form(""), active: bool = Form(False),
+def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form(""),
+                executive_emails: str = Form(""), active: bool = Form(False),
                 user: str = auth.RequireUser, db: Session = Depends(get_db)):
     c = _get_client(db, cid)
     wanted = {d.strip().lower() for d in portal_domains.split(",") if d.strip()}
@@ -230,7 +231,10 @@ def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form("
     if clash:
         return _back(f"/clients/{cid}", False,
                      f"Portal domain {clash[0]} is already used by {clash[1]}. A domain belongs to one client.")
+    # Normalise executive emails to a clean, lower-cased, comma-separated list.
+    execs = ",".join(sorted({e.strip().lower() for e in executive_emails.split(",") if e.strip()}))
     c.industry, c.portal_domains, c.active = industry.strip(), portal_domains.strip(), active
+    c.executive_emails = execs
     db.commit()
     _audit(db, user, "client.edit", c.name)
     return _back(f"/clients/{cid}", True, "Client saved.")
@@ -357,7 +361,8 @@ def provision_clients(module: str = "", user: str = Depends(auth.api_user), db: 
         if module and module not in enabled:
             continue
         entry = {"id": c.id, "name": c.name, "slug": c.slug, "industry": c.industry,
-                 "portal_domains": c.portal_domains, "modules": sorted(enabled)}
+                 "portal_domains": c.portal_domains, "executive_emails": c.executive_emails,
+                 "modules": sorted(enabled)}
         if not module or module == "managed-services":
             entry["tools"] = c.tool_map()
         out.append(entry)

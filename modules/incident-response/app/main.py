@@ -514,20 +514,21 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
     c = db.execute(select(Client).options(selectinload(Client.retainer)).where(Client.id == ident.client_id)).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
-    return render(request, "portal.html", user=ident.email, portal=True, client=c, cases=_client_cases(db, c.id))
+    return render(request, "portal.html", user=ident.email, portal=True, client=c,
+                  cases=_client_cases(db, c.id), exec_view=ident.is_executive)
 
 
 @app.get("/portal/cases/{cid}", response_class=HTMLResponse)
 def portal_case(cid: str, request: Request, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
     case = _get_case(db, cid)
     auth.require_owned(ident, case)
-    if case.privileged:
-        # Counsel-directed cases show milestones only; no timeline detail.
-        updates = []
-    else:
-        updates = [u for u in case.updates if not u.internal_only]
+    # Milestone-only when the matter is counsel-directed or the signed-in user is an
+    # executive: progress at the workstream level, no step-by-step timeline.
+    milestones_only = case.privileged or ident.is_executive
+    updates = [] if milestones_only else [u for u in case.updates if not u.internal_only]
     return render(request, "portal_case.html", user=ident.email, portal=True, client=case.client, case=case,
-                  updates=updates, lanes=board.lanes(case))
+                  updates=updates, lanes=board.lanes(case), exec_view=ident.is_executive,
+                  milestones_only=milestones_only)
 
 
 @app.post("/portal/declare")

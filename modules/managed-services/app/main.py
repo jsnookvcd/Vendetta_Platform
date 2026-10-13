@@ -495,9 +495,11 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
                       .order_by(desc(ActionLog.at)).limit(30)).scalars().all()
     devices = db.execute(select(Device).where(Device.client_id == c.id)).scalars().all()
     channels = {d: db.query(Channel).filter_by(client_id=c.id, desk=d).one_or_none() for d in DESKS}
+    by_sev = {s_: sum(1 for a in open_alerts if a.severity == s_) for s_ in SEVERITIES}
     return render(request, "portal.html", user=ident.email, portal=True, client=c,
                   open_alerts=open_alerts, resolved=resolved, feed=feed, channels=channels,
-                  n_devices=len(devices), n_online=sum(1 for d in devices if d.status == "online"))
+                  n_devices=len(devices), n_online=sum(1 for d in devices if d.status == "online"),
+                  exec_view=ident.is_executive, by_sev=by_sev)
 
 
 @app.get("/portal/alerts/{aid}", response_class=HTMLResponse)
@@ -505,6 +507,8 @@ def portal_alert(aid: str, request: Request, ident: auth.Identity = Depends(auth
                  db: Session = Depends(get_db)):
     a = _get_alert(db, aid)
     auth.require_owned(ident, a, extra=a.published)
+    if ident.is_executive:
+        return RedirectResponse("/portal", status_code=302)
     feed = db.execute(select(ActionLog).where(ActionLog.alert_id == a.id, ActionLog.client_visible.is_(True))
                       .order_by(desc(ActionLog.at))).scalars().all()
     return render(request, "portal_alert.html", user=ident.email, portal=True, client=a.client, a=a, feed=feed)

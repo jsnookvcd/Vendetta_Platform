@@ -9,7 +9,7 @@ from app.db import Client, SessionLocal
 ROSTER = {"module": "managed-services", "clients": [
     {"id": "plat-rb", "name": "Riverbend Credit Union", "slug": "riverbend-credit-union",
      "industry": "credit union", "portal_domains": "riverbendcu.org",
-     "modules": ["managed-services"],
+     "executive_emails": "ceo@riverbendcu.org", "modules": ["managed-services"],
      "tools": {"sentinelone": "111,112", "crowdstrike": "aabbccdd", "acronis": "ten-rb"}},
     {"id": "plat-hp", "name": "Harbor Point Logistics", "slug": "harbor-point",
      "industry": "transport", "portal_domains": "", "modules": ["managed-services"],
@@ -43,6 +43,7 @@ def test_pull_upserts_clients_and_tool_mappings(fresh_db, monkeypatch):
     assert rb.sentinelone_site_ids == "111,112" and rb.crowdstrike_cid == "aabbccdd"
     assert rb.acronis_tenant_id == "ten-rb" and rb.huntress_org_id == ""
     assert rb.tools == ["sentinelone", "crowdstrike", "acronis"]
+    assert rb.executive_emails == "ceo@riverbendcu.org"
 
 
 def test_pull_is_idempotent_and_updates_mappings(fresh_db, monkeypatch):

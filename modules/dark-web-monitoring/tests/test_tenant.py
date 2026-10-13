@@ -95,3 +95,40 @@ def test_oidc_refuses_ambiguous_domain(client):
     db.commit()
     mapped = oidc._map_identity({"email": "cfo@shared.example"})
     assert mapped is not None and mapped[1] == "client" and mapped[2] == aid
+
+
+# ---------------------------------------------------------------- executive vs technical view
+def _exec(c, email):
+    db = SessionLocal()
+    row = db.get(Client, c.id)
+    row.executive_emails = email
+    db.commit()
+
+
+def test_executive_sees_posture_not_findings_table(client):
+    a, _ = _two_clients()
+    _confirmed_hit(a, "A-breach-combolist")
+    _exec(a, "ceo@a.example")
+    _as_client(client, "ceo@a.example", a)
+    page = client.get("/portal").text
+    assert "Executive view" in page and "Exposure posture" in page
+    # the matched detail and the report download are withheld from the executive view
+    assert "A-breach-combolist" not in page
+    assert "/portal/report.pdf" not in page
+
+
+def test_technical_sees_findings_table_and_report(client):
+    a, _ = _two_clients()
+    _confirmed_hit(a, "A-breach-combolist")
+    _as_client(client, "it@a.example", a)   # technical
+    page = client.get("/portal").text
+    assert "Technical view" in page and "A-breach-combolist" in page
+    assert "/portal/report.pdf" in page
+
+
+def test_executive_redirected_from_report(client):
+    a, _ = _two_clients()
+    _exec(a, "ceo@a.example")
+    _as_client(client, "ceo@a.example", a)
+    r = client.get("/portal/report.pdf", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/portal"

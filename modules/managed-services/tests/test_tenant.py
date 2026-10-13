@@ -135,3 +135,40 @@ def test_oidc_refuses_ambiguous_domain(client):
     db.commit()
     mapped = oidc._map_identity({"email": "cfo@shared.example"})
     assert mapped is not None and mapped[1] == "client" and mapped[2] == aid
+
+
+# ---------------------------------------------------------------- executive vs technical view
+def _exec(c, email):
+    db = SessionLocal()
+    row = db.get(Client, c.id)
+    row.executive_emails = email
+    db.commit()
+
+
+def test_executive_sees_posture_not_alert_table(client):
+    a, _ = _two_clients()
+    _alert(a, "A critical exposure", published=True)
+    _exec(a, "ceo@a.example")
+    _as_client(client, "ceo@a.example", a)
+    page = client.get("/portal").text
+    assert "Executive view" in page and "Security posture" in page
+    # the per-alert drill-down link is not offered in the executive view
+    assert "/portal/alerts/" not in page
+
+
+def test_technical_sees_alert_table_with_drilldown(client):
+    a, _ = _two_clients()
+    al = _alert(a, "A critical exposure", published=True)
+    _as_client(client, "it@a.example", a)   # not in executive_emails -> technical
+    page = client.get("/portal").text
+    assert "Technical view" in page
+    assert f"/portal/alerts/{al.id}" in page
+
+
+def test_executive_redirected_from_alert_detail(client):
+    a, _ = _two_clients()
+    al = _alert(a, "A shared", published=True)
+    _exec(a, "ceo@a.example")
+    _as_client(client, "ceo@a.example", a)
+    r = client.get(f"/portal/alerts/{al.id}", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/portal"

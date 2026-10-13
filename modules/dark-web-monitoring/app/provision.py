@@ -73,6 +73,7 @@ def pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
         c.name = entry["name"]
         c.portal_domains = entry.get("portal_domains") or ""
         c.portal_enabled = bool(entry.get("portal_domains"))
+        c.executive_emails = entry.get("executive_emails") or ""
         # Fill industry only when it is not already set here (the IAB profile owns it).
         if entry.get("industry") and not c.industry:
             c.industry = entry["industry"]

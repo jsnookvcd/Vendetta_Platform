@@ -51,6 +51,8 @@ class Client(Base):
     portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     portal_domains: Mapped[str] = mapped_column(String(500), default="")  # comma-separated email domains
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Portal users listed here get the executive (summary) view; others technical.
+    executive_emails: Mapped[str] = mapped_column(String(1000), default="")
     # Set when provisioned from the platform control plane; the shared client id.
     platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
     # Profile used for initial access broker (IAB) matching. Brokers rarely name the
@@ -223,6 +225,7 @@ def init_db() -> None:
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_domains VARCHAR(500) DEFAULT ''",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS client_id VARCHAR(32)",
             "ALTER TABLE clients ADD COLUMN IF NOT EXISTS platform_client_id VARCHAR(32) DEFAULT ''",
+            "ALTER TABLE clients ADD COLUMN IF NOT EXISTS executive_emails VARCHAR(1000) DEFAULT ''",
             "CREATE INDEX IF NOT EXISTS ix_clients_platform_client_id ON clients (platform_client_id)",
         ):
             conn.execute(text(stmt))

@@ -4,6 +4,7 @@
   <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
   <div class="pt-title">Managed Services<span>{{ client.name }}</span></div>
   <span class="spacer"></span>
+  <span class="toolchip" style="margin-right:8px">{{ 'Executive view' if exec_view else 'Technical view' }}</span>
   <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
 </header>
 <main class="content" style="max-width:1100px; margin:0 auto">
@@ -23,6 +24,19 @@
     {% endfor %}
   </div>
 
+  {% if exec_view %}
+  <div class="section-head"><h2>Security posture</h2><span class="count">executive summary</span></div>
+  <div class="panel pad" style="margin-bottom:18px">
+    {% if open_alerts %}
+    <div class="row" style="gap:18px; flex-wrap:wrap">
+      {% for s_ in ['critical','high','medium','low'] %}{% if by_sev.get(s_) %}
+      <div><div class="n" style="font-size:22px; font-weight:800">{{ by_sev[s_] }}</div><div class="l faint" style="font-size:12px">{{ s_ }}</div></div>
+      {% endif %}{% endfor %}
+    </div>
+    <p class="muted" style="margin:12px 0 0">Your Vendetta team is handling {{ open_alerts|length }} active item{{ 's' if open_alerts|length != 1 }}. The actions taken are below. For the item-by-item detail, your technical contacts have the detailed view, or message the SOC.</p>
+    {% else %}<div class="empty"><h3>All clear</h3><p>Nothing requires your attention right now.</p></div>{% endif %}
+  </div>
+  {% else %}
   <div class="section-head"><h2>Active alerts</h2><span class="count">{{ open_alerts|length }}</span></div>
   <div class="panel" style="margin-bottom:18px"><div class="table-wrap">
   {% if open_alerts %}
@@ -40,6 +54,7 @@
   </table>
   {% else %}<div class="empty"><h3>No active alerts</h3><p>Your Vendetta team has nothing requiring your attention right now.</p></div>{% endif %}
   </div></div>
+  {% endif %}
 
   <div class="detail-grid">
     <div>

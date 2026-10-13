@@ -52,8 +52,9 @@
       <form method="post" action="/clients/{{ client.id }}/edit">
         <label class="field">Industry<input name="industry" value="{{ client.industry }}"></label>
         <label class="field" style="margin-top:9px">Portal email domains<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org"></label>
+        <label class="field" style="margin-top:9px">Executive emails<input name="executive_emails" value="{{ client.executive_emails }}" placeholder="ceo@example.com, cfo@example.com"></label>
         <label class="field chk" style="margin-top:9px"><input type="checkbox" name="active" value="true" {{ 'checked' if client.active }}> Active</label>
-        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal domains flow to each module's client portal so this client's staff can sign in there.</p>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal domains flow to each module's client portal so this client's staff can sign in there. Executive emails get the summary-only view; everyone else at the client gets the technical view.</p>
         <div style="margin-top:12px"><button class="btn btn-primary">Save</button></div>
       </form>
     </div>

@@ -4,6 +4,7 @@
   <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
   <div class="pt-title">Incident Response<span>{{ client.name }}</span></div>
   <span class="spacer"></span>
+  <span class="toolchip" style="margin-right:8px">{{ 'Executive view' if exec_view else 'Technical view' }}</span>
   <a href="/portal" class="faint" style="font-size:12px">All cases</a> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
 </header>
 <main class="content" style="max-width:1040px; margin:0 auto">
@@ -27,7 +28,7 @@
       <div class="faint" style="font-size:11.5px">{{ steps_done }} of {{ steps|length }} steps complete</div>
       {% endif %}
       {% if w.client_visible_note %}<p class="muted" style="font-size:12.5px; margin:8px 0 0">{{ w.client_visible_note }}</p>{% endif %}
-      {% if steps and not case.privileged %}
+      {% if steps and not milestones_only %}
       <ul class="steps">{% for t in steps %}<li class="st-{{ t.status }}">{{ t.title }}</li>{% endfor %}</ul>
       {% endif %}
     </div>
@@ -36,6 +37,8 @@
 
   {% if case.privileged %}
   <p class="faint" style="font-size:12.5px; margin-top:16px; max-width:70ch">This matter is being handled at the direction of counsel. Progress is shown at the milestone level; please direct questions about details to your counsel or your Vendetta lead.</p>
+  {% elif exec_view %}
+  <p class="faint" style="font-size:12.5px; margin-top:16px; max-width:70ch">Executive summary: progress is shown at the milestone level. For the step-by-step response timeline, your technical contacts have the detailed view, or reach your Vendetta lead.</p>
   {% else %}
   <div class="section-head"><h2>Updates</h2></div>
   <div class="panel">

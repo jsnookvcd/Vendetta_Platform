@@ -88,3 +88,38 @@ def test_oidc_refuses_ambiguous_domain(client):
     db.commit()
     mapped = oidc._map_identity({"email": "cfo@shared.example"})
     assert mapped is not None and mapped[1] == "client" and mapped[2] == aid
+
+
+# ---------------------------------------------------------------- executive vs technical view
+def _exec(c, email):
+    db = SessionLocal()
+    row = db.get(Client, c.id)
+    row.executive_emails = email
+    db.commit()
+
+
+def test_executive_case_shows_milestones_not_timeline(client):
+    a, _ = _two_clients()
+    db = SessionLocal()
+    case = open_case(db, a, "A incident")
+    # a client-visible update exists on the timeline
+    from app.db import CaseUpdate
+    db.add(CaseUpdate(case_id=case.id, kind="note", note="Containment step taken", internal_only=False))
+    db.commit()
+    _exec(a, "ceo@a.example")
+    _as_client(client, "ceo@a.example", a)
+    page = client.get(f"/portal/cases/{case.id}").text
+    assert "Executive view" in page and "Executive summary" in page
+    assert "Containment step taken" not in page   # timeline suppressed for executives
+
+
+def test_technical_case_shows_timeline(client):
+    a, _ = _two_clients()
+    db = SessionLocal()
+    case = open_case(db, a, "A incident")
+    from app.db import CaseUpdate
+    db.add(CaseUpdate(case_id=case.id, kind="note", note="Containment step taken", internal_only=False))
+    db.commit()
+    _as_client(client, "it@a.example", a)   # technical
+    page = client.get(f"/portal/cases/{case.id}").text
+    assert "Technical view" in page and "Containment step taken" in page

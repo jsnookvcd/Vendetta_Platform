@@ -40,7 +40,7 @@ The control plane (modules/platform) is the front door and the system of record 
 
 Two integration points, opposite directions:
 
-- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services, incident-response and dark-web-monitoring all consume it. A module's pull is authoritative only for the platform-owned fields (name, portal domains, and for managed-services the tool mapping); each module's own data (IR retainers and cases, dark web watch terms and the IAB profile, managed-services sync history) is never touched.
+- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services, incident-response and dark-web-monitoring all consume it. A module's pull is authoritative only for the platform-owned fields (name, portal domains, the executive-email list, and for managed-services the tool mapping); each module's own data (IR retainers and cases, dark web watch terms and the IAB profile, managed-services sync history) is never touched.
 - Overview (it reads from modules): the control plane calls each module's /api/module for health and its items endpoint for live counts, cached briefly and degrading gracefully.
 
 The canonical client id lives here, and every built module stores it on its own client rows. Escalations carry it too: a module sends its platform_client_id, and the engagement hub resolves the case's client by that shared id first, falling back to name.
@@ -68,6 +68,15 @@ The platform has these role families. A module enforces the ones relevant to it.
 
 Internal identity comes from Entra ID SSO (by email domain, allowlist or group); client identity is mapped from the signing-in user's email domain to the one client that has the portal enabled for that domain. A portal domain belongs to a single client: the control plane refuses assigning a domain already used by another active client, and at sign-in a domain that somehow matches more than one client is refused rather than guessed, so a user is never mapped into the wrong tenant.
 
+## Portal views: executive and technical
+
+A client's own people do not all want the same portal. A CISO or an analyst wants the detail; a CEO or board member wants the posture. The platform splits the client portal into two views off one sign-in, with no extra role or account.
+
+- The control plane holds an executive-email list per client (set on the client edit page, pushed in the provisioning roster). A signed-in client user whose email is on that list gets the **executive view**; everyone else at the client gets the **technical view**. This is computed once at `resolve_identity` and exposed as `Identity.is_executive`; it never widens tenant scope, only narrows what a client user sees within their own tenant.
+- Executive view is summary-only. Managed services shows a security-posture panel (severity counts, how many items the team is handling) instead of the per-alert table, and the per-alert drill-down is redirected back to the portal home. The IR hub shows workstream milestones only, not the step-by-step timeline. Dark web shows the exposure counts and trend, not the finding-by-finding table, and the detailed exposure report download is withheld.
+- Technical view is the full detail: the alert table with drill-down, the IR case timeline, the dark web findings list and the downloadable report.
+- The split is presentation within a tenant, not a second security boundary: both views are already confined to the one client by the tenant isolation below. An executive is never shown another tenant's data, and the view is driven entirely by the platform-owned email list, so a client cannot elevate their own view.
+
 ## Tenant isolation
 
 The platform is a multi-tenant MSSP system, and the tenant boundary is a security boundary enforced the same way in every module.
@@ -77,6 +86,18 @@ The platform is a multi-tenant MSSP system, and the tenant boundary is a securit
 - Every client-facing record carries client_id, and every portal query filters on it. Portal detail routes go through one helper, require_owned, which returns 404 unless the record exists, belongs to the signed-in client, and meets any extra condition (such as being published), so a client cannot even probe which ids belong to another tenant.
 - This is logical multi-tenancy on a shared database per module, with client_id as the tenant key. It is proven, not assumed: each portal-bearing module ships a cross-tenant test suite (two clients, one signed in, asserting no read, probe or action crosses the boundary, plus a direct test of the route-level backstop).
 - Tool tenancy is per client: one MSSP-level credential per vendor, narrowed to each client's slice (SentinelOne site IDs, CrowdStrike child CID via Flight Control, Huntress org, Acronis tenant, SuperOps account). Reads and actions are always scoped to the client's mapping.
+
+### When a client requires physical separation
+
+Logical multi-tenancy is the default and is the right fit for nearly every client. Some clients, though — a defense contractor, a bank under a specific regulator, a client whose contract says it outright — require their data to live in a database no other tenant touches. For those we do not reach for an in-app per-tenant database router. That router (resolving a different database connection per request from the tenant) is a large, failure-prone change — connection-pool-per-tenant, migrations fanned out across N databases, every query path newly dependent on getting the routing right — and it buys a weaker separation than the honest answer: a dedicated deployment.
+
+A dedicated tenant is the same code, run as its own stack:
+
+- Stand up a separate instance of each module that client uses, each pointed at its own database (its own `DATABASE_URL`), with its own tool credentials. This is the ordinary per-module deployment, run once for this client instead of shared.
+- Provision it from the control plane exactly as a shared stack is: the dedicated modules pull `GET /api/platform/clients?module=<key>` filtered to that one client. A client that must also have a dedicated control plane runs its own platform instance; most do not need to.
+- Route the client's portal domain to their stack at the load balancer. Nothing in the application changes, so there is no dedicated-only code path to keep correct, and the separation is physical at the database and the host, not a predicate the app has to evaluate on every request.
+
+The trade is real and we name it: a dedicated stack costs more to run and to patch (N stacks to upgrade, not one), and that cost is the point — it is what physical isolation means. The platform supports both models with the same binaries; which one a client gets is a deployment decision recorded against the client, not a fork of the code. The shared model stays the default because its boundary is tested and its operational cost is flat; the dedicated model exists for the clients whose requirements genuinely demand it.
 
 ## Enablement
 

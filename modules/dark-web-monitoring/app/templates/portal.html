@@ -12,6 +12,7 @@
   <img class="logo" src="/static/logo.png" alt="Vendetta" style="width:30px;height:30px">
   <div class="pt-title">Dark Web Exposure<span>{{ client.name }}</span></div>
   <span class="spacer"></span>
+  <span class="toolchip" style="margin-right:8px">{{ 'Executive view' if exec_view else 'Technical view' }}</span>
   <span class="faint" style="font-size:12px">{{ user }}</span> &nbsp; <a href="/logout" class="faint" style="font-size:12px">Sign out</a>
 </header>
 <main class="content" style="max-width:1040px; margin:0 auto">
@@ -25,7 +26,7 @@
     </svg>
     {% else %}<span class="faint" style="font-size:12px">no confirmed findings in range</span>{% endif %}
     <span class="grow"></span>
-    <a class="btn btn-sm btn-primary" href="/portal/report.pdf?days=30">Download exposure report</a>
+    {% if not exec_view %}<a class="btn btn-sm btn-primary" href="/portal/report.pdf?days=30">Download exposure report</a>{% endif %}
   </div>
 
   <div class="tiles">
@@ -36,6 +37,16 @@
     <div class="tile"><div class="n">{{ hits|length }}</div><div class="l">Confirmed findings</div></div>
   </div>
 
+  {% if exec_view %}
+  <div class="section-head"><h2>Exposure posture</h2><span class="count">executive summary</span></div>
+  <div class="panel" style="padding:16px 18px">
+    {% if hits %}
+    <p class="muted" style="margin:0">Vendetta has {{ hits|length }} confirmed finding{{ 's' if hits|length != 1 }} on record for {{ client.name }}{% if by_sev.critical or by_sev.high %}, including {{ by_sev.critical + by_sev.high }} at high or critical severity{% endif %}. The counts above track confirmed exposure over the last three weeks. For the finding-by-finding detail and the downloadable report, your technical contacts have the detailed view, or contact your Vendetta team.</p>
+    {% else %}
+    <div class="empty"><h3>No confirmed exposure</h3><p>Vendetta is monitoring your organization across leak sites, forums, credential sources and certificate transparency. You will be alerted if confirmed exposure appears.</p></div>
+    {% endif %}
+  </div>
+  {% else %}
   <div class="section-head"><h2>Confirmed findings</h2></div>
   <div class="panel"><div class="table-wrap">
   {% if hits %}
@@ -55,6 +66,7 @@
   <div class="empty"><h3>No confirmed exposure</h3><p>Vendetta is monitoring your organization across leak sites, forums, credential sources and certificate transparency. Confirmed findings will appear here, and you will be alerted when they do.</p></div>
   {% endif %}
   </div></div>
+  {% endif %}
 
   <p class="faint" style="font-size:12px; margin-top:14px; max-width:70ch">This portal shows findings Vendetta analysts have confirmed. Credential details are shown with secrets masked. For the full investigation or to discuss a finding, contact your Vendetta team.</p>
 </main>

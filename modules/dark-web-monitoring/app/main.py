@@ -705,11 +705,15 @@ def portal_home(request: Request, ident: auth.Identity = Depends(auth.require_cl
     for h in hits:
         by_sev[h.severity] = by_sev.get(h.severity, 0) + 1
     trend = _hit_trend(db, c.id, days=21)
-    return render(request, "portal.html", user=ident.email, portal=True, client=c, hits=hits, by_sev=by_sev, trend=trend)
+    return render(request, "portal.html", user=ident.email, portal=True, client=c, hits=hits, by_sev=by_sev,
+                  trend=trend, exec_view=ident.is_executive)
 
 
 @app.get("/portal/report.pdf")
 def portal_report_pdf(request: Request, days: int = 30, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    if ident.is_executive:
+        # The detailed exposure report is a technical artifact; executives get the summary view.
+        return RedirectResponse("/portal", status_code=302)
     c = db.get(Client, ident.client_id)
     if not c:
         raise HTTPException(404)
