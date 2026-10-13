@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     database_url: str = "postgresql+psycopg://darkweb:darkweb@db:5432/darkweb"
     secret_key: str = "change-me"
+    # Fernet key (urlsafe base64 of 32 bytes) encrypting stored secrets such as the
+    # SSO client secret. Blank derives a key from secret_key; set a dedicated key in
+    # production so it can be rotated independently.
+    encryption_key: str = ""
     cookie_secure: bool = False  # set true once the console is served over TLS
     login_max_attempts: int = 8  # per IP per window before a temporary lockout
     login_window_seconds: int = 300

@@ -377,3 +377,10 @@ label.field.chk { flex-direction: row; align-items: center; gap: 7px; }
 .coc-ok .coc-badge { color: #8fd98a; border: 1px solid #2f5a34; }
 .coc-broken { border: 1px solid #6a2430; background: rgba(106,36,48,0.16); }
 .coc-broken .coc-badge { color: #ff9ba6; border: 1px solid #6a2430; }
+.pill { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; border-radius: 4px; padding: 3px 8px; white-space: nowrap; color: var(--muted); border: 1px solid var(--line-2); }
+.pill-ok { color: #8fd98a; border-color: #2f5a34; background: rgba(47,90,52,0.14); }
+.pill-warn { color: #ffc96b; border-color: #6a5224; background: rgba(106,82,36,0.14); }
+.fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.fieldgrid .field { margin: 0; }
+.req { color: #ff9ba6; }
+.hint { display: block; font-size: 11.5px; color: var(--faint); }

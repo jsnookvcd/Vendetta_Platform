@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # still verify its own chain; set a dedicated key in production so it can be
     # backed up and rotated independently of the session secret.
     evidence_signing_key: str = ""
+    # Fernet key (urlsafe base64 of 32 bytes) encrypting stored secrets such as the
+    # SSO client secret. Blank derives a key from secret_key; set a dedicated key in
+    # production so it can be rotated independently.
+    encryption_key: str = ""
     cookie_secure: bool = False
     login_max_attempts: int = 8
     login_window_seconds: int = 300

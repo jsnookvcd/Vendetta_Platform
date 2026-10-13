@@ -165,9 +165,15 @@ terraform apply -var enable_alb=true -var base_domain=vendettacyber.com \
 ```
 
 This brings the control plane up at platform.vendettacyber.com (and ir., msp.,
-darkweb. under the same domain). Point the Entra SSO redirect URL and each
-module's portal domains at these hosts. Set `COOKIE_SECURE=true` and wire Entra
-SSO per each module's `.env.example`.
+darkweb. under the same domain). Point each module's portal domains at these hosts
+and set `COOKIE_SECURE=true`.
+
+Wire Microsoft 365 SSO in-app: on each console (and the control plane) open
+Settings > SSO, enter the Entra tenant, application client ID and secret, set the
+redirect URL to that host's `/auth/callback`, and click Save and verify. It stores
+the config (secret encrypted) and checks it against Microsoft right then, so you
+confirm sign-in works without a redeploy. The same values can be pre-seeded through
+SSM instead; the SSO page then shows source "env" and lets you override in place.
 
 ## Rollback
 

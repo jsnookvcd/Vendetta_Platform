@@ -18,29 +18,17 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
-from authlib.integrations.starlette_client import OAuth, OAuthError
+from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
-from . import auth
+from . import auth, sso
 from .config import settings
 from .db import AuditLog, Client, SessionLocal, User, utcnow
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-oauth = OAuth()
-
-if settings.oidc_enabled:
-    oauth.register(
-        name="entra",
-        client_id=settings.entra_client_id,
-        client_secret=settings.entra_client_secret,
-        server_metadata_url=(
-            f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0/.well-known/openid-configuration"
-        ),
-        client_kwargs={"scope": "openid profile email"},
-    )
 
 
 def _email_domain(email: str) -> str:
@@ -58,16 +46,17 @@ def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
         return None
     domain = _email_domain(email)
 
-    internal_domains = {d.strip().lower() for d in settings.internal_email_domains.split(",") if d.strip()}
-    allow_emails = {e.strip().lower() for e in settings.entra_allowed_emails.split(",") if e.strip()}
+    cfg = sso.resolve()
+    internal_domains = {d.strip().lower() for d in cfg["internal_email_domains"].split(",") if d.strip()}
+    allow_emails = {e.strip().lower() for e in cfg["allowed_emails"].split(",") if e.strip()}
     groups = claims.get("groups") or []
     is_internal = (
         domain in internal_domains
         or email in allow_emails
-        or (settings.entra_allowed_group and settings.entra_allowed_group in groups)
+        or (cfg["allowed_group"] and cfg["allowed_group"] in groups)
     )
     if is_internal:
-        admins = {e.strip().lower() for e in settings.admin_emails.split(",") if e.strip()}
+        admins = {e.strip().lower() for e in cfg["admin_emails"].split(",") if e.strip()}
         return email, ("admin" if email in admins else "analyst"), None
 
     # Client portal: match the email domain to an enabled client. A domain that
@@ -110,24 +99,25 @@ def _upsert_user(email: str, name: str, role: str, client_id: str | None) -> Non
 
 @router.get("/auth/login")
 async def auth_login(request: Request):
-    if not settings.oidc_enabled:
+    if not sso.enabled():
         raise HTTPException(404)
-    redirect_uri = settings.entra_redirect_url or str(request.url_for("auth_callback"))
-    return await oauth.entra.authorize_redirect(request, redirect_uri)
+    redirect_uri = sso.resolve()["redirect_url"] or str(request.url_for("auth_callback"))
+    return await sso.client().authorize_redirect(request, redirect_uri)
 
 
 @router.get("/auth/callback", name="auth_callback")
 async def auth_callback(request: Request):
-    if not settings.oidc_enabled:
+    if not sso.enabled():
         raise HTTPException(404)
+    entra = sso.client()
     try:
-        token = await oauth.entra.authorize_access_token(request)
+        token = await entra.authorize_access_token(request)
     except OAuthError as e:
         log.warning("oidc callback error: %s", e)
         return RedirectResponse("/login?sso=failed", status_code=302)
     claims = token.get("userinfo") or {}
     if not claims:
-        claims = await oauth.entra.userinfo(token=token)
+        claims = await entra.userinfo(token=token)
     name = claims.get("name") or ""
     mapped = _map_identity(claims)
     if not mapped:

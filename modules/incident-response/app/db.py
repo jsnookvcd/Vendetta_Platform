@@ -28,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 from .config import WORKSTREAMS, settings
+from .crypto import EncryptedStr
 
 engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -197,6 +198,27 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SsoConfig(Base):
+    """Microsoft 365 / Entra SSO configuration entered in-app. Single row ('default');
+    the secret is encrypted at rest and the rest overlays the environment defaults."""
+
+    __tablename__ = "sso_config"
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default="default")
+    tenant_id: Mapped[str] = mapped_column(String(100), default="")
+    client_id: Mapped[str] = mapped_column(String(100), default="")
+    client_secret: Mapped[str] = mapped_column(EncryptedStr(512), default="")
+    redirect_url: Mapped[str] = mapped_column(String(400), default="")
+    allowed_group: Mapped[str] = mapped_column(String(100), default="")
+    allowed_emails: Mapped[str] = mapped_column(String(1000), default="")
+    internal_email_domains: Mapped[str] = mapped_column(String(500), default="")
+    admin_emails: Mapped[str] = mapped_column(String(1000), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_tested_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_detail: Mapped[str] = mapped_column(String(500), default="")
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditLog(Base):

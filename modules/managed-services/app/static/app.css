@@ -327,3 +327,6 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .fieldgrid .field { margin: 0; }
 .req { color: #ff9ba6; }
 .hint { display: block; font-size: 11px; color: var(--faint); margin-top: 3px; }
+.pill { font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; border-radius: 4px; padding: 3px 8px; white-space: nowrap; color: var(--muted); border: 1px solid var(--line-2); }
+.pill-ok { color: #8fd98a; border-color: #2f5a34; background: rgba(47,90,52,0.14); }
+.pill-warn { color: #ffc96b; border-color: #6a5224; background: rgba(106,82,36,0.14); }

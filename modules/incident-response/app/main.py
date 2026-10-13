@@ -18,7 +18,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, board, findings as findings_mod, hub, notify, oidc, provision
+from . import auth, board, findings as findings_mod, hub, notify, oidc, provision, sso
 from .config import WORKSTREAMS, settings
 from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Task, Workstream,
                  ensure_seq_counter, init_db, open_case, utcnow)
@@ -135,10 +135,10 @@ _login_hits: dict[str, list[float]] = {}
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, next: str = "/", sso: str = ""):
+def login_form(request: Request, next: str = "/", sso_status: str = Query("", alias="sso")):
     msg = {"failed": "Microsoft sign-in did not complete. Try again.",
-           "denied": "That account is not permitted to access this console."}.get(sso, "")
-    return render(request, "login.html", next=next, error=msg, oidc_enabled=settings.oidc_enabled)
+           "denied": "That account is not permitted to access this console."}.get(sso_status, "")
+    return render(request, "login.html", next=next, error=msg, oidc_enabled=sso.enabled())
 
 
 @app.post("/login")
@@ -148,7 +148,7 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
     hits = [t for t in _login_hits.get(ip, []) if now - t < settings.login_window_seconds]
     _login_hits[ip] = hits
     if len(hits) >= settings.login_max_attempts:
-        return render(request, "login.html", next=next, error="Too many attempts. Wait a few minutes and try again.", oidc_enabled=settings.oidc_enabled)
+        return render(request, "login.html", next=next, error="Too many attempts. Wait a few minutes and try again.", oidc_enabled=sso.enabled())
     if username == settings.admin_user and auth.check_password(password):
         resp = RedirectResponse(next or "/", status_code=302)
         resp.set_cookie(auth.COOKIE, auth.make_session(username), httponly=True, samesite="lax",
@@ -157,7 +157,42 @@ def login(request: Request, username: str = Form(...), password: str = Form(...)
         return resp
     _login_hits.setdefault(ip, []).append(now)
     _audit(db, username, "login.failed", ip)
-    return render(request, "login.html", next=next, error="Invalid credentials", oidc_enabled=settings.oidc_enabled)
+    return render(request, "login.html", next=next, error="Invalid credentials", oidc_enabled=sso.enabled())
+
+
+@app.get("/settings/sso", response_class=HTMLResponse)
+def sso_page(request: Request, user: str = auth.RequireUser):
+    q = request.query_params
+    msg = err = ""
+    st = sso.status()
+    if q.get("ok"):
+        msg = f"Microsoft 365 SSO verified. {st['last_detail']}".strip()
+    elif q.get("testfail"):
+        err = f"SSO saved but the test failed: {st['last_detail']}".strip()
+    return render(request, "sso.html", user=user, st=st, msg=msg, err=err)
+
+
+@app.post("/settings/sso")
+async def sso_save(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    form = await request.form()
+    values = {k: (form.get(k) or "") for k in
+              ("tenant_id", "client_id", "client_secret", "redirect_url", "allowed_group",
+               "allowed_emails", "internal_email_domains", "admin_emails")}
+    values["enabled"] = form.get("enabled") == "true"
+    sso.save(values, user)
+    _audit(db, user, "sso.save", f"tenant={values['tenant_id']} enabled={values['enabled']}")
+    ok, detail = sso.test()
+    sso.set_status(ok, detail)
+    _audit(db, user, "sso.test", f"{'ok' if ok else 'fail'}: {detail}")
+    return RedirectResponse(f"/settings/sso?{'ok' if ok else 'testfail'}=1", status_code=302)
+
+
+@app.post("/settings/sso/test")
+def sso_test(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ok, detail = sso.test()
+    sso.set_status(ok, detail)
+    _audit(db, user, "sso.test", f"{'ok' if ok else 'fail'}: {detail}")
+    return RedirectResponse(f"/settings/sso?{'ok' if ok else 'testfail'}=1", status_code=302)
 
 
 @app.get("/logout")
