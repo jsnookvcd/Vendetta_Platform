@@ -129,11 +129,14 @@ Once DNS and the hostnames exist:
 
 ```bash
 cd infra/terraform
-terraform apply -var enable_alb=true -var base_domain=vendettacd.io \
+terraform apply -var enable_alb=true -var base_domain=vendettacyber.com \
   -var hosted_zone_id=<zone> -var 'alert_emails=["soc@vendettacd.io"]'
 ```
 
-Set `COOKIE_SECURE=true` and wire Entra SSO per each module's `.env.example`.
+This brings the control plane up at platform.vendettacyber.com (and ir., msp.,
+darkweb. under the same domain). Point the Entra SSO redirect URL and each
+module's portal domains at these hosts. Set `COOKIE_SECURE=true` and wire Entra
+SSO per each module's `.env.example`.
 
 ## Rollback
 

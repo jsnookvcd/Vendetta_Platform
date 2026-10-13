@@ -98,9 +98,9 @@ variable "enable_alb" {
 }
 
 variable "base_domain" {
-  description = "The zone the module hostnames sit in, e.g. vendettacd.io. Each module gets <key-host>.<base_domain>."
+  description = "The zone the module hostnames sit in. Each module gets <key-host>.<base_domain>, so the control plane is platform.<base_domain>."
   type        = string
-  default     = ""
+  default     = "vendettacyber.com"
 }
 
 variable "module_hosts" {

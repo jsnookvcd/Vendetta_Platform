@@ -1,12 +1,13 @@
-# One ALB fronts every module, routing by hostname: platform.<domain>,
-# ir.<domain>, msp.<domain>, darkweb.<domain>. Off by default; enable it once the
-# hostnames and cert are ready. See variables.tf for the knobs.
+# One ALB fronts every module, routing by hostname: platform.vendettacyber.com,
+# ir.vendettacyber.com, msp.vendettacyber.com, darkweb.vendettacyber.com (the
+# hosts follow base_domain). Off by default; enable it once the hostnames and
+# cert are ready. See variables.tf for the knobs.
 
 locals {
   alb_on    = var.enable_alb ? 1 : 0
   make_cert = var.enable_alb && var.acm_certificate_arn == "" && var.hosted_zone_id != "" ? 1 : 0
   cert_arn  = var.acm_certificate_arn != "" ? var.acm_certificate_arn : (local.make_cert == 1 ? aws_acm_certificate_validation.alb[0].certificate_arn : "")
-  # Full hostname per deployed module, e.g. { platform = "platform.vendettacd.io" }.
+  # Full hostname per deployed module, e.g. { platform = "platform.vendettacyber.com" }.
   hosts = { for k, m in local.deployed : k => "${lookup(var.module_hosts, k, k)}.${var.base_domain}" }
 }
 

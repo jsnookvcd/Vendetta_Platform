@@ -69,10 +69,14 @@ Turn on the public front once DNS and the hostnames are ready:
 ```bash
 terraform apply \
   -var enable_alb=true \
-  -var base_domain=vendettacd.io \
+  -var base_domain=vendettacyber.com \
   -var hosted_zone_id=Z0123456789 \
   -var 'alert_emails=["soc@vendettacd.io"]'
 ```
+
+This fronts the control plane at platform.vendettacyber.com, with ir., msp. and
+darkweb. under the same domain and one certificate. The alert address stays on
+the vendettacd.io corporate mailbox; only the hostnames use vendettacyber.com.
 
 Validated here by HCL parse only; no `terraform plan` was run (no AWS
 credentials in this environment). Run `terraform plan` against the target account
