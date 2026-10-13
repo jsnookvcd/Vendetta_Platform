@@ -49,11 +49,11 @@ A module whose PLATFORM_HUB_URL is blank runs standalone; escalation is a no-op.
 
 The platform has these role families. A module enforces the ones relevant to it.
 
-- admin — internal, full control.
-- analyst — internal, full operational access.
-- client — read-only, scoped to a single client, sees only confirmed findings and that client's reports. Enabled per client.
-- breach_counsel — privileged access to findings tied to a counsel-directed IR case.
-- partner_carrier — scoped access for a reseller or insurance carrier; no access by default.
+- admin: internal, full control.
+- analyst: internal, full operational access.
+- client: read-only, scoped to a single client, sees only confirmed findings and that client's reports. Enabled per client.
+- breach_counsel: privileged access to findings tied to a counsel-directed IR case.
+- partner_carrier: scoped access for a reseller or insurance carrier; no access by default.
 
 Internal identity comes from Entra ID SSO (by email domain, allowlist or group); client identity is mapped from the signing-in user's email domain to a client that has the portal enabled.
 

@@ -3,7 +3,10 @@
 Case numbers are a firm-wide running sequence (client name and incident type are
 never part of the number). Every case is opened with the fixed five workstreams.
 Findings escalated from other modules land on a case as timeline entries attached
-to a workstream, carrying the source module and the finding payload."""
+to a workstream, carrying the source module and the finding payload.
+
+Each case also has a Kanban board of task cards, one lane per workstream. Cards
+and timeline entries are linked both ways; the rules live in board.py."""
 from __future__ import annotations
 
 import datetime as dt
@@ -110,6 +113,7 @@ class Case(Base):
     client: Mapped[Client] = relationship(back_populates="cases")
     workstreams: Mapped[list[Workstream]] = relationship(back_populates="case", cascade="all, delete-orphan", order_by="Workstream.position")
     updates: Mapped[list[CaseUpdate]] = relationship(back_populates="case", cascade="all, delete-orphan", order_by=lambda: CaseUpdate.at.desc())
+    tasks: Mapped[list[Task]] = relationship(back_populates="case", cascade="all, delete-orphan", order_by=lambda: [Task.position, Task.created_at])
 
 
 class Workstream(Base):
@@ -126,8 +130,32 @@ class Workstream(Base):
     case: Mapped[Case] = relationship(back_populates="workstreams")
 
 
+class Task(Base):
+    """A card on the case board. Lane is the workstream, column is the status."""
+
+    __tablename__ = "tasks"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    case_id: Mapped[str] = mapped_column(ForeignKey("cases.id"), index=True)
+    workstream: Mapped[str] = mapped_column(String(80))
+    title: Mapped[str] = mapped_column(String(300))
+    # todo | in_progress | blocked | done
+    status: Mapped[str] = mapped_column(String(20), default="todo")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    owner: Mapped[str] = mapped_column(String(200), default="")
+    due_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    client_visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # playbook | manual | escalation | update
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    case: Mapped[Case] = relationship(back_populates="tasks")
+    updates: Mapped[list[CaseUpdate]] = relationship(back_populates="task")
+
+
 class CaseUpdate(Base):
-    """Timeline entry. Escalated findings arrive here with their source payload."""
+    """Timeline entry. Escalated findings arrive here with their source payload.
+    task_id links the entry to a board card when it is about one."""
 
     __tablename__ = "case_updates"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -135,12 +163,14 @@ class CaseUpdate(Base):
     workstream: Mapped[str] = mapped_column(String(80), default="")
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     actor: Mapped[str] = mapped_column(String(320), default="system")
-    kind: Mapped[str] = mapped_column(String(20), default="note")  # note | finding | status | system
+    kind: Mapped[str] = mapped_column(String(20), default="note")  # note | finding | status | system | task
     note: Mapped[str] = mapped_column(Text, default="")
     internal_only: Mapped[bool] = mapped_column(Boolean, default=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
 
     case: Mapped[Case] = relationship(back_populates="updates")
+    task: Mapped[Task | None] = relationship(back_populates="updates")
 
 
 class User(Base):
@@ -167,6 +197,12 @@ class AuditLog(Base):
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    # create_all does not add columns to existing tables; keep older databases current.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS task_id VARCHAR(32) "
+            "REFERENCES tasks(id) ON DELETE SET NULL"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_case_updates_task_id ON case_updates (task_id)"))
 
 
 def next_case_number(db: Session) -> tuple[int, str]:
@@ -191,8 +227,10 @@ def open_case(
     incident_type: str = "",
     lead: str = "",
     source_module: str = "",
+    seed_board: bool = True,
 ) -> Case:
-    """Create a case with the five workstreams and an opening timeline entry."""
+    """Create a case with the five workstreams, the playbook cards on its board,
+    and an opening timeline entry."""
     seq, number = next_case_number(db)
     case = Case(
         seq=seq, number=number, title=title[:300], client_id=client.id, severity=severity,
@@ -201,6 +239,10 @@ def open_case(
     for i, name in enumerate(WORKSTREAMS):
         case.workstreams.append(Workstream(name=name, position=i))
     case.workstreams[0].status = "in_progress"  # scoping starts immediately
+    if seed_board:
+        from .board import seed_playbook
+
+        seed_playbook(case)
     case.updates.append(CaseUpdate(actor=actor, kind="system", note=f"Case {number} opened ({origin}).", internal_only=False))
     db.add(case)
     db.commit()

@@ -6,12 +6,14 @@ client_id. Resolution order for the client: hub id, then exact name match
 
 Link-or-open: if the payload's case_ref names an open hub case, the finding is
 attached to that case. Otherwise a new case is opened. Either way the finding
-lands on the timeline under the requested workstream, carrying its payload."""
+lands on the timeline under the requested workstream, carrying its payload, and a
+review card for it is added to that workstream's lane on the case board."""
 from __future__ import annotations
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import board
 from .config import WORKSTREAMS
 from .db import AuditLog, Case, CaseUpdate, Client, open_case
 
@@ -64,10 +66,14 @@ def escalate(db: Session, payload: dict, actor: str) -> tuple[Case, bool]:
     elif _rank(sev) > _rank(case.severity):
         case.severity = sev  # an escalation can raise, never lower, case severity
 
-    case.updates.append(CaseUpdate(
+    entry = CaseUpdate(
         workstream=ws, actor=actor, kind="finding", internal_only=True,
         note=f"Finding escalated from {module}: {summary}", payload={"source_module": module, "finding": finding},
-    ))
+    )
+    case.updates.append(entry)
+    # Every escalated finding becomes a review card on its workstream's board lane.
+    card = board.add_task(case, ws, f"Review: {summary}", actor, source="escalation", log=False)
+    entry.task = card
     db.add(AuditLog(actor=actor, action="case.escalation", detail=f"{case.number} <- {module} linked={linked}"))
     db.commit()
     return case, linked

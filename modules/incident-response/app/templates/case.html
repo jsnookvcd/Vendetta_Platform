@@ -1,5 +1,11 @@
 {% extends "base.html" %}{% block title %}{{ case.number }}{% endblock %}
 {% block body %}
+{% set quick = {
+  'todo': [('in_progress', 'Start')],
+  'in_progress': [('blocked', 'Block'), ('done', 'Done')],
+  'blocked': [('in_progress', 'Resume'), ('done', 'Done')],
+  'done': [('in_progress', 'Reopen')],
+} %}
 <div class="title-row">
   <span class="casenum" style="font-size:14px">{{ case.number }}</span>
   <span class="sev sev-{{ case.severity }}">{{ case.severity }}</span>
@@ -20,14 +26,22 @@
     <select name="status" aria-label="Case status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s==case.status }}>{{ s }}</option>{% endfor %}</select>
     <button class="btn btn-sm">Set status</button>
   </form>
+  <a class="btn btn-sm btn-ghost" href="#board">Board</a>
+  <a class="btn btn-sm btn-ghost" href="#timeline">Timeline</a>
 </div>
 
-<div class="section-head" id="ws"><h2>Workstreams</h2><span class="count">the client sees each status and the milestone line</span></div>
-<div class="wsgrid">
-  {% for w in case.workstreams %}
+<div class="section-head" id="ws"><h2>Workstreams</h2><span class="count">status follows the board; the client sees each status and the milestone line</span></div>
+<div class="wsgrid" id="ws-grid">
+  {% for w in case.workstreams %}{% set lane = lanes[loop.index0] %}
   <form class="wscard ws-{{ w.status }}" method="post" action="/cases/{{ case.id }}/workstreams/{{ w.id }}">
     <h3>{{ w.name }}</h3>
+    {% if lane.total %}
+    <div class="ws-auto">{{ wsdot(w.status) }} <span style="text-transform:capitalize">{{ w.status.replace('_',' ') }}</span><span class="faint"> · {{ lane.done }} of {{ lane.total }} cards done</span></div>
+    <div class="kbar" aria-hidden="true"><span style="width:{{ (100 * lane.done / lane.total)|round|int }}%"></span></div>
+    <input type="hidden" name="status" value="{{ w.status }}">
+    {% else %}
     <select name="status" aria-label="{{ w.name }} status">{% for s in ws_statuses %}<option value="{{ s }}" {{ 'selected' if s==w.status }}>{{ s.replace('_',' ') }}</option>{% endfor %}</select>
+    {% endif %}
     <label class="field">Owner<input name="owner" value="{{ w.owner }}" placeholder="responder"></label>
     <label class="field">Milestone for client<textarea name="client_visible_note" placeholder="What the client should see">{{ w.client_visible_note }}</textarea></label>
     <div style="margin-top:8px"><button class="btn btn-sm">Save</button></div>
@@ -35,24 +49,118 @@
   {% endfor %}
 </div>
 
+<section id="board" class="board" data-case="{{ case.id }}">
+  <div class="section-head">
+    <h2>Board</h2><span class="count">{{ bsum.done }} of {{ bsum.total }} cards done{% if bsum.blocked %} · {{ bsum.blocked }} blocked or waiting{% endif %}</span>
+    <span class="spacer"></span>
+    <span class="faint board-hint">Drag cards between columns. An update logged on a card starts it; finished lanes fold up.</span>
+  </div>
+  <div class="kgrid khead">
+    {% for s in TASK_STATUSES %}{% set ns = namespace(n=0) %}{% for l in lanes %}{% set ns.n = ns.n + l.cols[s]|length %}{% endfor %}
+    <div class="kh kh-{{ s }}">{{ TASK_LABELS[s] }} <span class="faint">{{ ns.n }}</span></div>
+    {% endfor %}
+  </div>
+  {% for l in lanes %}{% set w = l.ws %}
+  <details class="lane lane-{{ w.status }}" id="lane-{{ loop.index0 }}" {{ 'open' if w.status != 'done' or not l.total }}>
+    <summary class="lane-head">
+      {{ wsdot(w.status) }} <b>{{ w.name }}</b>
+      <span class="faint" style="text-transform:capitalize">{{ w.status.replace('_',' ') }}</span>
+      <span class="faint">{{ l.done }}/{{ l.total }}</span>
+      {% if l.blocked %}<span class="ktag ktag-blocked">{{ l.blocked }} blocked</span>{% endif %}
+      {% if w.owner %}<span class="faint">· {{ w.owner }}</span>{% endif %}
+    </summary>
+    <div class="kgrid">
+      {% for s in TASK_STATUSES %}
+      <div class="kcol kcol-{{ s }}" data-status="{{ s }}" data-ws="{{ w.name }}" aria-label="{{ w.name }}, {{ TASK_LABELS[s] }}">
+        <div class="kcards">
+        {% for t in l.cols[s] %}
+          <article class="kcard{{ ' is-done' if s == 'done' }}{{ ' is-esc' if t.source == 'escalation' }}" draggable="true" data-task="{{ t.id }}" data-move="/cases/{{ case.id }}/tasks/{{ t.id }}/move" id="card-{{ t.id }}">
+            <div class="ktitle">{{ t.title }}</div>
+            <div class="kmeta">
+              {% if t.source == 'escalation' %}<span class="ktag ktag-esc">escalated</span>{% endif %}
+              {% if t.client_visible %}<span class="ktag" title="Shown to the client as a step">client</span>{% endif %}
+              {% if t.owner %}<span class="kown">{{ t.owner }}</span>{% endif %}
+              {% if t.due_on %}<span class="kdue{{ ' late' if t.due_on < today and s != 'done' }}">due {{ t.due_on.strftime('%b %d') }}</span>{% endif %}
+              {% if counts.get(t.id) %}<span class="kcount">{{ counts[t.id] }} update{{ 's' if counts[t.id] != 1 }}</span>{% endif %}
+            </div>
+            {% set lu = latest.get(t.id) %}{% if lu and s != 'done' %}<div class="klatest">{{ lu.note|truncate(120) }}</div>{% endif %}
+            <div class="kact">
+              {% for to, label in quick[s] %}<form class="inline" method="post" action="/cases/{{ case.id }}/tasks/{{ t.id }}/move"><input type="hidden" name="status" value="{{ to }}"><button class="btn btn-xs">{{ label }}</button></form>{% endfor %}
+              <a class="btn btn-xs btn-ghost" href="#timeline" data-attach="task:{{ t.id }}" title="Log a timeline update on this card">Log</a>
+              <details class="kedit">
+                <summary class="btn btn-xs btn-ghost">Edit</summary>
+                <form method="post" action="/cases/{{ case.id }}/tasks/{{ t.id }}">
+                  <label class="field">Title<input name="title" value="{{ t.title }}" required></label>
+                  <label class="field">Owner<input name="owner" value="{{ t.owner }}" placeholder="responder"></label>
+                  <label class="field">Due<input type="date" name="due_on" value="{{ t.due_on.isoformat() if t.due_on else '' }}"></label>
+                  <label class="field chk"><input type="checkbox" name="client_visible" value="true" {{ 'checked' if t.client_visible }}> Show to client as a step</label>
+                  <div class="row" style="margin-top:6px"><button class="btn btn-xs btn-primary">Save</button></div>
+                </form>
+                <form method="post" action="/cases/{{ case.id }}/tasks/{{ t.id }}/delete" style="margin-top:6px"><button class="btn btn-xs btn-ghost danger">Remove card</button></form>
+              </details>
+            </div>
+          </article>
+        {% endfor %}
+        </div>
+        {% if s == 'todo' %}
+        <details class="kadd">
+          <summary>+ Add card</summary>
+          <form method="post" action="/cases/{{ case.id }}/tasks">
+            <input type="hidden" name="workstream" value="{{ w.name }}">
+            <input name="title" placeholder="What needs doing" required aria-label="Card title">
+            <input name="owner" placeholder="Owner (optional)" aria-label="Owner">
+            <label class="field chk"><input type="checkbox" name="client_visible" value="true"> Show to client</label>
+            <button class="btn btn-xs btn-primary">Add</button>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+</section>
+
 <div class="detail-grid" style="margin-top:18px">
   <div>
     <div class="section-head" id="timeline"><h2>Timeline</h2><span class="count">{{ case.updates|length }}</span></div>
     <div class="panel pad" style="margin-bottom:12px">
-      <form method="post" action="/cases/{{ case.id }}/updates">
+      <form method="post" action="/cases/{{ case.id }}/updates" id="update-form">
         <textarea name="note" placeholder="Log an action, finding or decision" required></textarea>
         <div class="row" style="margin-top:8px">
-          <label class="field">Workstream<select name="workstream"><option value="">General</option>{% for w in WORKSTREAMS %}<option>{{ w }}</option>{% endfor %}</select></label>
-          <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="internal_only" value="true" checked> Internal only</label>
+          <label class="field">Attach to
+            <select name="target" id="update-target">
+              <option value="">Whole case</option>
+              {% for l in lanes %}<optgroup label="{{ l.ws.name }}">
+                <option value="ws:{{ l.ws.name }}">{{ l.ws.name }} (no card)</option>
+                {% for s in ['in_progress', 'blocked', 'todo', 'done'] %}{% for t in l.cols[s] %}<option value="task:{{ t.id }}">{{ '[done] ' if s == 'done' }}{{ t.title|truncate(64) }}</option>{% endfor %}{% endfor %}
+              </optgroup>{% endfor %}
+            </select>
+          </label>
+          <label class="field">Card
+            <select name="move_to">
+              <option value="">Auto: a card in To do starts</option>
+              <option value="in_progress">Move to In progress</option>
+              <option value="blocked">Move to Blocked or waiting</option>
+              <option value="done">Move to Done</option>
+            </select>
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="field chk" title="Only when attached to a workstream"><input type="checkbox" name="new_card" value="true"> Make this a new card</label>
+          <label class="field chk"><input type="checkbox" name="internal_only" value="true" checked> Internal only</label>
           <button class="btn btn-primary">Add to timeline</button>
         </div>
       </form>
     </div>
     <div class="panel">
-      <ul class="timeline">
+      <ul class="timeline" id="timeline-list">
       {% for u in case.updates %}<li class="k-{{ u.kind }}">
         <div class="meta">{{ u.at.strftime('%b %d %H:%M') }} · {{ u.actor }}{% if u.workstream %} · {{ u.workstream }}{% endif %}{% if u.internal_only %} · <span class="lock">internal</span>{% endif %}</div>
         {{ u.note }}
+        {% if u.task and u.kind != 'task' %}
+        <div class="kref"><a href="#card-{{ u.task.id }}">card: {{ u.task.title|truncate(70) }}</a>{% if u.payload and u.payload.card_moved %} · moved to {{ TASK_LABELS[u.payload.card_moved.to] }}{% endif %}</div>
+        {% endif %}
         {% if u.kind == 'finding' and u.payload and u.payload.finding %}
         <div class="faint" style="font-size:12px; margin-top:4px">
           {{ u.payload.finding.type or '' }} · {{ u.payload.finding.severity or '' }}{% if u.payload.finding.matched %} · <span class="mono">{{ u.payload.finding.matched }}</span>{% endif %}
@@ -71,7 +179,7 @@
         <label class="field">Lead responder<input name="lead" value="{{ case.lead }}"></label>
         <label class="field" style="margin-top:9px">Severity<select name="severity">{% for s in ['critical','high','medium','low'] %}<option {{ 'selected' if s==case.severity }}>{{ s }}</option>{% endfor %}</select></label>
         <label class="field" style="margin-top:9px">Incident type<input name="incident_type" value="{{ case.incident_type }}"></label>
-        <label class="field" style="margin-top:9px; flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="privileged" value="true" {{ 'checked' if case.privileged }}> Counsel-directed (privileged)</label>
+        <label class="field chk" style="margin-top:9px"><input type="checkbox" name="privileged" value="true" {{ 'checked' if case.privileged }}> Counsel-directed (privileged)</label>
         <label class="field" style="margin-top:9px">Breach counsel<input name="counsel" value="{{ case.counsel }}" placeholder="firm, attorney"></label>
         <p class="faint" style="font-size:12px; margin:8px 0 0">Privileged cases show the client milestones only, with no timeline detail, and deliverables issue under the Incident Response line.</p>
         <div style="margin-top:12px"><button class="btn btn-primary">Save details</button></div>
@@ -79,4 +187,5 @@
     </div>
   </div>
 </div>
+<script src="/static/kanban.js" defer></script>
 {% endblock %}

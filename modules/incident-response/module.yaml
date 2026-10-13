@@ -28,6 +28,16 @@ case_model:
   retainers: true              # GetZero retainers; one-button incident declaration
   deliverable_issuing_line: "Incident Response"
 
+board:                         # Kanban per case; rules in app/board.py
+  columns: [todo, in_progress, blocked, done]
+  lanes: workstreams
+  playbook: app/playbook.py    # cards every case opens with
+  syncs:
+    - card move writes a timeline entry
+    - timeline entry on a card starts it, or moves it as chosen
+    - escalated finding adds a review card
+    - workstream status derived from its cards, shared on the client timeline
+
 api:
   module_manifest: GET /api/module
   cases: GET /api/ir-cases

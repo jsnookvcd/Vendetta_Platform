@@ -18,9 +18,9 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, hub, notify, oidc
+from . import auth, board, hub, notify, oidc
 from .config import WORKSTREAMS, settings
-from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Workstream,
+from .db import (AuditLog, Case, CaseUpdate, Client, Retainer, SessionLocal, Task, Workstream,
                  ensure_seq_counter, init_db, open_case, utcnow)
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,8 @@ app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
 templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 templates.env.globals["app_name"] = settings.app_name
 templates.env.globals["WORKSTREAMS"] = WORKSTREAMS
+templates.env.globals["TASK_STATUSES"] = board.TASK_STATUSES
+templates.env.globals["TASK_LABELS"] = board.TASK_LABELS
 app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="static")
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax", https_only=settings.cookie_secure)
 app.include_router(oidc.router)
@@ -213,7 +215,8 @@ def create_case(client_id: str = Form(...), title: str = Form(...), severity: st
 
 def _get_case(db: Session, cid: str) -> Case:
     case = db.execute(
-        select(Case).options(selectinload(Case.client).selectinload(Client.retainer), selectinload(Case.workstreams), selectinload(Case.updates))
+        select(Case).options(selectinload(Case.client).selectinload(Client.retainer), selectinload(Case.workstreams),
+                             selectinload(Case.updates), selectinload(Case.tasks))
         .where(Case.id == cid)
     ).scalar_one_or_none()
     if not case:
@@ -224,7 +227,10 @@ def _get_case(db: Session, cid: str) -> Case:
 @app.get("/cases/{cid}", response_class=HTMLResponse)
 def case_detail(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     case = _get_case(db, cid)
-    return render(request, "case.html", user=user, case=case, statuses=CASE_STATUSES, ws_statuses=WS_STATUSES)
+    latest, counts = board.card_activity(case)
+    return render(request, "case.html", user=user, case=case, statuses=CASE_STATUSES, ws_statuses=WS_STATUSES,
+                  lanes=board.lanes(case), latest=latest, counts=counts, bsum=board.summary(case),
+                  today=dt.date.today())
 
 
 @app.post("/cases/{cid}/status")
@@ -259,6 +265,9 @@ def update_workstream(cid: str, wid: str, status: str = Form(...), owner: str = 
     ws = db.get(Workstream, wid)
     if not ws or ws.case_id != cid or status not in WS_STATUSES:
         raise HTTPException(400)
+    has_cards = db.scalar(select(func.count(Task.id)).where(Task.case_id == cid, Task.workstream == ws.name))
+    if has_cards:
+        status = ws.status  # status follows the board for a workstream that has cards
     changed = ws.status != status
     ws.status, ws.owner, ws.client_visible_note = status, owner.strip(), client_visible_note.strip()
     if changed:
@@ -270,15 +279,103 @@ def update_workstream(cid: str, wid: str, status: str = Form(...), owner: str = 
 
 
 @app.post("/cases/{cid}/updates")
-def add_update(cid: str, note: str = Form(...), workstream: str = Form(""), internal_only: bool = Form(False),
+def add_update(cid: str, note: str = Form(...), target: str = Form(""), workstream: str = Form(""),
+               move_to: str = Form(""), new_card: bool = Form(False), internal_only: bool = Form(False),
                user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    _get_case(db, cid)
-    if not note.strip():
+    """Log a timeline entry. `target` is "task:<id>" to attach it to a card,
+    "ws:<workstream>" for a workstream, or blank for the whole case. The card moves
+    by the board rules; new_card turns a workstream entry into a card."""
+    case = _get_case(db, cid)
+    note = note.strip()[:8000]
+    if not note:
         return RedirectResponse(f"/cases/{cid}", status_code=302)
-    db.add(CaseUpdate(case_id=cid, workstream=workstream if workstream in WORKSTREAMS else "", actor=user,
-                      kind="note", note=note.strip()[:8000], internal_only=internal_only))
+    task = None
+    if target.startswith("task:"):
+        task = next((t for t in case.tasks if t.id == target[5:]), None)
+        if task is None:
+            raise HTTPException(404, "card not on this case")
+    elif target.startswith("ws:"):
+        workstream = target[3:]
+    workstream = workstream if workstream in WORKSTREAMS else ""
+    entry = CaseUpdate(workstream=workstream, actor=user, kind="note", note=note, internal_only=internal_only)
+    case.updates.append(entry)
+    if task is None and new_card and workstream:
+        first_line = note.splitlines()[0]
+        task = board.add_task(case, workstream, first_line if len(first_line) <= 120 else first_line[:117] + "...",
+                              user, status="todo", source="update", log=False)
+    if task is not None:
+        board.apply_update(case, entry, task, move_to, user)
     db.commit()
     return RedirectResponse(f"/cases/{cid}#timeline", status_code=302)
+
+
+# ---------------------------------------------------------------- case board
+def _get_task(case: Case, tid: str) -> Task:
+    task = next((t for t in case.tasks if t.id == tid), None)
+    if task is None:
+        raise HTTPException(404, "card not on this case")
+    return task
+
+
+def _board_done(request: Request, cid: str):
+    """Fetch calls from kanban.js get JSON; plain form posts go back to the board."""
+    if request.headers.get("x-requested-with") == "fetch":
+        return JSONResponse({"ok": True})
+    return RedirectResponse(f"/cases/{cid}#board", status_code=302)
+
+
+@app.post("/cases/{cid}/tasks")
+def add_card(cid: str, request: Request, workstream: str = Form(...), title: str = Form(...),
+             owner: str = Form(""), client_visible: bool = Form(False),
+             user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    case = _get_case(db, cid)
+    try:
+        board.add_task(case, workstream, title, user, owner=owner, client_visible=client_visible)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    db.commit()
+    return _board_done(request, cid)
+
+
+@app.post("/cases/{cid}/tasks/{tid}")
+def edit_card(cid: str, tid: str, request: Request, title: str = Form(...), owner: str = Form(""),
+              due_on: str = Form(""), client_visible: bool = Form(False),
+              user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    case = _get_case(db, cid)
+    task = _get_task(case, tid)
+    title = " ".join(title.split())[:300]
+    if not title:
+        raise HTTPException(400, "card title is required")
+    try:
+        due = dt.date.fromisoformat(due_on) if due_on else None
+    except ValueError as e:
+        raise HTTPException(400, "due date must be YYYY-MM-DD") from e
+    task.title, task.owner, task.due_on, task.client_visible = title, owner.strip()[:200], due, client_visible
+    task.updated_at = utcnow()
+    db.commit()
+    return _board_done(request, cid)
+
+
+@app.post("/cases/{cid}/tasks/{tid}/move")
+def move_card(cid: str, tid: str, request: Request, status: str = Form(...), workstream: str = Form(""),
+              before: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    case = _get_case(db, cid)
+    task = _get_task(case, tid)
+    if status not in board.TASK_STATUSES or (workstream and workstream not in WORKSTREAMS):
+        raise HTTPException(400, "unknown column or lane")
+    board.move_task(case, task, status, user, workstream=workstream or None, before=before or None)
+    db.commit()
+    return _board_done(request, cid)
+
+
+@app.post("/cases/{cid}/tasks/{tid}/delete")
+def delete_card(cid: str, tid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    case = _get_case(db, cid)
+    task = _get_task(case, tid)
+    board.remove_task(case, task, user)
+    db.commit()
+    _audit(db, user, "card.delete", f"{case.number} {task.title}")
+    return _board_done(request, cid)
 
 
 # ---------------------------------------------------------------- declare
@@ -416,7 +513,8 @@ def portal_case(cid: str, request: Request, ident: auth.Identity = Depends(auth.
         updates = []
     else:
         updates = [u for u in case.updates if not u.internal_only]
-    return render(request, "portal_case.html", user=ident.email, portal=True, client=case.client, case=case, updates=updates)
+    return render(request, "portal_case.html", user=ident.email, portal=True, client=case.client, case=case,
+                  updates=updates, lanes=board.lanes(case))
 
 
 @app.post("/portal/declare")
@@ -436,7 +534,12 @@ def _case_json(case: Case) -> dict:
         "severity": case.severity, "status": case.status, "origin": case.origin,
         "source_module": case.source_module, "lead": case.lead, "privileged": case.privileged,
         "opened_at": case.opened_at.isoformat(), "closed_at": case.closed_at.isoformat() if case.closed_at else None,
-        "workstreams": [{"name": w.name, "status": w.status, "owner": w.owner} for w in case.workstreams],
+        "workstreams": [
+            {"name": w.name, "status": w.status, "owner": w.owner,
+             "cards": {s: sum(1 for t in case.tasks if t.workstream == w.name and t.status == s) for s in board.TASK_STATUSES}}
+            for w in case.workstreams
+        ],
+        "board": board.summary(case),
     }
 
 
@@ -446,13 +549,14 @@ def api_module(user: str = Depends(auth.api_user)):
         "module": "incident-response", "display_name": "Incident Response and Case Management",
         "platform": "Vendetta Platform", "enabled": settings.module_enabled, "role": "engagement-hub",
         "roles": ["admin", "analyst", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
+        "card_statuses": board.TASK_STATUSES,
         "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/module"],
     }
 
 
 @app.get("/api/ir-cases")
 def api_cases(status: str = Query("active"), client: str = Query(""), user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
-    q = select(Case).options(selectinload(Case.client), selectinload(Case.workstreams))
+    q = select(Case).options(selectinload(Case.client), selectinload(Case.workstreams), selectinload(Case.tasks))
     if status == "active":
         q = q.where(Case.status != "closed")
     elif status != "all":

@@ -16,11 +16,20 @@
 
   <div class="section-head"><h2>Progress</h2></div>
   <div class="wsgrid">
-    {% for w in case.workstreams %}
+    {% for w in case.workstreams %}{% set l = lanes[loop.index0] %}
+    {% set steps = (l.cols.todo + l.cols.in_progress + l.cols.blocked + l.cols.done)|selectattr('client_visible')|sort(attribute='created_at')|list %}
+    {% set steps_done = steps|selectattr('status', 'equalto', 'done')|list|length %}
     <div class="wscard ws-{{ w.status }}">
       <h3>{{ w.name }}</h3>
       <div class="state" style="text-transform:capitalize">{{ w.status.replace('_',' ') }}</div>
+      {% if steps %}
+      <div class="kbar" aria-hidden="true"><span style="width:{{ (100 * steps_done / steps|length)|round|int }}%"></span></div>
+      <div class="faint" style="font-size:11.5px">{{ steps_done }} of {{ steps|length }} steps complete</div>
+      {% endif %}
       {% if w.client_visible_note %}<p class="muted" style="font-size:12.5px; margin:8px 0 0">{{ w.client_visible_note }}</p>{% endif %}
+      {% if steps and not case.privileged %}
+      <ul class="steps">{% for t in steps %}<li class="st-{{ t.status }}">{{ t.title }}</li>{% endfor %}</ul>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

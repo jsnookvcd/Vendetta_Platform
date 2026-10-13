@@ -13,6 +13,17 @@ Cases
 - The timeline records notes, findings, status changes and system events against a workstream. Each entry is internal-only or client-visible. Escalated findings arrive internal-only with their full payload attached.
 - Counsel-directed cases are flagged privileged with breach counsel named. A privileged case shows the client the workstream milestones only, with no timeline detail, and deliverables issue under the Incident Response line.
 
+Case board
+- Every case has a Kanban board. Columns are To do, In progress, Blocked or waiting, and Done. Each workstream is a lane, so the board reads as the five-workstream template with its work laid out. Cards carry an owner, a due date (red when overdue), a client-visible flag, and the latest timeline entry logged against them.
+- A case opens with the default playbook: 21 cards across the five workstreams, defined in app/playbook.py. The first Scoping and Containment card starts in progress. Analysts add, edit and remove cards per case.
+- Cards move by drag and drop, or with the buttons on each card when scripting is off.
+- The board and the timeline map to each other automatically:
+  - Moving a card writes a timeline entry on its workstream (Started, Blocked or waiting, Completed, Resumed, Reopened). Reordering within a column is not logged.
+  - A timeline entry attached to a card links to it. A card in To do moves to In progress on its first entry, and the same entry can move it to Blocked or Done. An entry on a workstream can also become a new card.
+  - An escalated finding adds a review card to its workstream's lane, linked to the finding entry.
+  - A workstream's status follows its cards: all done is done, any work in progress is in progress, otherwise blocked if a card is blocked, otherwise not started. Each change goes on the client timeline, so portal milestones move without anyone touching them. A workstream with no cards keeps the status set by hand.
+- Client-visible cards show on the portal as steps under each workstream with a progress bar. When an internal entry completes a client-visible card, the client sees "Completed" with the card title and never the internal note. Privileged cases show step counts only.
+
 Declare incident
 - One button opens a numbered case, assigns the first named responder on the client's retainer as lead, and pages on-call through SNS (email, SMS) and a Teams adaptive card. The page carries the case number, client, severity, origin and lead, plus an Open case link when PUBLIC_URL is set.
 - Available to staff from the console, to retainer clients from their portal, and to other systems at POST /api/ir-cases/declare. A client without an active retainer cannot self-declare; they call.
@@ -28,9 +39,9 @@ Client portal
 Engagement hub API
 - POST /api/ir-cases is the escalation contract every module calls. Bearer token from the settings page.
 - The hub resolves the client by hub id, then by case-insensitive name, then creates it. Modules keep their own databases, so a module's client id is not the hub's; name matching is what joins them, and an unknown client is created rather than dropped.
-- Link or open: if the payload carries case_ref naming an open case, the finding attaches to it. Otherwise a new case opens with origin escalated, the retainer lead assigned, and on-call paged.
+- Link or open: if the payload carries case_ref naming an open case, the finding attaches to it. Otherwise a new case opens with origin escalated, the retainer lead assigned, and on-call paged. Either way a review card for the finding lands on the board.
 - An escalation can raise a case's severity but never lower it.
-- GET /api/ir-cases lists cases with workstream state. GET /api/module returns the module manifest, including enabled. OpenAPI docs at /api/docs.
+- GET /api/ir-cases lists cases with workstream state, card counts per workstream and column, and a board summary. GET /api/module returns the module manifest, including enabled. OpenAPI docs at /api/docs.
 
 Escalation payload
 ```json
@@ -60,7 +71,7 @@ Module switch
 3. Escalate any hit from its console (the Escalate button) or with POST /api/findings/{id}/escalate. The hit records the hub case number in its alert refs and moves to reviewing.
 4. To route a client's later findings into an existing case, enter the hub case number in "Set case ref" on that client's page in the dark web module. Findings link to it while the case is open; once it closes, the next escalation opens a new case.
 
-Verified end to end: the dark web module's own escalate code opened a hub case, matched the client by name, and a second finding with case_ref linked to the same case and raised it to critical.
+Tested against a running hub: the dark web module's own escalate code opened a hub case, matched the client by name, and a second finding with case_ref linked to the same case and raised it to critical.
 
 ## Run it
 
@@ -80,7 +91,7 @@ createdb irhub_test   # owned by a role irhub/irhub, or set IRHUB_TEST_DATABASE_
 python -m pytest tests -q
 ```
 
-The suite runs against real Postgres because the hub depends on row locks and JSON columns. It covers numbering, the workstream template, the escalation contract with the dark web payload, link-or-open and severity rules, retainer lead assignment, portal scoping, the privileged and internal-only filters, and the module switch.
+The suite runs against real Postgres because the hub depends on row locks and JSON columns. It covers numbering, the workstream template, the escalation contract with the dark web payload, link-or-open and severity rules, retainer lead assignment, portal scoping, the privileged and internal-only filters, the module switch, and the board: playbook seeding, moves and their timeline entries, update-to-card linking, escalation cards, derived workstream status, reordering, and what the portal shows. A browser drag was also checked against a running hub.
 
 ## Not built yet
 
@@ -89,4 +100,5 @@ The suite runs against real Postgres because the hub depends on row locks and JS
 - Case-site provisioning (SharePoint or Teams) on declare.
 - Hour tracking against the retainer from timeline entries; hours used is entered by hand.
 - Report and deliverable generation from the case.
+- Playbooks per incident type. Every case opens with the one default playbook today.
 - Its own Terraform stack.
