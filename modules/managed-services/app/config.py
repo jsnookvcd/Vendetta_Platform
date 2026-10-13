@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     acronis_client_id: str = ""
     acronis_client_secret: str = ""
 
+    # Safety: when true, every action that writes to a tool (isolate, contain,
+    # quarantine, kill, approve remediations, run backup, resolve at source, raise
+    # a ticket) is refused. Module-local triage (acknowledge, publish) still works.
+    # Turn it on to bring a new client in and watch data flow without touching a
+    # single host; turn it off once the integration is validated.
+    actions_readonly: bool = False
+
     # Sync and escalation
     sync_interval_seconds: int = 300
     platform_hub_url: str = ""

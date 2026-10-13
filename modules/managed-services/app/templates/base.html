@@ -48,7 +48,10 @@
       </div>
       {% endif %}
     </header>
-    <div class="content">{{ flash() }}{% block body %}{% endblock %}</div>
+    <div class="content">
+      {% if shell and shell.readonly %}<div class="flash warn" style="margin-bottom:14px"><b>Read-only mode.</b> Tool actions (isolate, contain, quarantine, run backup, resolve at source) are disabled while a client is being validated. Turn it off in the environment (ACTIONS_READONLY) once the integration is confirmed.</div>{% endif %}
+      {{ flash() }}{% block body %}{% endblock %}
+    </div>
   </div>
 </div>
 {% elif portal %}
@@ -56,5 +59,6 @@
 {% else %}
 {% block anon %}{% endblock %}
 {% endif %}
+<script src="/static/confirm.js" defer></script>
 </body>
 </html>

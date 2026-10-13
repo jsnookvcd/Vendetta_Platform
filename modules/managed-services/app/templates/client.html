@@ -79,7 +79,7 @@
     <td class="nowrap">
       {% for act in DEVICE_ACTIONS.get(d.tool, []) %}
       {% if (act.danger and d.status in ('online','offline')) or (not act.danger and d.status in ('isolated','isolating')) %}
-      <form class="inline" method="post" action="/devices/{{ d.id }}/action"><input type="hidden" name="action_id" value="{{ act.id }}"><button class="btn btn-xs {{ 'danger btn-ghost' if act.danger else '' }}">{{ act.label }}</button></form>
+      <form class="inline {{ 'confirm' if act.danger }}" method="post" action="/devices/{{ d.id }}/action"{% if act.danger %} data-confirm="This runs on the live host {{ d.hostname }}: {{ act.label }}. Continue?"{% endif %}><input type="hidden" name="action_id" value="{{ act.id }}">{% if act.danger %}<input type="hidden" name="confirm" value="true">{% endif %}<button class="btn btn-xs {{ 'danger btn-ghost' if act.danger else '' }}">{{ act.label }}</button></form>
       {% endif %}{% endfor %}
       {% if d.link %}<a class="btn btn-xs btn-ghost" href="{{ d.link }}" target="_blank" rel="noopener">Open</a>{% endif %}
     </td>

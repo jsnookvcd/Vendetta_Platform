@@ -109,6 +109,7 @@ def _shell(db: Session) -> dict:
         "critical": db.scalar(select(func.count(Alert.id)).where(Alert.status != "resolved",
                                                                  Alert.severity == "critical")) or 0,
         "unread": db.scalar(select(func.coalesce(func.sum(Channel.tech_unread), 0))) or 0,
+        "readonly": settings.actions_readonly,
     }
 
 
@@ -384,14 +385,14 @@ def triage(aid: str, op: str = Form(...), client_note: str = Form(""),
 
 
 @app.post("/alerts/{aid}/action")
-def alert_action(aid: str, action_id: str = Form(...), comment: str = Form(""),
+def alert_action(aid: str, action_id: str = Form(...), comment: str = Form(""), confirm: bool = Form(False),
                  user: str = auth.RequireUser, db: Session = Depends(get_db)):
     a = _get_alert(db, aid)
     spec = act.spec(action_id)
     if spec and a.device and spec in act.DEVICE_ACTIONS.get(a.device.tool, []):
-        ok, detail = act.run_device_action(db, a.device, action_id, user, alert=a, comment=comment)
+        ok, detail = act.run_device_action(db, a.device, action_id, user, alert=a, comment=comment, confirm=confirm)
     else:
-        ok, detail = act.run_alert_action(db, a, action_id, user, comment=comment)
+        ok, detail = act.run_alert_action(db, a, action_id, user, comment=comment, confirm=confirm)
     _audit(db, user, "alert.action", f"{a.id} {action_id}: {detail}")
     return _back(f"/alerts/{aid}", ok, f"{(spec.label if spec else action_id)}: {detail}")
 
@@ -405,13 +406,13 @@ def escalate(aid: str, user: str = auth.RequireUser, db: Session = Depends(get_d
 
 
 @app.post("/devices/{did}/action")
-def device_action(did: str, action_id: str = Form(...), comment: str = Form(""),
+def device_action(did: str, action_id: str = Form(...), comment: str = Form(""), confirm: bool = Form(False),
                   user: str = auth.RequireUser, db: Session = Depends(get_db)):
     d = db.execute(select(Device).options(selectinload(Device.client))
                    .where(Device.id == did)).scalar_one_or_none()
     if not d:
         raise HTTPException(404)
-    ok, detail = act.run_device_action(db, d, action_id, user, comment=comment)
+    ok, detail = act.run_device_action(db, d, action_id, user, comment=comment, confirm=confirm)
     _audit(db, user, "device.action", f"{d.hostname} {action_id}: {detail}")
     return _back(f"/clients/{d.client_id}", ok, f"{d.hostname}: {detail}")
 
@@ -452,6 +453,7 @@ def settings_page(request: Request, user: str = auth.RequireUser):
         "sso": f"Entra ID tenant {settings.entra_tenant_id}" if settings.oidc_enabled else "off (local admin login)",
         "hub": settings.platform_hub_url or "not connected",
         "sync_interval": settings.sync_interval_seconds,
+        "actions": "read-only (tool writes disabled)" if settings.actions_readonly else "live",
     }
     return render(request, "settings.html", user=user, cfg=cfg, tools_cfg=tools_cfg,
                   api_token=auth.api_token(), preflight=None)
@@ -467,6 +469,7 @@ def run_preflight(request: Request, user: str = auth.RequireUser, db: Session = 
         "sso": f"Entra ID tenant {settings.entra_tenant_id}" if settings.oidc_enabled else "off (local admin login)",
         "hub": settings.platform_hub_url or "not connected",
         "sync_interval": settings.sync_interval_seconds,
+        "actions": "read-only (tool writes disabled)" if settings.actions_readonly else "live",
     }
     return render(request, "settings.html", user=user, cfg=cfg, tools_cfg=tools_cfg,
                   api_token=auth.api_token(), preflight=results)

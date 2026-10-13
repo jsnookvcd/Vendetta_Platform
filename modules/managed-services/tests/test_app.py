@@ -124,7 +124,7 @@ def _synced_alert(admin_or_client):
 
 def test_alert_action_calls_tool_and_logs(admin):
     fake, c, a = _synced_alert(admin)
-    r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine"}, follow_redirects=False)
+    r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"}, follow_redirects=False)
     assert r.status_code == 302 and "msg=" in r.headers["location"]
     assert ("mitigate", "quarantine", ["t9"]) in fake.calls
     log = SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one()
@@ -134,7 +134,7 @@ def test_alert_action_calls_tool_and_logs(admin):
 
 def test_device_action_from_alert_and_isolation_state(admin):
     fake, c, a = _synced_alert(admin)
-    admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_disconnect"})
+    admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_disconnect", "confirm": "true"})
     assert ("disconnect", ["a1"]) in fake.calls
     db = SessionLocal()
     assert db.query(Device).one().status == "isolating"
@@ -156,7 +156,7 @@ def test_failed_tool_call_logs_failed_and_surfaces_message(admin):
     db, c = _client_with_s1(fake)
     sync_client_tool(db, c, "sentinelone")
     a = SessionLocal().query(Alert).one()
-    r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine"}, follow_redirects=False)
+    r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
     assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one().result == "failed"
 
@@ -183,7 +183,7 @@ def test_publish_flow_and_portal_scoping(admin):
     admin.cookies.set(auth.COOKIE, auth.make_session("admin"))
     admin.post(f"/alerts/{a.id}/triage",
                data={"op": "publish", "client_note": "We blocked and quarantined a ransomware attempt on WS01."})
-    admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine"})  # shared + published
+    admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"})  # shared + published
     _portal_session(admin, "it@riverbendcu.org", c)
     page = admin.get("/portal").text
     assert "We blocked and quarantined" in page

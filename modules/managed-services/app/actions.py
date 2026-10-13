@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from . import connectors, hub
+from .config import settings
 from .connectors import ConnectorError
 from .db import ActionLog, Alert, Device
 
@@ -76,6 +77,16 @@ DEVICE_ACTIONS: dict[str, list[Action]] = {
 _ALL = {a.id: a for acts in list(ALERT_ACTIONS.values()) + list(DEVICE_ACTIONS.values()) for a in acts}
 
 
+def _blocked(action: "Action", confirm: bool) -> str:
+    """Refusal reason for an action, or "" when it may run. Read-only mode blocks
+    every tool write; destructive actions also need an explicit confirm."""
+    if settings.actions_readonly:
+        return "read-only mode is on: tool actions are disabled while this client is being validated"
+    if action.danger and not confirm:
+        return "needs confirmation"
+    return ""
+
+
 def spec(action_id: str) -> Action | None:
     return _ALL.get(action_id)
 
@@ -103,10 +114,16 @@ def _ref(alert_or_device, client) -> str:
     return client.tool_ref(alert_or_device.tool)
 
 
-def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comment: str = "") -> tuple[bool, str]:
+def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comment: str = "", confirm: bool = False) -> tuple[bool, str]:
     action = _ALL.get(action_id)
     if not action or action not in ALERT_ACTIONS.get(alert.tool, []):
         return False, "that action does not apply to this alert"
+    blocked = _blocked(action, confirm)
+    if blocked:
+        db.add(ActionLog(client_id=alert.client_id, alert_id=alert.id, device_id=alert.device_id,
+                         tool=alert.tool, action=action.label, actor=actor, detail=blocked, result="blocked"))
+        db.commit()
+        return False, blocked
     conn = connectors.get(alert.tool)
     ref = alert.client.tool_ref(alert.tool)
     detail = ""
@@ -167,10 +184,16 @@ def run_alert_action(db: Session, alert: Alert, action_id: str, actor: str, comm
 
 
 def run_device_action(db: Session, device: Device, action_id: str, actor: str,
-                      alert: Alert | None = None, comment: str = "") -> tuple[bool, str]:
+                      alert: Alert | None = None, comment: str = "", confirm: bool = False) -> tuple[bool, str]:
     action = _ALL.get(action_id)
     if not action or action not in DEVICE_ACTIONS.get(device.tool, []):
         return False, "that action does not apply to this device"
+    blocked = _blocked(action, confirm)
+    if blocked:
+        db.add(ActionLog(client_id=device.client_id, alert_id=alert.id if alert else None, device_id=device.id,
+                         tool=device.tool, action=action.label, actor=actor, detail=blocked, result="blocked"))
+        db.commit()
+        return False, blocked
     conn = connectors.get(device.tool)
     ref = device.client.tool_ref(device.tool)
     detail = ""

@@ -93,6 +93,8 @@ sync touch it.
 
 When PLATFORM_URL is set, this module pulls its client roster and per-client tool mapping from the control plane (clients are activated there, pulled here with "Pull from platform" or on the worker's interval). Without it, clients are managed in this console directly.
 
+Set ACTIONS_READONLY=true to bring a client in safely: every write to a tool (isolate, contain, quarantine, run backup, resolve at source) is refused and logged, so you can sync and watch data flow without touching a host. Turn it off once validated; destructive actions then still require a confirmation click.
+
 Before a live run, Settings has a "Test connections" button (and `python -m app.preflight`) that makes the lightest real read against each configured tool and reports what came back, so dropping in real credentials and confirming them is one action.
 
 ## Run it

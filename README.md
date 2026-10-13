@@ -29,7 +29,7 @@ Dark Web Monitoring implements all of this today; treat its module.yaml, its /ap
 
 ## Architecture
 
-infra/terraform stands the whole platform up on one AWS host behind a single load balancer that routes to each module by hostname; see infra/terraform/README.md. Each module can also run alone.
+infra/terraform stands the whole platform up on one AWS host behind a single load balancer that routes to each module by hostname; see infra/terraform/README.md. Each module can also run alone. GO_LIVE.md is the sequenced runbook from deploy to one real client, and infra/verify.sh checks a running stack.
 
 docs/ARCHITECTURE.md describes the shared finding model, the engagement hub contract, module enablement, the role families, and how a module plugs in. Read it before starting a new module.
 
