@@ -209,7 +209,23 @@ def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: 
         select(Hit).options(selectinload(Hit.item), selectinload(Hit.term)).where(Hit.client_id == cid).order_by(desc(Hit.created_at)).limit(100)
     ).scalars().all()
     ev = db.execute(select(Evidence).where(Evidence.client_id == cid).order_by(desc(Evidence.captured_at)).limit(50)).scalars().all()
-    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev)
+    trend = _hit_trend(db, cid, days=21)
+    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend)
+
+
+def _hit_trend(db: Session, cid: str, days: int = 21) -> list[int]:
+    """Hits per day for the last N days, oldest first, for a sparkline."""
+    today = dt.datetime.now(dt.timezone.utc).date()
+    start = today - dt.timedelta(days=days - 1)
+    rows = db.execute(
+        select(Hit.created_at).where(Hit.client_id == cid, Hit.created_at >= dt.datetime(start.year, start.month, start.day, tzinfo=dt.timezone.utc))
+    ).scalars().all()
+    counts = {start + dt.timedelta(days=i): 0 for i in range(days)}
+    for ts in rows:
+        d = ts.date()
+        if d in counts:
+            counts[d] += 1
+    return [counts[start + dt.timedelta(days=i)] for i in range(days)]
 
 
 @app.post("/clients/{cid}/terms")
@@ -301,6 +317,37 @@ def hits(request: Request, status: str = "open", client_id: str = "", severity: 
     rows = db.execute(q.order_by(desc(Hit.created_at)).limit(300)).scalars().all()
     clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
     return render(request, "hits.html", user=user, hits=rows, clients=clients_, status=status, client_id=client_id, severity=severity, reason=reason)
+
+
+_VALID_STATUS = {"new", "reviewing", "confirmed", "false_positive", "closed"}
+
+
+@app.post("/hits/bulk")
+def hits_bulk(request: Request, status: str = Form(...), hit_ids: list[str] = Form(default=[]),
+              user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if status not in _VALID_STATUS or not hit_ids:
+        return RedirectResponse(request.headers.get("referer", "/hits"), status_code=302)
+    n = 0
+    for h in db.execute(select(Hit).where(Hit.id.in_(hit_ids))).scalars().all():
+        h.status = status
+        n += 1
+    db.commit()
+    _audit(db, user, "hit.bulk", f"{n} -> {status}")
+    return RedirectResponse(request.headers.get("referer", "/hits"), status_code=302)
+
+
+@app.post("/hits/{hid}/status/{value}")
+def hit_quick_status(hid: str, value: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Used by keyboard triage on the hits queue; returns JSON."""
+    if value not in _VALID_STATUS:
+        raise HTTPException(400, "invalid status")
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    h.status = value
+    db.commit()
+    _audit(db, user, "hit.quick", f"{hid} -> {value}")
+    return {"ok": True, "id": hid, "status": value}
 
 
 @app.get("/hits/{hid}", response_class=HTMLResponse)

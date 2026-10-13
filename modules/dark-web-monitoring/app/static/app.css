@@ -177,6 +177,8 @@ td .sub { color: var(--faint); font-size: 12px; }
 .state-false_positive, .state-closed { color: var(--faint); }
 
 .ok-txt { color: var(--ok); } .bad-txt { color: var(--brand-2); } .muted { color: var(--muted); } .faint { color: var(--faint); }
+.trend { display: flex; align-items: center; gap: 12px; margin: 8px 0 2px; font-size: 12px; }
+.trend .spark { display: block; }
 
 /* ---------------------------------------------------------------- forms */
 input, select, textarea, button { font: inherit; }
@@ -196,6 +198,14 @@ textarea { width: 100%; min-height: 84px; resize: vertical; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .btn-ghost { background: transparent; }
 form.inline { display: inline; }
+
+/* ---------------------------------------------------------------- bulk + keyboard triage */
+.bulkbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 9px 12px; margin-bottom: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); font-size: 12.5px; }
+.bulkbar .grow { flex: 1; }
+.bulkbar .kbd-hint { font-size: 11px; }
+@media (max-width: 980px) { .bulkbar .kbd-hint { display: none; } }
+tbody tr.kbd-active td { background: #1d2635; box-shadow: inset 3px 0 0 var(--brand); }
 
 /* ---------------------------------------------------------------- empty states */
 .empty { padding: 34px 20px; text-align: center; color: var(--muted); }

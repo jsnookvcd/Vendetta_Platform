@@ -23,7 +23,7 @@
         <dt>Published</dt><dd class="faint">{{ hit.item.published_at or 'unknown' }}</dd>
         <dt>Collected</dt><dd class="faint">{{ hit.item.collected_at }}</dd>
         <dt>URL</dt><dd class="mono trunc" style="max-width:420px">{{ hit.item.url or 'n/a' }}</dd>
-        <dt>Alerts</dt><dd class="mono faint">{{ hit.alert_refs or 'none' }}</dd>
+        <dt>Alerts</dt><dd>{{ alert_chips(hit.alert_refs) }}</dd>
       </dl>
       <div class="actions">
         <form class="inline" method="post" action="/hits/{{ hit.id }}/preserve"><button class="btn btn-sm">Preserve as evidence</button></form>

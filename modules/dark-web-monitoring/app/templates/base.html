@@ -21,6 +21,8 @@
 {% endif %}
 </svg>
 {% endmacro %}
+{% macro alert_chips(refs) %}{% if refs %}{% for k, v in refs.items() %}<span class="chip">{% if k=='platform_case' %}case {{ v }}{% elif k=='jira' %}{{ v }}{% elif k=='teams' %}Teams{% elif k=='sns' %}SNS{% else %}{{ k }}{% endif %}</span> {% endfor %}{% else %}<span class="faint">none</span>{% endif %}{% endmacro %}
+{% macro sparkline(vals, w=168, h=34) %}{% if vals and vals|sum > 0 %}{% set mx = vals|max %}{% set n = vals|length %}<svg class="spark" width="{{ w }}" height="{{ h }}" viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none" role="img" aria-label="hits trend"><polyline fill="none" stroke="#e0122f" stroke-width="1.6" points="{% for v in vals %}{{ (loop.index0 * (w / (n-1))) | round(2) }},{{ (h - 3 - (v / mx) * (h - 6)) | round(2) }} {% endfor %}"/></svg>{% else %}<span class="faint" style="font-size:12px">no hits in range</span>{% endif %}{% endmacro %}
 {% set p = request.url.path if request else '/' %}
 {% if user %}
 <div class="app">

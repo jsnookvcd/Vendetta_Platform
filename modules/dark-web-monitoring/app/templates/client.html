@@ -6,6 +6,7 @@
   {% if client.case_ref %}<span class="mono faint">{{ client.case_ref }}</span>{% endif %}
   {% if client.active %}<span class="ok-txt">active</span>{% else %}<span class="faint">paused</span>{% endif %}
 </div>
+{% if trend is defined %}<div class="trend"><span class="faint">Hits, last 21 days</span> {{ sparkline(trend) }} <span class="faint num">{{ trend|sum }} total</span></div>{% endif %}
 <div class="actions">
   <a class="btn btn-sm btn-primary" href="/clients/{{ client.id }}/report.pdf?days=30">Download exposure report</a>
   <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/report?days=30" target="_blank">Preview report</a>

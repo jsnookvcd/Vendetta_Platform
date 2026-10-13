@@ -1,5 +1,12 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
 {% block body %}
+{% if stats.clients == 0 %}
+<div class="panel"><div class="empty">
+  <h3>Set up your first client to start monitoring</h3>
+  <p>Add a client, give it watch terms and a business profile, and collection begins across leak sites, forums, credential sources and certificate transparency. Seeded onion sources are already crawling in the background.</p>
+  <p style="margin-top:14px"><a class="btn btn-primary" href="/clients">Add a client</a></p>
+</div></div>
+{% else %}
 <div class="tiles">
   <div class="tile alert"><div class="n">{{ stats.open_hits }}</div><div class="l">Open hits awaiting triage</div></div>
   <div class="tile"><div class="n">{{ stats.victims_24h }}</div><div class="l">New victim posts, 24h</div></div>
@@ -44,4 +51,5 @@
   </tbody>
 </table>
 </div></div>
+{% endif %}
 {% endblock %}
