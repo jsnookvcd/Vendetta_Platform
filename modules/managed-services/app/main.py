@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import actions as act, sso
 from . import auth, connectors, creds, messaging, oidc, preflight, provision, sla, sync
 from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
-                     TOOL_NAMES, TOOLS, settings)
+                     SLA_PROFILES, TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
                  User, get_channel, init_db, utcnow)
 
@@ -343,8 +343,16 @@ def client_page(cid: str, request: Request, user: str = auth.RequireUser, db: Se
     channels = {d: db.query(Channel).filter_by(client_id=cid, desk=d).one_or_none() for d in DESKS}
     recent_actions = db.execute(select(ActionLog).where(ActionLog.client_id == cid)
                                 .order_by(desc(ActionLog.at)).limit(12)).scalars().all()
+    # This client's SLA profile, its targets, and adherence over the last 30 days.
+    now = utcnow()
+    measured = db.execute(select(Alert).where(Alert.client_id == cid,
+                                              Alert.received_at >= now - dt.timedelta(days=30))).scalars().all()
+    sla_summary = sla.summarize([(a, c.sla_profile) for a in measured], now)
+    sla_targets = SLA_PROFILES.get(c.sla_profile, {})
     return render(request, "client.html", user=user, client=c, devices=devices, alerts=alerts,
-                  tool_cards=tool_cards, channels=channels, recent_actions=recent_actions)
+                  tool_cards=tool_cards, channels=channels, recent_actions=recent_actions,
+                  sla_profiles=SLA_PROFILE_NAMES, sla_summary=sla_summary, sla_targets=sla_targets,
+                  severities=[s_ for s_ in SEVERITIES if s_ != "info"], is_admin=_is_admin(db, user))
 
 
 def _tool_link(tool: str, devices: list[Device]) -> str:
@@ -383,6 +391,20 @@ def save_portal(cid: str, portal_enabled: bool = Form(False), portal_domains: st
     db.commit()
     _audit(db, user, "client.portal", f"{c.name} enabled={portal_enabled}")
     return _back(f"/clients/{cid}", True, "Portal settings saved.")
+
+
+@app.post("/clients/{cid}/sla")
+def save_sla_profile(cid: str, sla_profile: str = Form(...), user: str = auth.RequireUser,
+                     db: Session = Depends(get_db)):
+    if not _is_admin(db, user):
+        raise HTTPException(403, "only an admin can change a client's SLA plan")
+    if sla_profile not in SLA_PROFILES:
+        raise HTTPException(400, "unknown SLA profile")
+    c = _get_client(db, cid)
+    c.sla_profile = sla_profile
+    db.commit()
+    _audit(db, user, "client.sla", f"{c.name} profile={sla_profile}")
+    return _back(f"/clients/{cid}", True, f"SLA plan set to {SLA_PROFILE_NAMES.get(sla_profile, sla_profile)}.")
 
 
 @app.post("/clients/{cid}/sync")

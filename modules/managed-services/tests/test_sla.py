@@ -139,3 +139,21 @@ def test_portal_shows_client_safe_service_level_scoped_to_one_client(admin):
     assert "Service levels" in page
     assert "SLA met" in page
     assert "Unrelated Co" not in page and "Other" not in page
+
+
+def test_admin_sets_client_sla_profile_and_non_admin_cannot(admin, client):
+    fake, c, a = _synced_alert(admin)
+    # admin session (the `admin` fixture is logged in as the built-in admin)
+    r = admin.post(f"/clients/{c.id}/sla", data={"sla_profile": "priority"}, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert SessionLocal().get(Client, c.id).sla_profile == "priority"
+    # an unknown profile is rejected
+    assert admin.post(f"/clients/{c.id}/sla", data={"sla_profile": "bogus"}).status_code == 400
+    # a non-admin internal user cannot change it
+    db = SessionLocal()
+    from app.db import User
+    if not db.query(User).filter_by(email="analyst@vendettacd.io").count():
+        db.add(User(email="analyst@vendettacd.io", role="analyst")); db.commit()
+    client.cookies.set(auth.COOKIE, auth.make_session("analyst@vendettacd.io"))
+    assert client.post(f"/clients/{c.id}/sla", data={"sla_profile": "standard"}).status_code == 403
+    assert SessionLocal().get(Client, c.id).sla_profile == "priority"  # unchanged

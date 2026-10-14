@@ -111,6 +111,33 @@
         <div style="margin-top:10px"><button class="btn btn-primary">Save portal access</button></div>
       </form>
     </div>
+
+    <div class="section-head" style="margin-top:14px"><h2>SLA plan</h2>
+      {% if sla_summary.adherence_rate is not none %}<span class="count" style="margin-left:auto">{{ sla_summary.adherence_rate }}% met, 30 days</span>{% endif %}
+    </div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/sla">
+        <label class="field">Response commitments
+          <select name="sla_profile" {{ '' if is_admin else 'disabled' }}>
+            {% for key, name in sla_profiles.items() %}<option value="{{ key }}" {{ 'selected' if client.sla_profile == key }}>{{ name }}</option>{% endfor %}
+          </select>
+        </label>
+        {% if is_admin %}<div style="margin-top:10px"><button class="btn btn-primary">Save SLA plan</button></div>
+        {% else %}<p class="faint" style="font-size:12px; margin:8px 0 0">Only an admin can change the plan.</p>{% endif %}
+      </form>
+      {% if sla_targets %}
+      <div style="margin-top:12px; border-top:1px solid var(--line); padding-top:10px">
+        {% for s_ in severities %}{% set t = sla_targets.get(s_) %}
+        {% if t and (t[0] or t[1]) %}<div class="row" style="justify-content:space-between; font-size:12.5px; padding:2px 0">
+          <span>{{ sev(s_) }}</span>
+          <span class="faint">{% if t[0] %}respond {{ t[0] }}m{% endif %}{% if t[0] and t[1] %} · {% endif %}{% if t[1] %}contain {{ t[1] }}m{% endif %}</span>
+        </div>{% endif %}
+        {% endfor %}
+        {% if client.sla_profile == 'monitor' %}<p class="faint" style="font-size:12px; margin:6px 0 0">Monitoring only: alerts are tracked with no SLA clock. Use during onboarding or validation.</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if sla_summary.graded %}<p class="faint" style="font-size:12px; margin:10px 0 0">Met on {{ sla_summary.met }} of {{ sla_summary.graded }} measured events in the last 30 days{% if sla_summary.breached %}; {{ sla_summary.breached }} open clock{{ 's' if sla_summary.breached != 1 }} past target now{% endif %}.</p>{% endif %}
+    </div>
   </div>
   <div>
     <div class="section-head"><h2>Recent actions</h2></div>
