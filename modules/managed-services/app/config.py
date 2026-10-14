@@ -128,6 +128,14 @@ class Settings(BaseSettings):
     # responder can still act, with the self-approval recorded in the signed log.
     require_second_approver: bool = False
 
+    # Pre-incident posture thresholds. An endpoint is "dark" once it has gone this
+    # many days without reporting; telemetry from a tool is stale once its newest
+    # device sync is older than this many hours; a host left isolated longer than
+    # this many hours is flagged for review.
+    posture_stale_endpoint_days: int = 7
+    posture_stale_sync_hours: int = 12
+    posture_isolation_review_hours: int = 24
+
     # Sync and escalation
     sync_interval_seconds: int = 300
     platform_hub_url: str = ""

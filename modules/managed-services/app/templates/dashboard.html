@@ -12,6 +12,7 @@
   <div class="tile"><div class="n">{{ by_sev.high }}</div><div class="l">High open</div></div>
   <div class="tile"><div class="n">{{ alerts|length if alerts|length < 25 else shell.open_alerts }}</div><div class="l">Open alerts</div></div>
   <div class="tile {{ 'crit' if sla_summary.breached else ('warn' if sla_summary.at_risk) }}"><div class="n">{{ sla_summary.breached + sla_summary.at_risk }}</div><div class="l">SLAs at risk{% if sla_summary.breached %} · {{ sla_summary.breached }} breached{% endif %}</div></div>
+  <div class="tile {{ 'crit' if posture_summary.risk else ('warn' if posture_summary.watch) }}"><div class="n">{{ posture_summary.total }}</div><div class="l">Posture risks{% if posture_summary.risk %} · {{ posture_summary.risk }} urgent{% endif %}</div></div>
   <div class="tile"><div class="n">{{ n_online }}<span class="sub">/{{ n_devices }}</span></div><div class="l">Devices online</div></div>
   {% if n_isolated %}<div class="tile crit"><div class="n">{{ n_isolated }}</div><div class="l">Hosts isolated</div></div>{% endif %}
   <div class="tile"><div class="n">{{ clients|length }}</div><div class="l">Managed clients</div></div>
@@ -30,6 +31,23 @@
     <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a></td>
     <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
     <td class="nowrap faint">{{ st.phase }} in {{ st.target_minutes }}m</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endif %}
+
+{% if posture_top %}
+<div class="section-head"><h2>Before it bites</h2><span class="count">{{ posture_summary.total }} open</span><a class="alink" href="/posture" style="margin-left:auto">All posture</a></div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th></th><th>Client</th><th>Risk</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for it in posture_top %}<tr>
+    <td class="nowrap"><span class="slachip {{ 'sla-breached' if it.severity == 'risk' else 'sla-risk' }}">{{ 'urgent' if it.severity == 'risk' else 'watch' }}</span></td>
+    <td class="nowrap"><a href="/clients/{{ it.client_id }}">{{ it.client }}</a></td>
+    <td class="nowrap">{{ it.headline }}</td>
+    <td class="faint">{{ it.detail }}</td>
   </tr>{% endfor %}
   </tbody>
 </table>

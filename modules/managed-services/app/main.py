@@ -21,7 +21,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act, sso
-from . import auth, connectors, creds, messaging, oidc, preflight, provision, sla, sync
+from . import auth, connectors, creds, messaging, oidc, posture, preflight, provision, sla, sync
 from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
                      SLA_PROFILES, TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
@@ -235,10 +235,21 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
     at_risk = [a for a in open_alerts if sla_live[a.id]["state"] in ("at_risk", "breached")]
     at_risk.sort(key=lambda a: sla_live[a.id]["remaining_seconds"]
                  if sla_live[a.id]["remaining_seconds"] is not None else 1e18)
+    # Pre-incident posture: what is undefended or unwatched before it fires an alert.
+    posture_items = posture.scan(db, now)
+    posture_summary = posture.summarize(posture_items)
     return render(request, "dashboard.html", user=user, alerts=open_alerts[:25], by_sev=by_sev,
                   n_devices=n_devices, n_online=n_online, n_isolated=n_isolated, clients=clients,
                   recent_actions=recent_actions, channels=channels, tools_up=tools_up,
-                  sla_live=sla_live, sla_summary=sla_summary, at_risk=at_risk[:8], sla=sla)
+                  sla_live=sla_live, sla_summary=sla_summary, at_risk=at_risk[:8], sla=sla,
+                  posture_top=posture_items[:6], posture_summary=posture_summary)
+
+
+@app.get("/posture", response_class=HTMLResponse)
+def posture_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    items = posture.scan(db)
+    return render(request, "posture.html", user=user, summary=posture.summarize(items),
+                  groups=posture.grouped(items), categories=posture.CATEGORIES)
 
 
 # ---------------------------------------------------------------- clients

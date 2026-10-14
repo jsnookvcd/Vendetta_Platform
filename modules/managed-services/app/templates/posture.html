@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}Posture{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">Pre-incident posture</h1></div>
+<p class="faint" style="margin:2px 0 16px">What is undefended, unwatched, or left in a bad state across the managed book, before it fires an alert. Urgent items are gaps in protection or backup; watch items are drifting and should be cleared on the next pass.</p>
+
+<div class="tiles">
+  <div class="tile {{ 'crit' if summary.risk else ('warn' if summary.watch) }}"><div class="n">{{ summary.total }}</div><div class="l">Open posture risks</div></div>
+  <div class="tile {{ 'crit' if summary.risk }}"><div class="n">{{ summary.risk }}</div><div class="l">Urgent</div></div>
+  <div class="tile {{ 'warn' if summary.watch }}"><div class="n">{{ summary.watch }}</div><div class="l">Watch</div></div>
+</div>
+
+{% if groups %}
+{% for g in groups %}
+<div class="section-head"><h2>{{ g.label }}</h2><span class="count">{{ g['items']|length }}{% if g.risk %} · {{ g.risk }} urgent{% endif %}</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap">
+<table>
+  <thead><tr><th></th><th>Client</th><th>Finding</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for it in g['items'] %}<tr>
+    <td class="nowrap"><span class="slachip {{ 'sla-breached' if it.severity == 'risk' else 'sla-risk' }}">{{ 'urgent' if it.severity == 'risk' else 'watch' }}</span></td>
+    <td class="nowrap"><a href="/clients/{{ it.client_id }}">{{ it.client }}</a></td>
+    <td class="nowrap">{{ it.headline }}</td>
+    <td class="faint">{{ it.detail }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endfor %}
+{% else %}
+<div class="empty"><h3>Nothing drifting</h3><p>Every managed endpoint is reporting, backups are healthy, and no host is stuck isolated.</p></div>
+{% endif %}
+{% endblock %}
