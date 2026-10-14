@@ -21,7 +21,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act, sso
-from . import auth, connectors, creds, messaging, oidc, posture, preflight, provision, sla, sync
+from . import auth, connectors, creds, indicators, messaging, oidc, posture, preflight, provision, sla, sync
 from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
                      SLA_PROFILES, TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
@@ -238,11 +238,14 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
     # Pre-incident posture: what is undefended or unwatched before it fires an alert.
     posture_items = posture.scan(db, now)
     posture_summary = posture.summarize(posture_items)
+    # Cross-client correlation: indicators seen on more than one client.
+    campaigns = indicators.correlate(db, now=now)
     return render(request, "dashboard.html", user=user, alerts=open_alerts[:25], by_sev=by_sev,
                   n_devices=n_devices, n_online=n_online, n_isolated=n_isolated, clients=clients,
                   recent_actions=recent_actions, channels=channels, tools_up=tools_up,
                   sla_live=sla_live, sla_summary=sla_summary, at_risk=at_risk[:8], sla=sla,
-                  posture_top=posture_items[:6], posture_summary=posture_summary)
+                  posture_top=posture_items[:6], posture_summary=posture_summary,
+                  campaigns_top=campaigns[:5], n_campaigns=len(campaigns))
 
 
 @app.get("/posture", response_class=HTMLResponse)
@@ -250,6 +253,12 @@ def posture_page(request: Request, user: str = auth.RequireUser, db: Session = D
     items = posture.scan(db)
     return render(request, "posture.html", user=user, summary=posture.summarize(items),
                   groups=posture.grouped(items), categories=posture.CATEGORIES)
+
+
+@app.get("/campaigns", response_class=HTMLResponse)
+def campaigns_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    campaigns = indicators.correlate(db)
+    return render(request, "campaigns.html", user=user, campaigns=campaigns)
 
 
 # ---------------------------------------------------------------- clients

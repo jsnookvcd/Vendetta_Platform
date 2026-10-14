@@ -16,6 +16,7 @@
 {% elif name=='chat' %}<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
 {% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>
 {% elif name=='shield' %}<path d="M12 2l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V5z"/>
+{% elif name=='link' %}<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>
 {% endif %}
 </svg>
 {% endmacro %}
@@ -33,6 +34,7 @@
       <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
       <a href="/alerts" class="{{ 'active' if p.startswith('/alerts') }}">{{ icon('bell') }} Alerts</a>
       <a href="/posture" class="{{ 'active' if p.startswith('/posture') }}">{{ icon('shield') }} Posture</a>
+      <a href="/campaigns" class="{{ 'active' if p.startswith('/campaigns') }}">{{ icon('link') }} Campaigns</a>
       <a href="/messages" class="{{ 'active' if p.startswith('/messages') }}">{{ icon('chat') }} Messages{% if shell and shell.unread %} <span class="badge">{{ shell.unread }}</span>{% endif %}</a>
       <div class="sep"></div>
       <a href="/team" class="{{ 'active' if p.startswith('/team') }}">{{ icon('clients') }} Team</a>

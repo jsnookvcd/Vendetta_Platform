@@ -153,6 +153,26 @@ class Alert(Base):
     __table_args__ = (Index("ix_alerts_tool_ext", "tool", "external_id", unique=True),)
 
 
+class Indicator(Base):
+    """An indicator of compromise observed on one alert for one client. The same
+    (itype, value) seen across more than one client is what the correlation engine
+    treats as a campaign. itype is ip | domain | url | sha256 | md5 | signature;
+    value is normalized (lowercased) for matching, label keeps the original form."""
+
+    __tablename__ = "indicators"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    alert_id: Mapped[str] = mapped_column(ForeignKey("alerts.id", ondelete="CASCADE"), index=True)
+    tool: Mapped[str] = mapped_column(String(20), default="")
+    itype: Mapped[str] = mapped_column(String(16))
+    value: Mapped[str] = mapped_column(String(400), index=True)
+    label: Mapped[str] = mapped_column(String(400), default="")
+    first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_indicators_match", "itype", "value"),
+                      Index("ix_indicators_alert_uniq", "alert_id", "itype", "value", unique=True))
+
+
 class ActionLog(Base):
     """An action a tech took against a tool (isolate, contain, quarantine, approve
     remediations, run backup, resolve) or against the module (publish, escalate).
@@ -304,6 +324,7 @@ def init_db() -> None:
         conn.execute(_text("UPDATE alerts SET received_at = COALESCE(received_at, synced_at, occurred_at, now())"))
         conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ"))
         conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS contained_at TIMESTAMPTZ"))
+        # Indicators table is created by create_all; nothing to migrate for it yet.
 
 
 # ---------------------------------------------------------------- chain of custody

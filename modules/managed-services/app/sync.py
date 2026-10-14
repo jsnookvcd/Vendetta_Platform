@@ -65,6 +65,8 @@ def _upsert_alert(db: Session, client: Client, tool: str, a: dict,
         row.status = "resolved"
     row.updated_at = utcnow()
     row.synced_at = utcnow()
+    from . import indicators
+    indicators.sync_for_alert(db, row)
     return row, created
 
 

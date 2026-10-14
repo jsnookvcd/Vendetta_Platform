@@ -13,6 +13,7 @@
   <div class="tile"><div class="n">{{ alerts|length if alerts|length < 25 else shell.open_alerts }}</div><div class="l">Open alerts</div></div>
   <div class="tile {{ 'crit' if sla_summary.breached else ('warn' if sla_summary.at_risk) }}"><div class="n">{{ sla_summary.breached + sla_summary.at_risk }}</div><div class="l">SLAs at risk{% if sla_summary.breached %} · {{ sla_summary.breached }} breached{% endif %}</div></div>
   <div class="tile {{ 'crit' if posture_summary.risk else ('warn' if posture_summary.watch) }}"><div class="n">{{ posture_summary.total }}</div><div class="l">Posture risks{% if posture_summary.risk %} · {{ posture_summary.risk }} urgent{% endif %}</div></div>
+  {% if n_campaigns %}<div class="tile crit"><div class="n">{{ n_campaigns }}</div><div class="l">Cross-client campaign{{ 's' if n_campaigns != 1 }}</div></div>{% endif %}
   <div class="tile"><div class="n">{{ n_online }}<span class="sub">/{{ n_devices }}</span></div><div class="l">Devices online</div></div>
   {% if n_isolated %}<div class="tile crit"><div class="n">{{ n_isolated }}</div><div class="l">Hosts isolated</div></div>{% endif %}
   <div class="tile"><div class="n">{{ clients|length }}</div><div class="l">Managed clients</div></div>
@@ -31,6 +32,24 @@
     <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a></td>
     <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
     <td class="nowrap faint">{{ st.phase }} in {{ st.target_minutes }}m</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endif %}
+
+{% if campaigns_top %}
+<div class="section-head"><h2>Seen across clients</h2><span class="count">{{ n_campaigns }} campaign{{ 's' if n_campaigns != 1 }}</span><a class="alink" href="/campaigns" style="margin-left:auto">All campaigns</a></div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Sev</th><th>Indicator</th><th>Type</th><th>Clients</th><th>Where</th></tr></thead>
+  <tbody>
+  {% for g in campaigns_top %}<tr>
+    <td>{{ sev(g.severity) }}</td>
+    <td class="nowrap"><a href="/campaigns">{{ g.label|truncate(46) }}</a></td>
+    <td class="nowrap faint">{{ g.itype_name }}</td>
+    <td class="nowrap"><span class="slachip sla-breached">{{ g.n_clients }} clients</span></td>
+    <td class="faint">{{ g.client_list | map(attribute=1) | join(', ') | truncate(70) }}</td>
   </tr>{% endfor %}
   </tbody>
 </table>

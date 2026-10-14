@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}Campaigns{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">Cross-client campaigns</h1></div>
+<p class="faint" style="margin:2px 0 16px">Indicators seen on more than one client in the last 30 days. One actor working through a sector shows up here as a single campaign before it is obvious on any one account. Each card lists the indicator, the clients it touched, and the alerts it came from.</p>
+
+{% if campaigns %}
+{% for g in campaigns %}
+<div class="panel" style="margin-bottom:14px">
+  <div class="pad" style="border-bottom:1px solid var(--line)">
+    <div class="row" style="align-items:center; gap:10px; flex-wrap:wrap">
+      {{ sev(g.severity) }}
+      <span class="slachip sla-breached">{{ g.n_clients }} clients</span>
+      <b style="font-size:15px; word-break:break-all">{{ g.label }}</b>
+      <span class="toolchip">{{ g.itype_name }}</span>
+      {% if g.open_alerts %}<span class="faint" style="font-size:12px">{{ g.open_alerts }} still open</span>{% endif %}
+      <span class="grow" style="flex:1"></span>
+      <span class="faint" style="font-size:12px">first seen {{ g.first_seen.strftime('%b %d %H:%M') }} · last {{ g.last_seen.strftime('%b %d %H:%M') }} UTC</span>
+    </div>
+    <div class="row" style="gap:6px; flex-wrap:wrap; margin-top:8px">
+      {% for cid, cname in g.client_list %}<a class="chip" href="/clients/{{ cid }}">{{ cname }}</a>{% endfor %}
+      {% for t in g.tools %}{{ toolchip(t) }}{% endfor %}
+    </div>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Sev</th><th>Client</th><th>Tool</th><th>Alert</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for a in g.alerts %}<tr>
+      <td>{{ sev(a.severity) }}</td>
+      <td class="nowrap"><a href="/clients/{{ a.client_id }}">{{ a.client }}</a></td>
+      <td class="nowrap">{{ toolchip(a.tool) }}</td>
+      <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(80) }}</a></td>
+      <td class="nowrap faint">{{ a.status }}</td>
+    </tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty"><h3>No cross-client activity</h3><p>No indicator has been seen on more than one client in the window. New correlations appear here as alerts come in.</p></div>
+{% endif %}
+{% endblock %}
