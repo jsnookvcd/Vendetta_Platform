@@ -74,6 +74,20 @@ modules:
       professional services; proposals with rationale at a per-action autonomy
       level; acts only through module APIs as "api:sabine"; never touches a host;
       signed ledger. Port 8600.
+  - name: professional-services
+    display_name: Office of Special Projects
+    service_lines: [vciso, advisory, professional-services]
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    evidence: /api/clients/{id}/evidence/verify
+    escalation: /api/ir-cases
+    notes: >-
+      vCISO retainers, implementation projects, tabletop exercises, assessments and
+      advisory, each run as an engagement with deliverables the client accepts on the
+      portal. Every delivery and sign-off is bound into a signed, hash-chained chain
+      of custody with a downloadable proof. Escalates live risk to the IR hub. Built
+      and tested.
 
   - name: mdr
     display_name: Managed Detection and Response

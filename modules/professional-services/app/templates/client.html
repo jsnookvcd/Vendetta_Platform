@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">{{ client.name }}</h1>
+  <span class="faint" style="font-size:12px">{{ client.industry }}{% if client.portal_enabled %} · portal enabled{% endif %}</span></div>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Engagements</h2><span class="count">{{ engagements|length }}</span></div>
+    <div class="panel"><div class="table-wrap">
+    {% if engagements %}
+    <table><thead><tr><th>Engagement</th><th>Type</th><th>Status</th><th>Progress</th><th>Shared</th></tr></thead><tbody>
+    {% for e in engagements %}{% set c = e.counts() %}<tr>
+      <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a></td>
+      <td class="nowrap faint">{{ TYPE_NAMES.get(e.kind, e.kind) }}</td>
+      <td class="nowrap">{{ estate(e.status) }}</td>
+      <td class="nowrap">{{ progressbar(e.progress()) }}<span class="faint" style="font-size:11px"> {{ c.accepted }}/{{ c.total }}</span></td>
+      <td class="nowrap faint">{{ 'yes' if e.published else '' }}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty"><p>No engagements yet.</p></div>{% endif %}
+    </div></div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Chain of custody</h2></div>
+    <div class="panel pad">
+      <p class="faint" style="font-size:12.5px; margin:0 0 10px">Every deliverable created, delivered and accepted is hash-chained and signed. The proof verifies with the public key alone.</p>
+      <div class="row" style="gap:8px">
+        <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/evidence/verify" target="_blank" rel="noopener">Verify chain</a>
+        <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/evidence/proof.json">Download sign-off proof</a>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="section-head"><h2>New engagement</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/clients/{{ client.id }}/engagements">
+        <label class="field">Name<input name="name" required placeholder="2026 vCISO Retainer"></label>
+        <label class="field" style="margin-top:8px">Type
+          <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ TYPE_NAMES[k] }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:8px">Cadence
+          <select name="cadence">{% for cd in cadences %}<option value="{{ cd }}">{{ cd }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:8px">Engagement lead<input name="lead" placeholder="Vendetta lead"></label>
+        <label class="field" style="margin-top:8px">Client sponsor<input name="sponsor" placeholder="client contact"></label>
+        <label class="field" style="margin-top:8px">Scope<textarea name="scope" placeholder="Objectives, boundaries, assumptions"></textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-primary">Create engagement</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

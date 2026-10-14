@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+{% macro icon(name) %}
+<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+{% if name=='grid' %}<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+{% elif name=='clients' %}<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
+{% elif name=='briefcase' %}<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+{% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+{% endif %}
+</svg>
+{% endmacro %}
+{% macro flash() %}{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}{% endmacro %}
+{% macro dstatus(s) %}<span class="dchip d-{{ s }}">{{ DSTATUS_NAMES.get(s, s) }}</span>{% endmacro %}
+{% macro estate(s) %}<span class="echip e-{{ s }}">{{ STATE_NAMES.get(s, s) }}</span>{% endmacro %}
+{% macro progressbar(pct) %}<div class="pbar" title="{{ pct }}% accepted"><span style="width:{{ pct }}%"></span></div>{% endmacro %}
+{% set p = request.url.path if request else '/' %}
+{% if portal or user %}
+<div class="app{{ ' portal' if portal }}">
+  <aside class="rail">
+    {% if portal %}
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Vendetta<span>Special Projects</span></div></div>
+    <nav class="nav">
+      <a href="/portal" class="{{ 'active' if p=='/portal' }}">{{ icon('briefcase') }} Engagements</a>
+    </nav>
+    <div class="foot"><div class="who">{{ client.name if client else user }}</div><a href="/logout" class="faint">Sign out</a></div>
+    {% else %}
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Office of<span>Special Projects</span></div></div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Dashboard</a>
+      <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
+      <div class="sep"></div>
+      <a href="/settings" class="{{ 'active' if p=='/settings' }}">{{ icon('settings') }} Settings</a>
+      <a href="/settings/sso" class="{{ 'active' if p.startswith('/settings/sso') }}">{{ icon('settings') }} SSO</a>
+    </nav>
+    <div class="foot"><div class="who">{{ user }}</div><a href="/logout" class="faint">Sign out</a></div>
+    {% endif %}
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
+      <span class="spacer"></span>
+      {% if portal %}
+        {% if exec_view %}<span class="chip">Executive view</span>{% endif %}
+      {% elif shell %}
+      <div class="status-strip">
+        <span class="stat"><b>{{ shell.active }}</b> active engagements</span>
+        <span class="stat"><span class="dot {{ 'bad' if shell.open_deliv else 'ok' }}"></span><b>{{ shell.open_deliv }}</b> open deliverables</span>
+      </div>
+      {% endif %}
+    </header>
+    <div class="content">{{ flash() }}{% block body %}{% endblock %}</div>
+  </div>
+</div>
+{% else %}
+{% block anon %}{% endblock %}
+{% endif %}
+</body>
+</html>

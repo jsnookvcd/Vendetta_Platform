@@ -34,6 +34,9 @@ jobs:
           - module: sabine
             role: sabine
             db: sabine_test
+          - module: professional-services
+            role: psvc
+            db: psvc_test
 
     services:
       postgres:

@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% block title %}Your engagements{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 16px">Professional-services engagements Vendetta is running for {{ client.name }}.</p>
+
+{% if awaiting %}
+<div class="section-head"><h2>Awaiting your sign-off</h2><span class="count">{{ awaiting|length }}</span></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Deliverable</th><th>Engagement</th><th>Delivered</th><th></th></tr></thead><tbody>
+{% for d in awaiting %}<tr>
+  <td>{{ d.title }}</td>
+  <td class="faint">{{ d.engagement.name }}</td>
+  <td class="nowrap faint">{{ d.delivered_at.strftime('%b %d, %Y') if d.delivered_at else '—' }}</td>
+  <td class="nowrap"><a class="btn btn-sm btn-primary" href="/portal/engagements/{{ d.engagement_id }}">Review &amp; accept</a></td>
+</tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+
+<div class="section-head" style="margin-top:18px"><h2>Engagements</h2><span class="count">{{ engagements|length }}</span></div>
+{% if engagements %}
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Engagement</th><th>Type</th><th>Status</th><th>Progress</th><th></th></tr></thead><tbody>
+{% for e in engagements %}{% set c = e.counts() %}<tr>
+  <td>{{ e.name }}</td>
+  <td class="nowrap faint">{{ TYPE_NAMES.get(e.kind, e.kind) }}</td>
+  <td class="nowrap">{{ estate(e.status) }}</td>
+  <td style="min-width:120px">{{ progressbar(e.progress()) }}<span class="faint" style="font-size:11px">{{ c.accepted }}/{{ c.total }} accepted</span></td>
+  <td class="nowrap"><a class="faint" href="/portal/engagements/{{ e.id }}">open &rarr;</a></td>
+</tr>{% endfor %}
+</tbody></table></div></div>
+{% else %}
+<div class="panel pad"><div class="empty"><p>No engagements have been shared with you yet.</p></div></div>
+{% endif %}
+
+<div class="section-head" style="margin-top:18px"><h2>Deliverable sign-off record</h2></div>
+<div class="panel pad">
+  <div class="row" style="align-items:center; gap:10px">
+    {% if chain.ok %}<span class="chip ok">Chain verified · {{ chain.count }} events</span>
+    {% else %}<span class="chip bad">Chain integrity check failed</span>{% endif %}
+    <span class="grow"></span>
+    <a class="btn btn-sm btn-ghost" href="/portal/evidence/proof.json">Download sign-off proof</a>
+  </div>
+  <p class="faint" style="font-size:12px; margin:10px 0 0">Every delivery and acceptance is recorded in a tamper-evident, cryptographically signed chain of custody. The downloadable proof can be independently verified against Vendetta's public key.</p>
+</div>
+{% endblock %}

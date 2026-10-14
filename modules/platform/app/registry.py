@@ -18,12 +18,16 @@ DEFAULT_MODULES = [
     ("vulnerability-management", "Vulnerability Management", "managed-security", "in-progress", True, 40),
     ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
     ("sabine", "SABINE", "agent", "in-progress", False, 55),
+    ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 55),
     ("mdr", "Managed Detection and Response", "managed-security", "planned", False, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
 
 # Modules that serve the shared finding model at /api/findings. The hub pulls from
 # these as its finding sources (discovered via GET /api/platform/modules).
+# professional-services (Office of Special Projects) is intentionally NOT here: it
+# delivers engagements, not detections, and escalates live risk to the IR hub instead
+# of feeding the finding model.
 FINDING_MODULES = {"dark-web-monitoring", "managed-services", "vulnerability-management",
                    "penetration-testing"}
 

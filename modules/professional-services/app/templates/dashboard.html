@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ by_status.planned + by_status.in_progress + by_status.in_review }}</div><div class="l">Deliverables in flight</div></div>
+  <div class="tile {{ 'warn' if by_status.delivered }}"><div class="n">{{ by_status.delivered }}</div><div class="l">Awaiting client sign-off</div></div>
+  <div class="tile"><div class="n">{{ by_status.accepted }}</div><div class="l">Accepted</div></div>
+  {% for t in ['vciso','implementation','tabletop'] %}<div class="tile"><div class="n">{{ by_type[t] }}</div><div class="l">{{ TYPE_NAMES[t] }}</div></div>{% endfor %}
+</div>
+
+{% if awaiting %}
+<div class="section-head"><h2>Awaiting client sign-off</h2><span class="count">{{ awaiting|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th>Deliverable</th><th>Type</th><th>Client</th><th>Engagement</th><th>Delivered</th></tr></thead>
+  <tbody>
+  {% for d in awaiting %}<tr>
+    <td><a href="/engagements/{{ d.engagement_id }}">{{ d.title }}</a></td>
+    <td class="nowrap faint">{{ DKIND_NAMES.get(d.kind, d.kind) }}</td>
+    <td class="nowrap">{{ d.engagement.client.name }}</td>
+    <td class="nowrap faint">{{ d.engagement.name }}</td>
+    <td class="nowrap faint">{{ d.delivered_at.strftime('%b %d') if d.delivered_at else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endif %}
+
+<div class="section-head"><h2>Engagements</h2></div>
+<div class="panel"><div class="table-wrap">
+{% if engagements %}
+<table>
+  <thead><tr><th>Engagement</th><th>Client</th><th>Type</th><th>Status</th><th>Progress</th><th>Shared</th></tr></thead>
+  <tbody>
+  {% for e in engagements %}{% set c = e.counts() %}<tr>
+    <td><a href="/engagements/{{ e.id }}">{{ e.name }}</a></td>
+    <td class="nowrap">{{ e.client.name }}</td>
+    <td class="nowrap faint">{{ TYPE_NAMES.get(e.kind, e.kind) }}</td>
+    <td class="nowrap">{{ estate(e.status) }}</td>
+    <td class="nowrap">{{ progressbar(e.progress()) }}<span class="faint" style="font-size:11px"> {{ c.accepted }}/{{ c.total }}</span></td>
+    <td class="nowrap faint">{{ 'yes' if e.published else '' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No engagements yet</h3><p>Create one on a client.</p></div>{% endif %}
+</div></div>
+{% endblock %}

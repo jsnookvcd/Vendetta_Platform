@@ -1,0 +1,45 @@
+# Vendetta Platform module descriptor. Status: in-progress (built and tested).
+# See /docs/ARCHITECTURE.md for the shared contracts and
+# /modules/dark-web-monitoring for the reference implementation.
+module:
+  name: professional-services
+  display_name: Office of Special Projects
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [vciso, advisory, professional-services]
+  status: in-progress
+  enablement: MODULE_ENABLED
+  client_portal: per-client
+
+# The Office of Special Projects delivers engagements, not detections. Its system of
+# record is the engagement and its deliverables, each accepted (signed off) by the
+# client on the portal and bound into a per-client, signed chain of custody.
+engagement_model:
+  engagement_types: [vciso, implementation, tabletop, assessment, advisory]
+  engagement_states: [scoping, active, on_hold, delivered, closed]
+  deliverable:
+    kinds: [document, report, playbook, policy, session, milestone, assessment]
+    statuses: [planned, in_progress, in_review, delivered, accepted]
+    client_owned_signoff: true        # acceptance is a client-only action on the portal
+    fields: [title, kind, description, artifact_ref, due_on, accepted_by, accepted_at]
+  cadences: [one-time, monthly, quarterly, annual]
+  evidence: true                      # signed, hash-chained deliverable sign-off chain
+  publish: per-engagement             # staff decide which engagements the client sees
+
+roles:
+  admin: full
+  analyst: full
+  client: shared_engagements_detail   # own published engagements and deliverables; accepts deliverables
+  partner_carrier: scoped_none
+
+api:
+  module_manifest: GET /api/module
+  evidence_verify: GET /api/clients/{id}/evidence/verify
+  evidence_proof: GET /clients/{id}/evidence/proof.json   # downloadable sign-off proof
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  workstream: "Resilience and Hardening"
+  note: >-
+    OSP does not feed the shared finding model; a vCISO or tabletop that surfaces a
+    live risk opens an IR case on the hub, carrying the engagement as the reference.

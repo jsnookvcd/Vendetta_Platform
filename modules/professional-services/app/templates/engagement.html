@@ -1,0 +1,80 @@
+{% extends "base.html" %}{% block title %}{{ e.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><a href="/clients/{{ e.client_id }}" class="faint" style="font-size:12px">&larr; {{ e.client.name }}</a></div>
+<div class="title-row"><h1 style="font-size:19px">{{ e.name }}</h1>
+  {{ estate(e.status) }}{% if e.published %}<span class="chip ok">shared with client</span>{% endif %}
+</div>
+<p class="faint" style="margin:2px 0 14px">{{ TYPE_NAMES.get(e.kind, e.kind) }} · {{ e.cadence }}{% if e.lead %} · lead {{ e.lead }}{% endif %}{% if e.sponsor %} · sponsor {{ e.sponsor }}{% endif %}</p>
+
+<div class="detail-grid">
+  <div>
+    <div class="section-head"><h2>Deliverables</h2><span class="count">{{ counts.accepted }}/{{ counts.total }} accepted</span>
+      <span class="grow"></span>{{ progressbar(progress) }}</div>
+    <div class="panel"><div class="table-wrap">
+    {% if e.deliverables %}
+    <table><thead><tr><th>Deliverable</th><th>Type</th><th>Status</th><th>Accepted by</th><th></th></tr></thead><tbody>
+    {% for d in e.deliverables %}<tr>
+      <td>{{ d.title }}{% if d.artifact_ref %} <a href="{{ d.artifact_ref }}" class="faint" target="_blank" rel="noopener">link</a>{% endif %}</td>
+      <td class="nowrap faint">{{ DKIND_NAMES.get(d.kind, d.kind) }}</td>
+      <td class="nowrap">{{ dstatus(d.status) }}</td>
+      <td class="nowrap faint">{{ d.accepted_by }}{% if d.accepted_at %} · {{ d.accepted_at.strftime('%b %d') }}{% endif %}</td>
+      <td class="nowrap"><a class="faint" href="#edit-{{ d.id }}" onclick="document.getElementById('edit-{{ d.id }}').open=true">edit</a></td>
+    </tr>
+    <tr><td colspan="5" style="padding:0 14px 10px">
+      <details id="edit-{{ d.id }}"><summary class="faint" style="font-size:12px; cursor:pointer">edit deliverable</summary>
+      <form method="post" action="/deliverables/{{ d.id }}/edit" class="row" style="gap:8px; flex-wrap:wrap; margin-top:8px; align-items:flex-end">
+        <label class="field">Title<input name="title" value="{{ d.title }}"></label>
+        <label class="field">Type<select name="kind">{% for k in dkinds %}<option value="{{ k }}" {{ 'selected' if d.kind==k }}>{{ DKIND_NAMES[k] }}</option>{% endfor %}</select></label>
+        <label class="field">Status<select name="status">{% for s in dstatuses %}<option value="{{ s }}" {{ 'selected' if d.status==s }} {{ 'disabled' if s=='accepted' }}>{{ DSTATUS_NAMES[s] }}</option>{% endfor %}</select></label>
+        <label class="field" style="flex:1; min-width:180px">Artifact link<input name="artifact_ref" value="{{ d.artifact_ref }}" placeholder="SharePoint / doc URL"></label>
+        <label class="field" style="flex:2; min-width:220px">Description<input name="description" value="{{ d.description }}"></label>
+        <button class="btn btn-sm">Save</button>
+      </form>
+      <p class="faint" style="font-size:11px; margin:6px 0 0">Acceptance is the client's action on the portal; it cannot be set here.</p>
+      {% if d.status != 'accepted' %}<form method="post" action="/deliverables/{{ d.id }}/delete" onsubmit="return confirm('Delete this deliverable?')" style="margin-top:4px"><button class="btn btn-xs btn-ghost">delete</button></form>{% endif %}
+      </details>
+    </td></tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty"><p>No deliverables yet. Add the first below.</p></div>{% endif %}
+    </div></div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Add deliverable</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/engagements/{{ e.id }}/deliverables">
+        <div class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
+          <label class="field" style="flex:2; min-width:220px">Title<input name="title" required placeholder="Information Security Policy v1"></label>
+          <label class="field">Type<select name="kind">{% for k in dkinds %}<option value="{{ k }}">{{ DKIND_NAMES[k] }}</option>{% endfor %}</select></label>
+        </div>
+        <label class="field" style="margin-top:8px">Artifact link<input name="artifact_ref" placeholder="SharePoint / doc URL (optional)"></label>
+        <label class="field" style="margin-top:8px">Description<textarea name="description"></textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-primary">Add deliverable</button></div>
+      </form>
+    </div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Engagement</h2></div>
+    <div class="panel pad">
+      <form method="post" action="/engagements/{{ e.id }}/edit">
+        <label class="field">Status<select name="status">{% for s in states %}<option value="{{ s }}" {{ 'selected' if e.status==s }}>{{ STATE_NAMES[s] }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:8px">Type<select name="kind">{% for k in kinds %}<option value="{{ k }}" {{ 'selected' if e.kind==k }}>{{ TYPE_NAMES[k] }}</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:8px">Cadence<select name="cadence">{% for cd in cadences %}<option value="{{ cd }}" {{ 'selected' if e.cadence==cd }}>{{ cd }}</option>{% endfor %}</select></label>
+        <label class="field chk" style="margin-top:10px"><input type="checkbox" name="published" value="true" {{ 'checked' if e.published }}> Share with client portal</label>
+        <label class="field" style="margin-top:8px">Lead<input name="lead" value="{{ e.lead }}"></label>
+        <label class="field" style="margin-top:8px">Sponsor<input name="sponsor" value="{{ e.sponsor }}"></label>
+        <label class="field" style="margin-top:8px">Scope<textarea name="scope">{{ e.scope }}</textarea></label>
+        <label class="field" style="margin-top:8px">Executive summary (report)<textarea name="summary">{{ e.summary }}</textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-primary">Save</button></div>
+      </form>
+    </div>
+    <div class="panel pad" style="margin-top:12px">
+      <form method="post" action="/engagements/{{ e.id }}/escalate">
+        <label class="field">Escalate to IR hub<input name="note" placeholder="what surfaced"></label>
+        <label class="field" style="margin-top:8px">Severity<select name="severity"><option value="critical">critical</option><option value="high" selected>high</option><option value="medium">medium</option></select></label>
+        <div style="margin-top:10px"><button class="btn btn-ghost">Open IR case</button></div>
+      </form>
+      <p class="faint" style="font-size:12px; margin:8px 0 0">For a tabletop or vCISO finding that needs live incident response.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

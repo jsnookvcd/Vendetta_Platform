@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}{{ e.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><a href="/portal" class="faint" style="font-size:12px">&larr; Your engagements</a></div>
+<div class="title-row"><h1 style="font-size:19px">{{ e.name }}</h1>{{ estate(e.status) }}</div>
+<p class="faint" style="margin:2px 0 16px">{{ TYPE_NAMES.get(e.kind, e.kind) }}{% if e.lead %} · Vendetta lead {{ e.lead }}{% endif %}</p>
+
+{% if e.scope %}<div class="panel pad" style="margin-bottom:14px"><h3 style="margin:0 0 6px; font-size:13px">Scope</h3><p class="faint" style="margin:0">{{ e.scope }}</p></div>{% endif %}
+{% if exec_view and e.summary %}<div class="panel pad" style="margin-bottom:14px"><h3 style="margin:0 0 6px; font-size:13px">Executive summary</h3><p class="faint" style="margin:0; white-space:pre-wrap">{{ e.summary }}</p></div>{% endif %}
+
+<div class="section-head"><h2>Deliverables</h2><span class="count">{{ counts.accepted }}/{{ counts.total }} accepted</span>
+  <span class="grow"></span>{{ progressbar(progress) }}</div>
+<div class="panel"><div class="table-wrap">
+{% if e.deliverables %}
+<table><thead><tr><th>Deliverable</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>
+{% for d in e.deliverables %}<tr>
+  <td>{{ d.title }}{% if d.description %}<div class="faint" style="font-size:12px; margin-top:2px">{{ d.description }}</div>{% endif %}
+      {% if d.artifact_ref %}<div style="margin-top:3px"><a class="faint" href="{{ d.artifact_ref }}" target="_blank" rel="noopener" style="font-size:12px">Open deliverable &rarr;</a></div>{% endif %}</td>
+  <td class="nowrap faint">{{ DKIND_NAMES.get(d.kind, d.kind) }}</td>
+  <td class="nowrap">{{ dstatus(d.status) }}{% if d.accepted_at %}<div class="faint" style="font-size:11px">by {{ d.accepted_by }} · {{ d.accepted_at.strftime('%b %d') }}</div>{% endif %}</td>
+  <td class="nowrap">{% if d.status == 'delivered' %}
+      <form method="post" action="/portal/deliverables/{{ d.id }}/accept" onsubmit="return confirm('Accept this deliverable? This records your sign-off.')">
+        <button class="btn btn-sm btn-primary">Accept</button></form>
+    {% elif d.status == 'accepted' %}<span class="chip ok">Signed off</span>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No deliverables have been shared yet.</p></div>{% endif %}
+</div></div>
+{% endblock %}
