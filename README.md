@@ -11,6 +11,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 - incident-response: IR cases and retainers; the engagement hub spine, with the five-workstream case template, one-button incident declaration, a client portal and the escalation API. Built; first deploy pending.
 - professional-services (Office of Special Projects): vCISO retainers, implementation projects, tabletop exercises, assessments and advisory, run as engagements with deliverables the client accepts (signs off) on the portal, every delivery and sign-off bound into a signed, hash-chained chain of custody with a downloadable proof, and escalation to the hub for live risk. Built and tested. See modules/professional-services.
 - evidence-export: shared library that turns any module's signed chain of custody into a court-admissible, self-verifying export package (sealed manifest, embedded standalone verifier, optional RFC 3161 trusted timestamp), with an independent verifier that confirms a package offline with no access to the platform. professional-services is the reference wiring. Built and tested. See modules/evidence-export.
+- ai-triage: shared evidence-grounded triage copilot for the finding-bearing modules. Proposes a verdict with a calibrated confidence and a written rationale, with a deterministic rules fallback that always runs and grounds any LLM output; a human accepts or rejects, a second approver is required for high-stakes or low-confidence verdicts, and both the proposal and the decision are written to the signed evidence chain. Built and tested. See modules/ai-triage.
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
 - sabine: SABINE, the agentic brain. One operator queue across every module, proposals with rationale at a per-action autonomy level, action only through module APIs as itself, a signed ledger of everything it did, briefs and a daily summary. Built and tested. See modules/sabine.
 - mdr: managed detection and response: investigations with verdicts and analyst actions rather than raw alerts, convertible to an IR case. Planned.
@@ -58,6 +59,7 @@ modules/
   penetration-testing/
   professional-services/ Office of Special Projects (built and tested)
   evidence-export/       shared court-admissible export + standalone verifier (built and tested)
+  ai-triage/             shared evidence-grounded triage copilot (built and tested)
   mdr/
   network-operations/
   registry.yaml          module catalog with status and enablement

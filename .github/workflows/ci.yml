@@ -40,6 +40,9 @@ jobs:
           - module: evidence-export
             role: evexport
             db: evexport_test
+          - module: ai-triage
+            role: aitriage
+            db: aitriage_test
 
     services:
       postgres:

@@ -100,6 +100,18 @@ modules:
       independent verifier that confirms one offline. professional-services is the
       reference wiring. Built and tested.
 
+  - name: ai-triage
+    display_name: AI Triage Copilot
+    role: shared-library
+    status: in-progress
+    notes: >-
+      Shared library, not a service. Evidence-grounded triage assistant for the
+      finding-bearing modules: proposes a verdict with a calibrated confidence and a
+      written rationale, with a deterministic rules fallback that always runs and
+      grounds any LLM output. A human accepts or rejects, a second approver is required
+      for high-stakes or low-confidence verdicts, and both the proposal and the human
+      decision are written to the signed evidence chain. Built and tested.
+
   - name: mdr
     display_name: Managed Detection and Response
     service_lines: [managed-security]
