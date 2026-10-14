@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     platform_url: str = ""
     platform_token: str = ""
 
+    # Optional RFC 3161 Time-Stamp Authority for court-admissible evidence exports. When
+    # set, a defensible export anchors its manifest hash to this authority; when blank,
+    # the export is still sealed and chain-verifiable, just without a third-party time
+    # anchor.
+    tsa_url: str = ""
+
 
 settings = Settings()
 

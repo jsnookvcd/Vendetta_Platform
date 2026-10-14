@@ -38,7 +38,8 @@
     {% else %}<span class="chip bad">Chain integrity check failed</span>{% endif %}
     <span class="grow"></span>
     <a class="btn btn-sm btn-ghost" href="/portal/evidence/proof.json">Download sign-off proof</a>
+    <a class="btn btn-sm btn-primary" href="/portal/evidence/export.zip">Defensible evidence export</a>
   </div>
-  <p class="faint" style="font-size:12px; margin:10px 0 0">Every delivery and acceptance is recorded in a tamper-evident, cryptographically signed chain of custody. The downloadable proof can be independently verified against Vendetta's public key.</p>
+  <p class="faint" style="font-size:12px; margin:10px 0 0">Every delivery and acceptance is recorded in a tamper-evident, cryptographically signed chain of custody. The defensible export is a sealed package with a standalone verifier that confirms it offline, with no access to this platform, so it holds up for audit or court.</p>
 </div>
 {% endblock %}

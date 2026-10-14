@@ -37,6 +37,9 @@ jobs:
           - module: professional-services
             role: psvc
             db: psvc_test
+          - module: evidence-export
+            role: evexport
+            db: evexport_test
 
     services:
       postgres:

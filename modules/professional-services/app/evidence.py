@@ -84,6 +84,13 @@ def compute(fields: dict, prev_hash: str) -> tuple[str, str, str]:
     return digest, sig, key_id()
 
 
+def sign_bytes(data: bytes) -> str:
+    """Sign arbitrary bytes with the chain signing key, returning a hex signature. Used
+    to seal an evidence export package's manifest with the same key that signed the
+    chain, so the two verify together."""
+    return _private_key().sign(data).hex()
+
+
 def verify_one(fields: dict, prev_hash: str, content_hash: str, signature_hex: str,
                pub_hex: str | None = None) -> tuple[bool, str]:
     """Recompute the hash from fields+prev_hash, confirm it matches, and confirm the

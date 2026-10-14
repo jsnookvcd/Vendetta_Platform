@@ -89,6 +89,17 @@ modules:
       of custody with a downloadable proof. Escalates live risk to the IR hub. Built
       and tested.
 
+  - name: evidence-export
+    display_name: Evidence Export
+    role: shared-library
+    status: in-progress
+    notes: >-
+      Shared library, not a service. Turns any module's signed chain of custody into a
+      court-admissible, self-verifying export package (sealed manifest, embedded
+      standalone verifier, optional RFC 3161 trusted timestamp), and provides the
+      independent verifier that confirms one offline. professional-services is the
+      reference wiring. Built and tested.
+
   - name: mdr
     display_name: Managed Detection and Response
     service_lines: [managed-security]

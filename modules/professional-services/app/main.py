@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -341,6 +341,37 @@ def api_client_evidence_verify(cid: str, _: str = Depends(auth.api_user), db: Se
     return JSONResponse(evidence.verify_chain(client_event_records(db, cid)))
 
 
+def _build_evidence_export(db: Session, c: Client) -> bytes:
+    """Assemble a sealed, self-verifying evidence export package for a client: the
+    signed deliverable sign-off chain, the public key, a standalone verifier and,
+    when a TSA is configured, a trusted timestamp. Defensible for court or audit."""
+    from . import evidence
+    from .evidence_export import build_package
+    return build_package(
+        records=client_event_records(db, c.id),
+        subject={"id": c.id, "name": c.name},
+        product="Vendetta Office of Special Projects",
+        document="deliverable sign-off",
+        signer=evidence.sign_bytes,
+        public_key_hex=evidence.public_key_hex(),
+        key_id=evidence.key_id(),
+        scheme=evidence.SCHEME,
+        tsa_url=settings.tsa_url,
+    )
+
+
+def _export_response(data: bytes, cid: str) -> Response:
+    return Response(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="vendetta_evidence_{cid}.zip"'})
+
+
+@app.get("/clients/{cid}/evidence/export.zip")
+def client_evidence_export(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = _get_client(db, cid)
+    _audit(db, user, "evidence.export", c.name)
+    return _export_response(_build_evidence_export(db, c), c.id)
+
+
 # ---------------------------------------------------------------- engagements
 @app.get("/engagements/{eid}", response_class=HTMLResponse)
 def engagement_page(eid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
@@ -476,6 +507,13 @@ def portal_evidence_proof(ident: auth.Identity = Depends(auth.require_client), d
     _audit(db, ident.email, "portal.evidence.proof", c.name)
     return JSONResponse(build_event_proof(db, c), headers={
         "Content-Disposition": f'attachment; filename="deliverable_signoff_{c.id}.json"'})
+
+
+@app.get("/portal/evidence/export.zip")
+def portal_evidence_export(ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    c = _portal_client(db, ident)
+    _audit(db, ident.email, "portal.evidence.export", c.name)
+    return _export_response(_build_evidence_export(db, c), c.id)
 
 
 @app.get("/portal/engagements/{eid}", response_class=HTMLResponse)

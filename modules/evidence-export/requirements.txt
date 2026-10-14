@@ -1,0 +1,4 @@
+cryptography==43.0.3
+# Optional: enables RFC 3161 trusted timestamping (build + verify of the timestamp
+# token). The core export and verifier do not need it.
+asn1crypto==1.5.1
