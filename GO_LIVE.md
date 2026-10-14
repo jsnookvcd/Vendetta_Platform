@@ -106,6 +106,23 @@ the screen reflects a configuration Microsoft has actually accepted. Re-check af
 any change; the probe results are cached briefly. The same report is available as
 JSON at `/api/platform/readiness` for a CI gate.
 
+## Updating a running host
+
+The host clones the repo at boot and does not pull on its own, so new code on main
+goes live when you redeploy. From a machine with the same AWS/SSM access used above:
+
+```bash
+# all modules
+infra/redeploy.sh
+# or just the ones that changed
+infra/redeploy.sh managed-services platform
+```
+
+It pulls main on the instance over SSM (no SSH, no open ports) and rebuilds the
+named module stacks. Each module runs its own schema migration at container start,
+so new tables and columns apply on restart. Pass INSTANCE=i-... and REGION=... to
+target a specific host, or GIT_REF=... to deploy a branch or tag.
+
 ## 3. Wire the module endpoints and tokens
 
 On the control plane (`localhost:8300`), open Connections and for each module paste
