@@ -31,7 +31,7 @@ roles:
 api:
   module_manifest: GET /api/module
   findings: GET /api/findings         # shared finding model, carries subject.platform_client_id
-  escalate: POST /findings/{id}/escalate
+  escalate: POST /api/findings/{id}/escalate
 
 escalation:
   enabled_when: PLATFORM_HUB_URL

@@ -1,8 +1,9 @@
 # Platform infrastructure
 
 Stands up the whole Vendetta Platform on one AWS host: the control plane, the IR
-hub, managed services and dark web, each as its own container stack on its own port,
-behind one load balancer that routes by hostname. This is the platform-wide stack;
+hub, managed services, dark web, vulnerability management and penetration testing,
+each as its own container stack on its own port, joined to one docker network so
+they reach each other by name, behind one load balancer that routes by hostname. This is the platform-wide stack;
 the dark web module also keeps its own single-module stack under
 modules/dark-web-monitoring/infra for running that module alone.
 
@@ -11,41 +12,56 @@ modules/dark-web-monitoring/infra for running that module alone.
 - One Graviton instance (t4g.large by default) that clones the private repo on
   first boot and brings up every deployed module with `docker compose`, each a
   separate project on its own port (control plane 8300, IR hub 8100, managed
-  services 8200, dark web 8000).
+  services 8200, dark web 8000, vulnerability management 8400, penetration
+  testing 8500), all on one shared docker network ("vendetta") where each module
+  answers at `http://<module-key>:8000`.
 - One ALB (optional, off by default) routing each module by hostname:
-  platform.<domain>, ir.<domain>, msp.<domain>, darkweb.<domain>, with an ACM
-  certificate covering all four and Route53 records. The instance has no inbound
-  rules except the module ports from the ALB security group.
+  platform.<domain>, ir.<domain>, msp.<domain>, darkweb.<domain>, vuln.<domain>,
+  pentest.<domain>, with an ACM certificate covering all of them and Route53
+  records. Listener priorities are fixed per module (`listener_priorities`) so
+  adding one never reshuffles the rest. The instance has no inbound rules except
+  the module ports from the ALB security group.
 - A shared S3 evidence bucket with Object Lock (dark web captures and IR
-  preservation), a shared SNS alert topic, per-module secret keys and Postgres
-  passwords in SSM, an auto-recover alarm, and daily EBS snapshots.
+  preservation), a backups bucket for the nightly Postgres dumps, a shared SNS
+  alert topic, every per-module secret in SSM, an auto-recover alarm, and daily
+  EBS snapshots.
 
 Which modules deploy is the `modules` map in variables.tf. Add a module there when
 it is ready; the planned ones are left out until they exist.
 
 ## Secrets and config
 
-No secret is ever in Terraform state in plaintext. Terraform generates each
-module's SECRET_KEY and POSTGRES_PASSWORD as SSM SecureStrings and writes the
-non-secret defaults (bind address, shared bucket, SNS, the on-host cross-module
-URLs) under `<ssm_prefix>/<module>/_defaults`.
+No secret is ever in Terraform state in plaintext. Terraform generates, per module,
+and stores as SSM SecureStrings under `<ssm_prefix>/<module>/`:
 
-You add the rest by hand as SSM parameters under `<ssm_prefix>/<module>/`, and the
-host picks them up on boot and on the next deploy:
+- `SECRET_KEY` (session signer) and `POSTGRES_PASSWORD`;
+- `API_TOKEN`, the bearer other modules and the control plane present to that
+  module's service API;
+- `ENCRYPTION_KEY` (Fernet) for secrets the module stores, and
+  `EVIDENCE_SIGNING_KEY` (Ed25519 seed) in the modules that sign a chain of custody;
+- `ADMIN_PASSWORD` (for you to read once) and `ADMIN_PASSWORD_HASH` (what the host
+  renders), the break-glass local login.
 
-- The read-only GitHub deploy key at `<ssm_prefix>/DEPLOY_KEY`.
-- Tool credentials for managed services, e.g.
-  `/vendetta/managed-services/SENTINELONE_API_TOKEN`,
-  `/vendetta/managed-services/CROWDSTRIKE_CLIENT_ID` and so on (see that module's
-  .env.example for the full set).
-- Entra ID SSO values per module, if used.
-- The cross-module bearer tokens: each module authenticates to the others with a
-  token derived from the target's SECRET_KEY, so set
-  `/vendetta/<module>/PLATFORM_TOKEN` (and the hub token) from each module's
-  settings page after first boot, and set the platform's own tokens to each module
-  on the control plane's Connections page. The modules reach each other over
-  localhost on the one host, so the URLs are already wired; only the tokens are
-  manual.
+It also writes the cross-module wiring so nothing is typed in after boot:
+`PLATFORM_TOKEN` (the control plane's API token) into every client module,
+`PLATFORM_HUB_TOKEN` (the hub's) into every finding module, and `MODULE_DIRECTORY`
+(each module's service URL, token and public URL) into the control plane. The
+non-secret defaults, including the service URLs, the bind address, `COOKIE_SECURE`,
+`PUBLIC_URL` and managed services' `ACTIONS_READONLY=true`, go under
+`<ssm_prefix>/<module>/_defaults` and are updated on every apply.
+
+You add by hand, as SSM parameters under `<ssm_prefix>/<module>/`:
+
+- The read-only GitHub deploy key at `<ssm_prefix>/DEPLOY_KEY` (before first boot).
+- Tool credentials for managed services, if you prefer SSM to the in-app
+  Integrations page, e.g. `/vendetta/managed-services/SENTINELONE_API_TOKEN`.
+- Entra ID SSO values per module, if you prefer SSM to the in-app SSO page.
+- `ACTIONS_READONLY=false` for managed services when you are ready for live actions.
+
+A scalar parameter overrides the same key in `_defaults`. The host renders every
+module's `.env` from these with `infra/host/vendetta-env` at first boot and on
+every `infra/redeploy.sh`, so a parameter added later reaches the containers on the
+next deploy.
 
 ## Deploy
 
@@ -74,19 +90,22 @@ terraform apply \
   -var 'alert_emails=["soc@vendettacd.io"]'
 ```
 
-This fronts the control plane at platform.vendettacyber.com, with ir., msp. and
-darkweb. under the same domain and one certificate. The alert address stays on
+This fronts the control plane at platform.vendettacyber.com, with ir., msp.,
+darkweb., vuln. and pentest. under the same domain and one certificate. Run
+`infra/redeploy.sh` afterwards so the modules pick up the bind address, secure
+cookies and public URLs. The alert address stays on
 the vendettacd.io corporate mailbox; only the hostnames use vendettacyber.com.
 
-Validated here by HCL parse only; no `terraform plan` was run (no AWS
-credentials in this environment). Run `terraform plan` against the target account
-before applying.
+CI runs `terraform fmt -check` and `terraform validate`; no `terraform plan` has
+been run (no AWS credentials in CI). Run `terraform plan` against the target
+account before the first apply.
 
 ## Notes
 
-- One host keeps cost and operations simple and matches how the modules talk to
-  each other (localhost). As load grows, split a module onto its own instance by
+- One host keeps cost and operations simple; the modules talk to each other over
+  the shared docker network. As load grows, split a module onto its own instance by
   setting `deploy = false` here and standing it up separately, or move Postgres to
-  RDS; the module URLs then change from localhost to the new host.
-- t4g.large (8 GB) runs four web stacks, four Postgres and Tor comfortably.
-  t4g.medium works for a light client load with Postgres shared_buffers tuned down.
+  RDS; the module's entry in `_defaults` and the control plane's `MODULE_DIRECTORY`
+  then point at the new host.
+- t4g.large (8 GB) runs six web stacks, six Postgres and Tor; watch memory once
+  real sync volume lands and step up to t4g.xlarge if Postgres starts swapping.

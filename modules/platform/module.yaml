@@ -22,7 +22,7 @@ provisioning_api:
   endpoint: GET /api/platform/clients?module=<key>
   auth: Bearer (shared platform token)
   returns: active clients enabled for that module; tool map included for managed-services
-  consumed_by: [managed-services]        # incident-response, dark-web-monitoring next
+  consumed_by: [incident-response, dark-web-monitoring, managed-services, vulnerability-management, penetration-testing]        # incident-response, dark-web-monitoring next
 
 overview:
   reads: each module's /api/module (health) and items endpoint (counts)

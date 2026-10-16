@@ -13,9 +13,10 @@ modules:
     provisioning: /api/platform/clients
     notes: >-
       The front door and system of record for clients, per-client module
-      enablement, and per-client tool mapping. Modules pull their roster from it;
-      the overview reads their live counts back. Built and tested; managed-services
-      consumes it today, the other modules adopt the same contract next.
+      enablement, and per-client tool mapping. Every client module pulls its roster
+      from it (and is pushed a sync when a client changes); the overview and
+      readiness screen read their live state back. Deep links into each module's
+      view of a client.
 
   - name: dark-web-monitoring
     display_name: Dark Web Monitoring
@@ -32,10 +33,11 @@ modules:
     enablement: MODULE_ENABLED
     manifest: /api/module
     findings: /api/findings
+    escalation: /api/findings/{id}/escalate
     notes: >-
       Scans ingest from the Go scanner service (POST /api/scans), findings dedupe
       across scans, client portal with an exposure trend over time and click-through
-      remediation steps. Built and tested.
+      remediation steps. Built, tested, containerized and deployed (port 8400).
 
   - name: penetration-testing
     display_name: Penetration Testing
@@ -44,10 +46,11 @@ modules:
     enablement: MODULE_ENABLED
     manifest: /api/module
     findings: /api/findings
+    escalation: /api/findings/{id}/escalate
     notes: >-
       Engagements and findings with a retest loop, report rendered from findings,
       client portal with a cross-engagement trend and click-through remediation.
-      Built and tested.
+      Built, tested, containerized and deployed (port 8500).
 
   - name: incident-response
     display_name: Incident Response and Case Management
@@ -72,6 +75,7 @@ modules:
     enablement: MODULE_ENABLED
     manifest: /api/module
     findings: /api/findings
+    escalation: /api/findings/{id}/escalate
     notes: >-
       Console over every tool a client has deployed (SuperOps, SentinelOne,
       CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions

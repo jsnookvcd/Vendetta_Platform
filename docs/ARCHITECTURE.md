@@ -11,8 +11,12 @@ Every module:
 - lives under modules/<name>/ and declares itself in module.yaml;
 - serves its manifest at GET /api/module, including `enabled`, its roles, and its finding types;
 - honors a MODULE_ENABLED flag. When off, the UI shows a disabled notice, background work idles, and /api/module reports enabled:false so the hub can read status;
-- exposes its findings in the shared finding model below;
-- can escalate a finding into an IR case in the hub.
+- exposes its findings in the shared finding model below at GET /api/findings, filterable by `status` (`active`, the default, with `open` as a synonym; `all`; or a literal module status), by `platform_client_id` and by `client` (name substring);
+- can escalate a finding into an IR case in the hub, both from its UI and over its service API at POST /api/findings/{id}/escalate;
+- pulls its client roster from the control plane on a schedule and on demand (POST /api/provision/sync), and serves GET /clients/platform/{platform_client_id} as the deep-link target the control plane sends people to;
+- refuses to start on a placeholder SECRET_KEY, and authenticates its service API with a deployment-set API_TOKEN.
+
+The shapes are pinned as JSON Schemas in docs/contracts and every module's test suite validates what it emits against them.
 
 ## The finding model
 
@@ -22,7 +26,7 @@ Modules produce different raw records (a dark web hit, a vulnerability, a pentes
 id            string, unique within the module
 module        the module name, e.g. "dark-web-monitoring"
 platform      "Vendetta Platform"
-subject       { client_id, client, case_ref }   the account it belongs to
+subject       { client_id, platform_client_id, client, case_ref }   the account it belongs to
 type          module-specific record kind (e.g. victim, vulnerability, detection)
 severity      low | medium | high | critical
 status        new | reviewing | confirmed | false_positive | closed
@@ -32,16 +36,21 @@ created_at    ISO 8601
 workstream    the IR workstream a finding attaches to when escalated
 ```
 
+`subject.platform_client_id` is the control plane's id for the client and is the key every module shares; `subject.client_id` is the producing module's own database key and is informational only. Severity `info` is collapsed to `low` before a finding leaves a module. The full schema is docs/contracts/finding.schema.json.
+
 The hub reads findings at GET /api/findings on each module and the manifest at GET /api/module. A module keeps its own richer native shape too (the dark web module also serves /api/hits); the finding model is the common denominator the hub and client views rely on.
 
 ## The control plane
 
 The control plane (modules/platform) is the front door and the system of record for three things the modules used to each own separately: the canonical client directory, which modules are turned on per client, and how each client maps into the tools. It holds no vendor secrets; those stay with the module that uses them. It reaches each module over HTTP with a per-module bearer token.
 
-Two integration points, opposite directions:
+Three integration points:
 
-- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with a bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). managed-services, incident-response and dark-web-monitoring all consume it. A module's pull is authoritative only for the platform-owned fields (name, portal domains, the executive-email list, and for managed-services the tool mapping); each module's own data (IR retainers and cases, dark web watch terms and the IAB profile, managed-services sync history) is never touched.
-- Overview (it reads from modules): the control plane calls each module's /api/module for health and its items endpoint for live counts, cached briefly and degrading gracefully.
+- Provisioning (modules read from it): a module calls GET {platform}/api/platform/clients?module=<key> with the platform's bearer token and gets the active clients that have it enabled. For managed-services each client also carries its tool tenancy mapping. The module upserts its own client rows keyed by the platform client id (adopting any it already had by name). Every client module consumes it: incident-response, dark-web-monitoring, managed-services, vulnerability-management and penetration-testing. A module's pull is authoritative only for the platform-owned fields (name, portal domains, the executive-email list, and for managed-services the tool mapping); each module's own data (IR retainers and cases, dark web watch terms and the IAB profile, managed-services sync history, a module's own portal on/off toggle) is never touched. Pulls run on a schedule in each module (PROVISION_INTERVAL_SECONDS, five minutes by default; managed-services pulls from its sync worker), and each module records its last pull result in its readiness report.
+- Roster push (it writes to modules): whenever a client changes on the control plane (added, edited, a module toggled, a tool mapped), the control plane calls POST {module}/api/provision/sync on the modules concerned, which pull immediately. An activation lands in the module within seconds; the scheduled pull is the safety net.
+- Overview (it reads from modules): the control plane calls each module's /api/module for health, readiness and live counts, cached briefly and degrading gracefully.
+
+The control plane learns where each module is from MODULE_DIRECTORY, which the deployment renders (service URL on the shared docker network, that module's API token, and its public URL). It is applied at startup to any module that is not yet wired and can be re-applied from the Connections page, so a fresh host needs no hand entry. Each module row also carries a public URL, and the client page links straight into each active module's view of that client (`{public_url}/clients/platform/{id}`); modules link back with PLATFORM_PUBLIC_URL.
 
 The canonical client id lives here, and every built module stores it on its own client rows. Escalations carry it too: a module sends its platform_client_id, and the engagement hub resolves the case's client by that shared id first, falling back to name.
 
@@ -52,9 +61,9 @@ The hub is the spine for findings and cases, and a system of record for IR cases
 - Findings: the hub pulls findings from each enabled module to present a single view per client and to drive client-facing surfaces.
 - Escalation: a module can open or link an IR case for a finding by POSTing to the hub, attaching it to a workstream. IR cases use a fixed five-workstream template: Scoping and Containment, Forensics and Analysis, Recovery and Restoration, Notification and Legal, Resilience and Hardening.
 
-The hub is the incident-response module (modules/incident-response). Escalation is live: POST {PLATFORM_HUB_URL}/api/ir-cases with Bearer PLATFORM_HUB_TOKEN, the token shown on the hub's settings page. The hub resolves the module's client by the shared platform_client_id when the escalation carries one, then by name, links to the open case named in case_ref or opens a new one, raises but never lowers severity, and records the finding internal-only on the requested workstream. The payload and response are documented in modules/incident-response/README.md.
+The hub is the incident-response module (modules/incident-response). Escalation is live: POST {PLATFORM_HUB_URL}/api/ir-cases with Bearer PLATFORM_HUB_TOKEN (the hub's API_TOKEN, which the deployment hands every finding module). The payload is docs/contracts/escalation.schema.json: source_module, platform_client_id, client (name), case_ref, severity, summary (and title, the same text), workstream and the finding. The hub resolves the module's client by the shared platform_client_id when the escalation carries one, then by name, and never by the source module's own client_id; it links to the open case named in case_ref or opens a new one, raises but never lowers severity, and records the finding internal-only on the requested workstream. The reply is docs/contracts/escalation-result.schema.json (case_id, id, linked). Every finding module stores the returned case number on the finding, so escalating the same finding again attaches to that case instead of opening another, and exposes the same escalation over its own service API at POST /api/findings/{id}/escalate, answering `{escalated, case, linked}` or `{escalated: false, reason}` with HTTP 502.
 
-The findings pull is live: the hub reads GET /api/findings from each finding-serving module, caches the results briefly, and degrades gracefully so a module that is down shows as unreachable and simply contributes nothing. The sources come from one of two places: the hub's own FINDINGS_SOURCES config (a JSON list of name, base_url and token), or, when that is unset, the control plane's module directory at GET /api/platform/modules, which returns the enabled, connected, finding-serving modules with their base URL and bearer token. That directory is driven by the Connections page, so in a normal deployment an operator wires each module once on the control plane and the hub discovers its finding sources from there rather than keeping a second copy of the list. dark-web-monitoring, managed-services, vulnerability-management and penetration-testing all serve the finding model and are offered as sources. Each finding is mapped to a hub client by the shared platform_client_id first, then by name, the same resolution escalation uses, so the finding model carries subject.platform_client_id. The consolidated view is at /findings, optionally scoped to one client, and the same pull is served at /api/findings-pull for programmatic use.
+The findings pull is live: the hub reads GET /api/findings?status=active from each finding-serving module, caches the results briefly, and degrades gracefully so a module that is down shows as unreachable and simply contributes nothing. The sources come from one of two places: the hub's own FINDINGS_SOURCES config (a JSON list of name, base_url and token), or, when that is unset, the control plane's module directory at GET /api/platform/modules, which returns the enabled, connected, finding-serving modules with their base URL and bearer token. That directory is driven by the Connections page, so in a normal deployment an operator wires each module once on the control plane and the hub discovers its finding sources from there rather than keeping a second copy of the list. dark-web-monitoring, managed-services, vulnerability-management and penetration-testing all serve the finding model and are offered as sources. Each finding is mapped to a hub client by the shared platform_client_id first, then by name, the same resolution escalation uses, so the finding model carries subject.platform_client_id. The consolidated view is at /findings, optionally scoped to one client, and the same pull is served at /api/findings-pull for programmatic use.
 
 A module whose PLATFORM_HUB_URL is blank runs standalone; escalation is a no-op.
 
@@ -103,6 +112,10 @@ A dedicated tenant is the same code, run as its own stack:
 
 The trade is real and we name it: a dedicated stack costs more to run and to patch (N stacks to upgrade, not one), and that cost is the point — it is what physical isolation means. The platform supports both models with the same binaries; which one a client gets is a deployment decision recorded against the client, not a fork of the code. The shared model stays the default because its boundary is tested and its operational cost is flat; the dedicated model exists for the clients whose requirements genuinely demand it.
 
+## Deployment wiring
+
+One host runs every module as its own compose project, and every web container joins one external docker network ("vendetta") under its module key, so modules reach each other as `http://<module-key>:8000` from inside any container. The deployment (infra/terraform) generates every secret a module needs, including a dedicated API_TOKEN per module, hands each client module the platform's token and each finding module the hub's token, and renders the control plane's MODULE_DIRECTORY, so the whole mesh is wired at first boot. Configuration is rendered from SSM into each module's .env on every deploy (infra/host/vendetta-env), so a parameter added later reaches the containers on the next `infra/redeploy.sh`. Modules fail closed: a placeholder SECRET_KEY stops the container, and managed-services starts with ACTIONS_READONLY=true until an operator turns actions on.
+
 ## Enablement
 
 Two switches:
@@ -112,8 +125,8 @@ Two switches:
 
 ## Starting a new module
 
-1. Copy the shape of modules/dark-web-monitoring: a module.yaml, a /api/module manifest with an `enabled` flag, the finding model at /api/findings, MODULE_ENABLED handling, and role-gated views.
-2. Register it in modules/registry.yaml with its status and enablement flag.
-3. Map the module's native records to the finding model.
-4. Wire escalation to the hub behind PLATFORM_HUB_URL.
-5. Keep the deployment self-contained under the module directory.
+1. Copy the shape of modules/vulnerability-management (the smallest complete module): module.yaml, a /api/module manifest with `enabled` and a readiness block, the finding model at /api/findings with the shared filters, MODULE_ENABLED handling, provision.py with the scheduled pull and POST /api/provision/sync, the /clients/platform/{pid} deep link, boot.py, and role-gated views.
+2. Register it in modules/registry.yaml with its status and enablement flag, and in the control plane's registry.py (DEFAULT_MODULES, FINDING_MODULES, PROBE).
+3. Map the module's native records to the finding model and add tests/test_contracts.py validating against docs/contracts.
+4. Wire escalation to the hub behind PLATFORM_HUB_URL, both from the UI and at POST /api/findings/{id}/escalate, storing the returned case number.
+5. Add a Dockerfile and docker-compose.yml that joins the shared network under the module key, and add the module to infra/terraform/variables.tf (modules, module_hosts, listener_priorities) and, if it signs evidence, to local.signing_modules.
