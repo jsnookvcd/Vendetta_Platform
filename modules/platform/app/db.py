@@ -149,6 +149,44 @@ class ClientTool(Base):
     __table_args__ = (Index("ix_client_tools_unique", "client_id", "tool_key", unique=True),)
 
 
+class Staff(Base):
+    """A Vendetta employee or contractor and their platform-wide access. The
+    control plane is the system of record; modules pull the roster. Deactivating a
+    person here (not deleting) locks them out everywhere and keeps the audit trail."""
+
+    __tablename__ = "staff"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    title: Mapped[str] = mapped_column(String(120), default="")
+    platform_role: Mapped[str] = mapped_column(String(20), default="analyst")  # admin | analyst
+    profile: Mapped[str] = mapped_column(String(40), default="custom")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    invited_by: Mapped[str] = mapped_column(String(320), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deactivated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    grants: Mapped[list[StaffGrant]] = relationship(back_populates="person", cascade="all, delete-orphan")
+
+
+class StaffGrant(Base):
+    """One person's access level in one module: none, analyst or admin, plus
+    module-specific capabilities in config (managed services: can_act, can_approve)."""
+
+    __tablename__ = "staff_grants"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    staff_id: Mapped[str] = mapped_column(ForeignKey("staff.id"), index=True)
+    module_key: Mapped[str] = mapped_column(String(40))
+    role: Mapped[str] = mapped_column(String(20), default="none")  # none | analyst | admin
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    person: Mapped[Staff] = relationship(back_populates="grants")
+
+    __table_args__ = (Index("ix_staff_grants_unique", "staff_id", "module_key", unique=True),)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)

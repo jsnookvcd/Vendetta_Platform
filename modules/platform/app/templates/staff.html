@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% block title %}Staff{% endblock %}
+{% block body %}
+{% if is_admin %}
+<div class="panel pad" style="margin-bottom:14px">
+  <form class="row" method="post" action="/staff" style="align-items:flex-end">
+    <label class="field">Work email<input name="email" type="email" required placeholder="dan@vendettacd.io" style="min-width:240px"></label>
+    <label class="field">Name<input name="name" placeholder="Dan Baker"></label>
+    <label class="field">Title<input name="title" placeholder="Director of IR"></label>
+    <label class="field">Access profile
+      <select name="profile">
+        {% for key, (label, desc, prole, mods) in profiles.items() %}<option value="{{ key }}" {{ 'selected' if key == 'soc-analyst' }}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="btn btn-primary">Onboard</button>
+  </form>
+  <p class="faint" style="font-size:12px; margin:10px 0 0">
+    The person signs in with their Microsoft 365 account; no password is created. Onboarding here puts them on the roster every module pulls, so their access level applies everywhere at once.
+    {% if not governs %}<b>No one is onboarded yet.</b> Until the first person is, any {{ internal_domains }} account can sign in as an analyst. Onboard yourself first (as Administrator), then everyone else.{% endif %}
+  </p>
+</div>
+{% endif %}
+
+<div class="panel" style="margin-bottom:14px"><div class="table-wrap">
+<table>
+  <thead><tr><th>Person</th><th>Title</th><th>Platform</th>{% for m in modules %}<th class="nowrap" style="font-size:11px">{{ m.display_name }}</th>{% endfor %}<th>Profile</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for p in people %}{% set g = {} %}{% for gr in p.grants %}{% set _ = g.update({gr.module_key: gr}) %}{% endfor %}<tr class="{{ 'faint' if not p.active }}">
+    <td class="nowrap"><a href="/staff/{{ p.id }}"><b>{{ p.name or p.email }}</b></a><div class="faint mono" style="font-size:11px">{{ p.email }}</div></td>
+    <td class="faint">{{ p.title }}</td>
+    <td><span class="chip">{{ p.platform_role }}</span></td>
+    {% for m in modules %}{% set gr = g.get(m.key) %}
+    <td>{% if gr and gr.role != 'none' %}<span class="modchip">{{ gr.role }}{% if m.key == 'managed-services' %}{% if gr.config.get('can_approve') %} · approve{% elif gr.config.get('can_act') %} · act{% else %} · read{% endif %}{% endif %}</span>{% else %}<span class="faint">—</span>{% endif %}</td>
+    {% endfor %}
+    <td class="faint">{{ profiles[p.profile][0] if p.profile in profiles else 'custom' }}</td>
+    <td class="nowrap">{% if p.active %}<span class="hdot up"></span> active{% else %}<span class="hdot down"></span> deactivated{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="{{ 5 + modules|length }}" class="faint">No staff onboarded yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+
+<div class="section-head"><h2>Access profiles</h2><span class="count">what each one grants; adjust any module afterwards on the person's page</span></div>
+<div class="panel pad">
+  {% for key, (label, desc, prole, mods) in profiles.items() %}
+  <div style="margin-bottom:10px"><b>{{ label }}</b> <span class="chip">platform {{ prole }}</span><div class="faint" style="font-size:12.5px">{{ desc }}</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

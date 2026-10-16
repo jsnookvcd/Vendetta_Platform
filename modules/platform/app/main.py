@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import boot
-from . import aggregate, auth, directory, oidc, readiness as readiness_mod, sso
+from . import aggregate, auth, directory, oidc, readiness as readiness_mod, sso, staff as staff_mod
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
-from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, ToolConnection,
+from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, Staff, ToolConnection,
                  User, get_client_module, init_db, slugify, utcnow)
 
 log = logging.getLogger(__name__)
@@ -436,6 +436,147 @@ def sso_test(user: str = auth.RequireUser, db: Session = Depends(get_db)):
     return RedirectResponse(f"/settings/sso?{'ok' if ok else 'testfail'}=1", status_code=302)
 
 
+# ---------------------------------------------------------------- staff
+def _require_admin(request: Request) -> str:
+    """Staff management is admin-only: the break-glass admin, a platform admin by
+    SSO, or (once the roster governs) a person whose platform role is admin."""
+    ident = auth.require_internal(request)
+    if ident.role != "admin":
+        raise HTTPException(403, "only a platform admin can manage staff")
+    return ident.email
+
+
+RequireAdmin = Depends(_require_admin)
+
+
+def _get_staff(db: Session, sid: str) -> Staff:
+    p = db.execute(select(Staff).options(selectinload(Staff.grants)).where(Staff.id == sid)).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404)
+    return p
+
+
+def _staff_pushed(db: Session, person: Staff) -> None:
+    """A staff change reaches the modules the same way a client change does."""
+    directory.push_sync(db, keys=staff_mod.modules_affected(person) or None)
+    # The platform's own login table mirrors the staff row so a deactivation ends
+    # an existing session here too.
+    u = db.execute(select(User).where(User.email == person.email)).scalar_one_or_none()
+    if u:
+        u.active = person.active
+        u.role = person.platform_role
+        db.commit()
+
+
+@app.get("/staff", response_class=HTMLResponse)
+def staff_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    people = db.execute(select(Staff).options(selectinload(Staff.grants))
+                        .order_by(Staff.active.desc(), Staff.name, Staff.email)).scalars().all()
+    ident = auth.require_identity(request)
+    return render(request, "staff.html", user=user, people=people, profiles=staff_mod.PROFILES,
+                  modules=[m for m in _modules(db) if m.key in staff_mod.GRANTABLE],
+                  is_admin=ident.role == "admin", governs=staff_mod.governs(db),
+                  internal_domains=sso.resolve()["internal_email_domains"])
+
+
+@app.post("/staff")
+def staff_add(email: str = Form(...), name: str = Form(""), title: str = Form(""), profile: str = Form("soc-analyst"),
+              user: str = RequireAdmin, db: Session = Depends(get_db)):
+    email = staff_mod.normalize_email(email)
+    if "@" not in email:
+        return _back("/staff", False, "Enter the person's work email.")
+    if profile not in staff_mod.PROFILES:
+        return _back("/staff", False, "Pick an access profile.")
+    if staff_mod.lookup(db, email):
+        return _back("/staff", False, f"{email} is already on the roster.")
+    p = Staff(email=email, name=name.strip(), title=title.strip(), invited_by=user)
+    db.add(p)
+    db.flush()
+    staff_mod.apply_profile(db, p, profile)
+    db.commit()
+    _audit(db, user, "staff.add", f"{email} profile={profile}")
+    _staff_pushed(db, p)
+    return RedirectResponse(f"/staff/{p.id}?msg={quote('Onboarded. Modules are being told.')}", status_code=302)
+
+
+@app.get("/staff/{sid}", response_class=HTMLResponse)
+def staff_detail(sid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    p = _get_staff(db, sid)
+    ident = auth.require_identity(request)
+    mods = [m for m in _modules(db) if m.key in staff_mod.GRANTABLE]
+    return render(request, "staff_detail.html", user=user, person=p, grants=staff_mod.grant_map(p),
+                  profiles=staff_mod.PROFILES, modules=mods, roles=staff_mod.MODULE_ROLES,
+                  is_admin=ident.role == "admin", last_push=directory.LAST_PUSH)
+
+
+@app.post("/staff/{sid}/edit")
+def staff_edit(sid: str, name: str = Form(""), title: str = Form(""), platform_role: str = Form("analyst"),
+               notes: str = Form(""), user: str = RequireAdmin, db: Session = Depends(get_db)):
+    p = _get_staff(db, sid)
+    if platform_role not in staff_mod.PLATFORM_ROLES:
+        raise HTTPException(400)
+    p.name, p.title, p.platform_role, p.notes = name.strip(), title.strip(), platform_role, notes.strip()
+    p.updated_at = utcnow()
+    db.commit()
+    _audit(db, user, "staff.edit", f"{p.email} platform_role={platform_role}")
+    _staff_pushed(db, p)
+    return _back(f"/staff/{sid}", True, "Saved.")
+
+
+@app.post("/staff/{sid}/profile")
+def staff_profile(sid: str, profile: str = Form(...), user: str = RequireAdmin, db: Session = Depends(get_db)):
+    p = _get_staff(db, sid)
+    if profile not in staff_mod.PROFILES:
+        raise HTTPException(400)
+    staff_mod.apply_profile(db, p, profile)
+    db.commit()
+    _audit(db, user, "staff.profile", f"{p.email} -> {profile}")
+    _staff_pushed(db, p)
+    return _back(f"/staff/{sid}", True, f"{staff_mod.PROFILES[profile][0]} profile applied.")
+
+
+@app.post("/staff/{sid}/grant/{key}")
+def staff_grant(sid: str, key: str, role: str = Form("none"), can_act: bool = Form(False),
+                can_approve: bool = Form(False), user: str = RequireAdmin, db: Session = Depends(get_db)):
+    p = _get_staff(db, sid)
+    cfg = {"can_act": bool(can_act), "can_approve": bool(can_approve)} if key == "managed-services" else {}
+    try:
+        staff_mod.set_grant(db, p, key, role, cfg)
+    except ValueError:
+        raise HTTPException(400)
+    db.commit()
+    _audit(db, user, "staff.grant", f"{p.email} {key}={role} {cfg or ''}".strip())
+    directory.push_sync(db, keys={key})
+    return _back(f"/staff/{sid}", True, f"{key}: {role}.")
+
+
+@app.post("/staff/{sid}/active")
+def staff_active(sid: str, active: bool = Form(False), user: str = RequireAdmin, db: Session = Depends(get_db)):
+    p = _get_staff(db, sid)
+    if p.email == user and not active:
+        return _back(f"/staff/{sid}", False, "You cannot deactivate yourself.")
+    p.active = bool(active)
+    p.deactivated_at = None if active else utcnow()
+    p.updated_at = utcnow()
+    db.commit()
+    _audit(db, user, "staff.active", f"{p.email} {'reactivated' if active else 'deactivated'}")
+    _staff_pushed(db, p)
+    return _back(f"/staff/{sid}", True, "Reactivated. Modules are being told." if active
+                 else "Deactivated. Every module is being told; sessions end on their next request.")
+
+
+@app.get("/api/platform/staff")
+def api_staff(module: str = "", user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """What a module pulls to learn who may sign in and at what level. With
+    ?module=<key>, the active people granted that module, each with role and the
+    module-specific config (managed services: can_act, can_approve). `governs` tells
+    the module whether a roster exists at all: once it does, the module admits
+    internal sign-ins only from this list."""
+    if module:
+        return {"module": module, "governs": staff_mod.governs(db), "staff": staff_mod.roster_for_module(db, module)}
+    return {"module": "all", "governs": staff_mod.governs(db), "staff": staff_mod.roster_all(db)}
+
+
 # ---------------------------------------------------------------- provisioning API
 @app.get("/api/platform/clients")
 def provision_clients(module: str = "", user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
@@ -485,7 +626,8 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
         "enabled": settings.module_enabled,
         "modules": {m.key: m.status for m in mods},
         "public_url": settings.public_url,
-        "endpoints": ["/api/platform/clients", "/api/platform/modules", "/api/platform/readiness", "/api/module"],
+        "endpoints": ["/api/platform/clients", "/api/platform/staff", "/api/platform/modules",
+                      "/api/platform/readiness", "/api/module"],
     }
 
 

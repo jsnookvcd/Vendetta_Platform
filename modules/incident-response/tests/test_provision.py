@@ -33,7 +33,7 @@ def _configure(monkeypatch):
 def test_pull_upserts_roster(fresh_db, monkeypatch):
     _configure(monkeypatch)
     summ = provision.pull(SessionLocal(), transport=_transport())
-    assert summ == {"roster": 2, "added": 2, "updated": 0, "deactivated": 0}
+    assert {k: summ[k] for k in ("roster", "added", "updated", "deactivated")} == {"roster": 2, "added": 2, "updated": 0, "deactivated": 0}
     rb = SessionLocal().query(Client).filter_by(platform_client_id="plat-rb").one()
     assert rb.industry == "credit union" and rb.portal_enabled and rb.portal_domains == "riverbendcu.org"
 

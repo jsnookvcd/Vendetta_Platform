@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
-from . import auth, sso
+from . import auth, provision, sso
 from .config import settings
 from .db import AuditLog, Client, SessionLocal, User, utcnow
 
@@ -56,6 +56,19 @@ def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
         or (cfg["allowed_group"] and cfg["allowed_group"] in groups)
     )
     if is_internal:
+        # The control plane's staff roster decides, once one exists: the role it
+        # grants this person here, or a denial. Without a roster (or without a
+        # control plane) the domain and allowlist rules below stand on their own.
+        db = SessionLocal()
+        try:
+            verdict, role, _cfg = provision.staff_decision(email, db)
+        finally:
+            db.close()
+        if verdict == "admit":
+            return email, role, None
+        if verdict == "deny":
+            log.warning("oidc: %s is internal but not on the platform staff roster for this module; denied", email)
+            return None
         admins = {e.strip().lower() for e in cfg["admin_emails"].split(",") if e.strip()}
         return email, ("admin" if email in admins else "analyst"), None
 

@@ -29,6 +29,7 @@
     <nav class="nav">
       <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Overview</a>
       <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
+      <a href="/staff" class="{{ 'active' if p.startswith('/staff') }}">{{ icon('clients') }} Staff</a>
       <a href="/connections" class="{{ 'active' if p.startswith('/connections') }}">{{ icon('plug') }} Connections</a>
       <a href="/readiness" class="{{ 'active' if p.startswith('/readiness') }}">{{ icon('check') }} Go-live</a>
       <div class="sep"></div>

@@ -22,3 +22,9 @@ only; name is the fallback match when the platform id is absent.
 
 Authentication is `Authorization: Bearer <that module's API_TOKEN>`. The control
 plane hands the hub each finding module's token through `GET /api/platform/modules`.
+
+Staff: `GET /api/platform/staff?module=<key>` returns `{governs, staff: [{email,
+name, title, role, config}]}`. `role` is `admin` or `analyst` for that module;
+`config` carries module capabilities (managed services: `can_act`,
+`can_approve`). `governs` is true once anyone has been onboarded, after which a
+module admits internal sign-ins only from the list.

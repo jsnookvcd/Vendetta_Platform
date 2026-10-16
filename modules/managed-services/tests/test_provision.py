@@ -35,7 +35,7 @@ def test_pull_upserts_clients_and_tool_mappings(fresh_db, monkeypatch):
     _configure(monkeypatch)
     db = SessionLocal()
     summ = provision.pull(db, transport=_transport())
-    assert summ == {"roster": 2, "added": 2, "updated": 0, "deactivated": 0}
+    assert {k: summ[k] for k in ("roster", "added", "updated", "deactivated")} == {"roster": 2, "added": 2, "updated": 0, "deactivated": 0}
     db = SessionLocal()
     rb = db.query(Client).filter_by(platform_client_id="plat-rb").one()
     assert rb.name == "Riverbend Credit Union" and rb.portal_enabled is True

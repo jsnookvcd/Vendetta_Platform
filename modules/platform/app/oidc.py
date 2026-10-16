@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
-from . import auth, sso
+from . import auth, sso, staff
 from .config import settings
 from .db import AuditLog, SessionLocal, User, utcnow
 
@@ -54,8 +54,23 @@ def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
         or email in allow_emails
         or (cfg["allowed_group"] and cfg["allowed_group"] in groups)
     )
+    admins = {e.strip().lower() for e in cfg["admin_emails"].split(",") if e.strip()}
+    # Once anyone is on the staff roster, the roster decides. A configured admin
+    # email stays admitted as the bootstrap path, so the first admin can onboard
+    # themselves and nobody can be locked out by an empty or broken roster.
+    db = SessionLocal()
+    try:
+        if staff.governs(db):
+            person = staff.lookup(db, email)
+            if person and person.active:
+                return email, person.platform_role, None
+            if email in admins:
+                return email, "admin", None
+            log.warning("oidc: %s is not on the staff roster (or is deactivated); denied", email)
+            return None
+    finally:
+        db.close()
     if is_internal:
-        admins = {e.strip().lower() for e in cfg["admin_emails"].split(",") if e.strip()}
         return email, ("admin" if email in admins else "analyst"), None
     # The control plane is staff-only; clients use each module's own portal.
     log.warning("oidc: %s is not internal; the platform control plane is staff-only", email)

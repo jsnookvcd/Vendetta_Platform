@@ -14,6 +14,8 @@
     <td class="nowrap">{{ u.role }}</td>
     {% if u.role == 'admin' %}
     <td class="faint">yes (admin)</td><td class="faint">yes (admin)</td>{% if is_admin %}<td></td>{% endif %}
+    {% elif u.source == 'platform' %}
+    <td class="faint">{{ 'yes' if u.can_act else 'no' }}</td><td class="faint">{{ 'yes' if u.can_approve else 'no' }}</td>{% if is_admin %}<td class="faint" style="font-size:12px">set on the platform Staff page{% if platform_public_url %} (<a class="alink" href="{{ platform_public_url }}/staff" target="_blank" rel="noopener">open</a>){% endif %}</td>{% endif %}
     {% else %}
     <td><input type="checkbox" name="can_act" value="true" {{ 'checked' if u.can_act }} {{ '' if is_admin else 'disabled' }}></td>
     <td><input type="checkbox" name="can_approve" value="true" {{ 'checked' if u.can_approve }} {{ '' if is_admin else 'disabled' }}></td>
@@ -22,7 +24,7 @@
   </tr>
   </form>
   {% else %}
-  <tr><td colspan="5" class="faint">No internal users yet. They appear here after their first SSO sign-in.</td></tr>
+  <tr><td colspan="5" class="faint">No internal users yet. They appear here when the platform pushes its staff roster, or after their first SSO sign-in.</td></tr>
   {% endfor %}
   </tbody>
 </table>

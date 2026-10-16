@@ -87,6 +87,14 @@ def _module_checks(module, probe: dict) -> list[dict]:
         else:
             checks.append(_chk("Roster from platform", "warn", "configured, no pull has run yet"))
 
+        st = plat.get("staff") or {}
+        if st.get("last_ok") is False:
+            checks.append(_chk("Staff roster", "warn", f"last staff pull failed: {st.get('last_detail')}"))
+        elif st.get("governs") and not st.get("count"):
+            checks.append(_chk("Staff roster", "warn", "roster governs but nobody is granted this module"))
+        elif st.get("governs"):
+            checks.append(_chk("Staff roster", "ok", f"{st.get('count')} person(s) granted; roster governs sign-in"))
+
     if module.key != "incident-response" and "hub_configured" in r:
         if r.get("hub_configured") and r.get("hub_token_set"):
             checks.append(_chk("Escalation to IR hub", "ok"))
@@ -141,6 +149,21 @@ def _control_plane_checks(modules, ov) -> list[dict]:
         checks.append(_chk("Roster push", "warn", f"last push failed for: {', '.join(failed)}"))
     elif directory.LAST_PUSH:
         checks.append(_chk("Roster push", "ok", f"{len(directory.LAST_PUSH)} module(s) reached"))
+    from . import staff as staff_mod
+    from .db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        n = len(staff_mod.roster_all(db))
+        admins = sum(1 for p in staff_mod.roster_all(db) if p["active"] and p["platform_role"] == "admin")
+    finally:
+        db.close()
+    if n == 0:
+        checks.append(_chk("Staff roster", "warn", "nobody onboarded; any internal-domain account signs in as analyst"))
+    elif admins == 0:
+        checks.append(_chk("Staff roster", "warn", f"{n} onboarded but no active platform admin"))
+    else:
+        checks.append(_chk("Staff roster", "ok", f"{n} onboarded, {admins} admin(s); roster governs sign-in"))
     checks.append(_chk("Public URL set", "ok" if settings.public_url else "warn",
                        "" if settings.public_url else "PUBLIC_URL unset; modules cannot link back here"))
     return checks

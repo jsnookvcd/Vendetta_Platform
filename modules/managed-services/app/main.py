@@ -571,7 +571,8 @@ def _is_admin(db: Session, email: str) -> bool:
 def team_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     users = db.execute(select(User).where(User.role != "client").order_by(User.email)).scalars().all()
     return render(request, "team.html", user=user, users=users, is_admin=_is_admin(db, user),
-                  require_second=settings.require_second_approver)
+                  require_second=settings.require_second_approver,
+                  platform_public_url=settings.platform_public_url)
 
 
 @app.post("/team/{uid}/caps")

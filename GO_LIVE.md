@@ -99,7 +99,7 @@ which rolls up every module's self-reported state into one screen (also at
   SSO saved but not verified, escalation to the hub not wired, secure cookies off
   behind https, tool actions live.
 
-On a fresh deployment the only amber items should be SSO and the public URL (step 8).
+On a fresh deployment the only amber items should be SSO, the empty staff roster (step 3) and the public URL (step 9).
 Every module should show its roster pulling within five minutes of boot; the
 control plane also pushes a sync to the modules the moment a client changes there.
 
@@ -122,7 +122,18 @@ a reboot does not re-render. Each module runs its own schema migration at contai
 start, so new tables and columns apply on restart. Pass INSTANCE=i-... and
 REGION=... to target a specific host, or GIT_REF=... to deploy a branch or tag.
 
-## 3. Confirm the modules are wired
+## 3. Onboard your people
+
+Control plane, Staff: onboard yourself first with the Administrator profile, then
+everyone else with the profile that fits (Incident responder, SOC analyst,
+Offensive security, Leadership). Each person signs in to every console with their
+Microsoft 365 account and gets exactly the level set here; nothing is configured
+per module. From the first onboarding onward, an internal account that is not on
+the roster for a module cannot sign in there, and deactivating someone on the
+Staff page locks them out everywhere within seconds. The admin emails configured
+for SSO stay admitted to the control plane as the break-glass path.
+
+## 4. Confirm the modules are wired
 
 Open Connections on the control plane (`localhost:8300`). Every built module should
 already show a base URL (`http://<module>:8000`), a token, and a last roster push.
@@ -133,7 +144,7 @@ findings from every connected finding module into its per-client view and /findi
 page automatically, with no second list to maintain. Leave the hub's
 FINDINGS_SOURCES unset to use this discovery; set it only to override.
 
-## 4. Wire the first tool (low risk)
+## 5. Wire the first tool (low risk)
 
 Pick SuperOps or Acronis first. On managed services, open **Integrations**, find the
 tool, paste its credentials, and click **Connect and test**. The credentials are
@@ -152,7 +163,7 @@ through SSM instead (`/vendetta/managed-services/SENTINELONE_API_TOKEN` and so o
 then `infra/redeploy.sh managed-services`); the Integrations page then shows it as
 connected from source "env" and lets you override it in place.
 
-## 5. Bring one client through
+## 6. Bring one client through
 
 1. Control plane, Clients: add the real client, set its portal email domains.
 2. On that client, activate Managed Services and enter its tenancy for the tool you
@@ -167,13 +178,13 @@ connected from source "env" and lets you override it in place.
 
 Nothing has touched a client machine. Read-only mode is still on.
 
-## 6. Add an EDR, still read-only
+## 7. Add an EDR, still read-only
 
 Wire SentinelOne or CrowdStrike the same way on the Integrations page (paste
 credentials, Connect and test), map the client's site IDs or child CID, sync.
 Confirm threats and host state render. Still no action can fire.
 
-## 7. Turn actions on
+## 8. Turn actions on
 
 When you are satisfied the data is right:
 
@@ -188,7 +199,7 @@ forgets. Destructive ones (isolate, contain, quarantine, kill) still require a
 confirmation click and the two-person rule where it is turned on, and every action
 is logged into the signed action chain with who ran it and the result.
 
-## 8. Turn on the public front (when ready)
+## 9. Turn on the public front (when ready)
 
 Once DNS and the hostnames exist:
 
@@ -226,8 +237,9 @@ SSM instead; the SSO page then shows source "env" and lets you override in place
 
 - Live Entra SSO and the dark web Tor path have not been exercised against the real
   services yet; test them on the deployed host.
-- Per-tech RBAC beyond admin/analyst/client in the modules other than managed
-  services (which has per-user action RBAC and two-person approval).
+- Access levels are admin and analyst per module (plus action and approval rights
+  in managed services); a read-only internal role would need every write route
+  gated in every module.
 - MDR and network operations are still scaffolds (every other module is built,
   containerized and deployed).
 - The scanner-to-API path exposes POST /api/scans with a reference adapter
