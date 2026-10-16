@@ -76,6 +76,23 @@ class Settings(BaseSettings):
     # whatever the voice.
     persona: str = "sabine"
 
+    # The board: a read-only, full-screen view for a wall display in the SOC. A kiosk
+    # token in the URL once (/board?k=...) sets a long-lived cookie so the screen
+    # never asks for a password. Blank disables the board.
+    kiosk_token: str = ""
+    board_refresh_seconds: int = 30
+
+    # Spoken voice. "browser" uses the viewer's own speech synthesis (no key, no
+    # audio leaves the server); "elevenlabs" and "azure" render audio server-side in a
+    # chosen voice and cache it. Listening (push to talk) always runs in the browser.
+    tts_provider: str = "browser"
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    azure_speech_key: str = ""
+    azure_speech_region: str = ""
+    azure_speech_voice: str = "en-US-AvaMultilingualNeural"
+
     # Thresholds the rules use.
     escalate_after_minutes: int = 30       # a critical/high finding left unescalated this long
     stale_case_days: int = 5               # an open IR case with no update this long

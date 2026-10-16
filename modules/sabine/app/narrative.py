@@ -145,6 +145,21 @@ def answer(question: str, picture: dict) -> tuple[str, str]:
             + (" Set ANTHROPIC_API_KEY and I will do better than a count." if settings.persona == "sabine" else "")), "rules"
 
 
+def cycle_line(stats: dict, summary: dict) -> str:
+    """One sentence of SABINE's own after each cycle, for the board."""
+    n, p, done = stats.get("open", 0), stats.get("pending", 0), summary.get("executed", 0)
+    down = [k.split(":", 1)[1] for k, ok in (summary.get("seen") or {}).items() if not ok and k.startswith("module:")]
+    if settings.persona != "sabine":
+        return f"{n} open, {p} pending, {done} done this cycle." + (f" Unreachable: {', '.join(down)}." if down else "")
+    if down:
+        return f"I cannot see {', '.join(down)} right now. Somebody check on that before I start guessing."
+    if p:
+        return f"{n} things on the board and {p} waiting on one of you. I did {done} myself this pass."
+    if n == 0:
+        return "Nothing open. I will keep watching; you go do something useful."
+    return f"{n} things on the board, all handled or waiting on a module. {done} done this pass, none of it needed you."
+
+
 def _greeting(stats: dict) -> str:
     n, p = stats.get("open", 0), stats.get("pending", 0)
     if n == 0 and p == 0:

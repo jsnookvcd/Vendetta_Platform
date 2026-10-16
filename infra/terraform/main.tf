@@ -347,6 +347,21 @@ resource "aws_ssm_parameter" "module_directory" {
   value = jsonencode(local.module_directory)
 }
 
+# SABINE's board: the wall-display token (open <sabine host>/board?k=<token> once on
+# the display; it keeps a cookie from then on).
+resource "random_password" "kiosk" {
+  count   = contains(keys(local.deployed), "sabine") ? 1 : 0
+  length  = 40
+  special = false
+}
+
+resource "aws_ssm_parameter" "kiosk_token" {
+  count = contains(keys(local.deployed), "sabine") ? 1 : 0
+  name  = "${var.ssm_prefix}/sabine/KIOSK_TOKEN"
+  type  = "SecureString"
+  value = random_password.kiosk[0].result
+}
+
 # SABINE's reach: every deployed module including the control plane and the hub,
 # each with its own token, so the brain acts through each module's API as itself.
 resource "aws_ssm_parameter" "sabine_directory" {

@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
+from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text,
                         create_engine, text)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -128,6 +128,19 @@ class Brief(Base):
     title: Mapped[str] = mapped_column(String(300))
     body_md: Mapped[str] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(20), default="rules")  # rules | llm
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Speech(Base):
+    """Rendered audio for a piece of SABINE's text, cached by content hash so the
+    same sentence is never paid for twice."""
+
+    __tablename__ = "speech"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256 of provider+voice+text
+    provider: Mapped[str] = mapped_column(String(20))
+    mime: Mapped[str] = mapped_column(String(40), default="audio/mpeg")
+    text: Mapped[str] = mapped_column(Text)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

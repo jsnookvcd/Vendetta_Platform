@@ -58,6 +58,27 @@ the colleague you want in the room at 2 a.m. That voice shows on the Ask page,
 in the daily summary and in the console copy. Anything written for a client is
 professional and formal regardless. `PERSONA=plain` turns the personality off.
 
+## Screen
+
+`/board` is a full-screen, read-only view for a wall display in the SOC: her line
+from the last cycle, open work by domain, proposals waiting on a person, module
+health, the top of the queue and what was done lately. It refreshes itself. Open
+it once as `/board?k=<KIOSK_TOKEN>` on the display and it keeps a year-long
+cookie; nothing on the board can approve or change anything. Staff sessions see
+it without the token.
+
+## Spoken voice
+
+`TTS_PROVIDER=browser` (default) speaks through the viewer's own speech
+synthesis, costs nothing and sends no text off the host. `elevenlabs` (API key
+plus a voice id you pick) or `azure` (key, region, neural voice name) render
+audio server-side in one consistent voice, cached by content hash so a sentence
+is never rendered twice. Hear her on the Ask page, on the daily summary, and on
+the board (the voice toggle speaks her line when it changes). Push to talk on
+the Ask page uses the browser's own recognition and sends the transcript to the
+same Ask endpoint as typed text. Everything she says aloud is text that is
+already in the ledger.
+
 ## Access
 
 Staff reach SABINE's console through the platform roster like any module.

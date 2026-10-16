@@ -7,6 +7,7 @@ plus /api/run to trigger a cycle and /api/module for the platform probe.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 from pathlib import Path
@@ -20,10 +21,10 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, ledger, narrative, oidc, perception, policy, provision, reach, sso
+from . import auth, boot, brain, ledger, narrative, oidc, perception, policy, provision, reach, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
-from .db import AuditLog, Brief, Proposal, SessionLocal, User, WorkItem, init_db, utcnow
+from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
 
 log = logging.getLogger(__name__)
 _APP_DIR = Path(__file__).resolve().parent
@@ -94,6 +95,7 @@ def render(request: Request, name: str, **ctx):
     ctx.setdefault("msg", request.query_params.get("msg", ""))
     ctx.setdefault("err", request.query_params.get("err", ""))
     ctx.setdefault("narrative_on", narrative.enabled())
+    ctx.setdefault("tts_provider", voice.provider())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -325,6 +327,95 @@ def ask(request: Request, question: str = Form(...), user: str = auth.RequireUse
     return render(request, "ask.html", user=user, question=question, answer=text_, source=source, tagline=_tagline(user))
 
 
+# ---------------------------------------------------------------- the board (kiosk)
+KIOSK_COOKIE = "sabine_board"
+
+
+def _board_ok(request: Request) -> bool:
+    """A wall display: the kiosk token once in the URL sets a long-lived cookie.
+    Any signed-in staff session also sees the board. Read-only either way."""
+    if not settings.kiosk_token:
+        return bool(auth.resolve_identity(request))
+    k = request.query_params.get("k", "")
+    if k and hmac.compare_digest(k, settings.kiosk_token):
+        return True
+    c = request.cookies.get(KIOSK_COOKIE, "")
+    if c and hmac.compare_digest(c, settings.kiosk_token):
+        return True
+    return bool(auth.resolve_identity(request))
+
+
+def _board_payload(db: Session) -> dict:
+    snaps = perception.snapshots(db)
+    mods = {k.split(":", 1)[1]: {"ok": s.ok, "detail": s.detail} for k, s in snaps.items() if k.startswith("module:")}
+    queue = _queue(db)
+    pending = db.execute(select(Proposal).where(Proposal.status == "pending").order_by(desc(Proposal.created_at)).limit(6)).scalars().all()
+    recent = db.execute(select(Proposal).where(Proposal.status.in_(("executed", "failed"))).order_by(desc(Proposal.executed_at)).limit(5)).scalars().all()
+    return {
+        "at": utcnow().isoformat(),
+        "line": brain.LAST.get("line") or ("Waiting for my first cycle." if settings.persona == "sabine" else "No cycle yet."),
+        "stats": brain.stats(db),
+        "last_cycle": {"at": brain.LAST["at"].isoformat() if brain.LAST["at"] else None, "ok": brain.LAST["ok"]},
+        "modules": mods,
+        "queue": [{"title": w.title, "severity": w.severity, "client": w.client, "domain": w.domain, "source": w.source,
+                   "owner": w.owner} for w in queue[:10]],
+        "pending": [{"title": p.title, "risk": p.risk, "confidence": p.confidence, "domain": p.domain} for p in pending],
+        "recent": [{"title": p.title, "ok": p.status == "executed", "detail": (p.result or {}).get("detail", "")} for p in recent],
+        "refresh": settings.board_refresh_seconds,
+        "speak": voice.provider(),
+    }
+
+
+@app.get("/board", response_class=HTMLResponse)
+def board(request: Request, db: Session = Depends(get_db)):
+    if not _board_ok(request):
+        raise HTTPException(401, "board token required")
+    resp = templates.TemplateResponse(request, "board.html", {"data": _board_payload(db), "persona": settings.persona})
+    k = request.query_params.get("k", "")
+    if k and settings.kiosk_token and hmac.compare_digest(k, settings.kiosk_token):
+        resp.set_cookie(KIOSK_COOKIE, settings.kiosk_token, httponly=True, samesite="lax",
+                        secure=settings.cookie_secure, max_age=365 * 24 * 3600)
+    return resp
+
+
+@app.get("/api/board")
+def api_board(request: Request, db: Session = Depends(get_db)):
+    if not _board_ok(request):
+        raise HTTPException(401, "board token required")
+    return _board_payload(db)
+
+
+# ---------------------------------------------------------------- voice
+@app.post("/api/speak")
+def api_speak(body: dict, request: Request, db: Session = Depends(get_db)):
+    """Render text SABINE wrote to audio. Staff session, API token or the board
+    cookie may call it. Returns {provider, url} or, for the browser provider,
+    {provider: "browser"} so the page synthesizes locally."""
+    if not (_board_ok(request) or request.headers.get("authorization", "").startswith("Bearer ")):
+        raise HTTPException(401)
+    if request.headers.get("authorization", "").startswith("Bearer "):
+        auth.api_user(request)
+    text_ = str(body.get("text") or "").strip()
+    if not text_:
+        raise HTTPException(400, "text required")
+    row = voice.speak(db, text_)
+    if row is None:
+        return {"provider": voice.provider(), "url": None}
+    return {"provider": row.provider, "url": f"/speech/{row.id}"}
+
+
+@app.get("/speech/{sid}")
+def speech(sid: str, request: Request, db: Session = Depends(get_db)):
+    if not _board_ok(request):
+        raise HTTPException(401)
+    row = db.get(Speech, sid)
+    if not row:
+        raise HTTPException(404)
+    from fastapi.responses import Response
+
+    return Response(content=row.data, media_type=row.mime, headers={"Cache-Control": "private, max-age=86400"})
+
+
 # ---------------------------------------------------------------- settings
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
@@ -336,6 +427,8 @@ def settings_page(request: Request, user: str = auth.RequireUser, db: Session = 
         "cycle": settings.cycle_interval_seconds,
         "narrative": settings.llm_model if narrative.enabled() else "rules only (no ANTHROPIC_API_KEY)",
         "persona": settings.persona,
+        "voice": voice.voice_label(),
+        "board": "on (kiosk token set)" if settings.kiosk_token else "staff sessions only (KIOSK_TOKEN unset)",
         "reach": ", ".join(sorted(reach.directory())) or "nothing (MODULE_DIRECTORY unset)",
         "platform": provision.state(),
     }

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SABINE</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
+<link rel="stylesheet" href="/static/board.css">
+</head>
+<body data-refresh="{{ data.refresh }}" data-speak="{{ data.speak }}">
+<div class="board">
+  <header class="top">
+    <div class="who"><img src="/static/logo.png" alt=""><div><div class="name">SABINE</div><div class="sub">Vendetta Cyber · operations</div></div></div>
+    <div class="clock" id="clock"></div>
+    <div class="cycle" id="cycle"></div>
+  </header>
+
+  <section class="line"><div class="mark"></div><p id="line">{{ data.line }}</p>
+    <button id="mute" class="mute" title="Speak her line when it changes">voice off</button></section>
+
+  <section class="tiles">
+    <div class="tile"><div class="k">Open work</div><div class="v" id="t-open">{{ data.stats.open }}</div><div class="s" id="t-split"></div></div>
+    <div class="tile"><div class="k">Waiting on a person</div><div class="v warn" id="t-pending">{{ data.stats.pending }}</div><div class="s">proposals to decide</div></div>
+    <div class="tile wide"><div class="k">Modules</div><div class="dots" id="modules"></div></div>
+  </section>
+
+  <section class="cols">
+    <div class="col"><h2>Queue</h2><ul id="queue"></ul></div>
+    <div class="col"><h2>Waiting on you</h2><ul id="pending"></ul><h2 class="later">Done lately</h2><ul id="recent"></ul></div>
+  </section>
+</div>
+<script src="/static/board.js"></script>
+</body>
+</html>

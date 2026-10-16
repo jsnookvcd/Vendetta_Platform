@@ -27,7 +27,8 @@ from .db import Proposal, SessionLocal, WorkItem, utcnow
 
 log = logging.getLogger(__name__)
 _LOCK = threading.Lock()
-LAST: dict = {"at": None, "ok": None, "detail": "never run", "seen": {}, "queue": {}, "proposed": 0, "executed": 0}
+LAST: dict = {"at": None, "ok": None, "detail": "never run", "seen": {}, "queue": {}, "proposed": 0, "executed": 0,
+              "line": ""}
 
 
 def cycle(db: Session) -> dict:
@@ -56,7 +57,10 @@ def cycle(db: Session) -> dict:
                           f"cycle: {sum(1 for v in seen.values() if v)}/{len(seen)} sources, "
                           f"{queue.get('finding', 0)} findings, {queue.get('case', 0)} cases, "
                           f"{len(proposals)} proposed, {executed} done", summary)
+            from . import narrative
+
             LAST.update(at=utcnow(), ok=True, detail="ok", **summary)
+            LAST["line"] = narrative.cycle_line(stats(db), summary)
             return summary
         except Exception as e:  # noqa: BLE001
             log.exception("cycle failed")

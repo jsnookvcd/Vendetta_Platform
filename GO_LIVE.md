@@ -141,6 +141,13 @@ Autonomy page, every default is safe for a first deployment (escalation and host
 actions propose; notes, nudges, re-syncs and briefs are automatic). Leave it
 there until you have watched a few days of proposals; then widen what it may do.
 
+For the SOC wall display, read `/vendetta/sabine/KIOSK_TOKEN` from SSM and open
+`https://sabine.<domain>/board?k=<token>` once on that screen; it keeps a cookie
+and refreshes itself, and nothing on it can approve anything. The board and the
+Ask page speak through the browser by default; set `TTS_PROVIDER=elevenlabs` (or
+`azure`) with its key and a voice id under `/vendetta/sabine/` for one consistent
+voice everywhere, then redeploy sabine.
+
 
 
 Open Connections on the control plane (`localhost:8300`). Every built module should
