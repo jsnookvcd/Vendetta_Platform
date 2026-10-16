@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}{{ b.title }}{% endblock %}
+{% block topbar %}<a class="btn btn-sm" href="/briefs/{{ b.id }}/download">Download .md</a>{% endblock %}
+{% block body %}
+<div class="panel pad"><pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.5">{{ b.body_md }}</pre></div>
+<p class="faint" style="font-size:12px; margin-top:8px">Written {{ b.created_at.strftime('%b %d, %Y %H:%M') }} ({{ b.source }}). Review before sending; SABINE writes from live data and does not know what you have already told the client.</p>
+{% endblock %}

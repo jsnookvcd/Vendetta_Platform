@@ -245,12 +245,12 @@ resource "random_password" "admin" {
 }
 
 locals {
-  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "marlow"]
+  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine"]
   finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
   client_modules  = [for k in keys(local.deployed) : k if k != "platform"]
   # Modules that serve findings or clients, as the control plane's directory lists
-  # them (MARLOW is an agent over the platform, not a module the platform pushes to).
-  directory_modules = [for k in local.client_modules : k if k != "marlow"]
+  # them (SABINE is an agent over the platform, not a module the platform pushes to).
+  directory_modules = [for k in local.client_modules : k if k != "sabine"]
 
   # Service addresses on the shared docker network ("vendetta"): each module's web
   # container is reachable by its module key on port 8000 from any other container.
@@ -347,11 +347,11 @@ resource "aws_ssm_parameter" "module_directory" {
   value = jsonencode(local.module_directory)
 }
 
-# MARLOW's reach: every deployed module including the control plane and the hub,
+# SABINE's reach: every deployed module including the control plane and the hub,
 # each with its own token, so the brain acts through each module's API as itself.
-resource "aws_ssm_parameter" "marlow_directory" {
-  count = contains(keys(local.deployed), "marlow") ? 1 : 0
-  name  = "${var.ssm_prefix}/marlow/MODULE_DIRECTORY"
+resource "aws_ssm_parameter" "sabine_directory" {
+  count = contains(keys(local.deployed), "sabine") ? 1 : 0
+  name  = "${var.ssm_prefix}/sabine/MODULE_DIRECTORY"
   type  = "SecureString"
   tier  = "Advanced"
   value = jsonencode({
@@ -359,7 +359,7 @@ resource "aws_ssm_parameter" "marlow_directory" {
       base_url   = local.service_url[k]
       token      = random_password.api_token[k].result
       public_url = local.public_url[k]
-    } if k != "marlow"
+    } if k != "sabine"
   })
 }
 

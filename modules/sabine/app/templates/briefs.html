@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Briefs{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">Documents SABINE wrote for a person to review and send. {% if narrative_on %}Narrative by the configured model, from facts SABINE gathered.{% else %}Written from templates; set ANTHROPIC_API_KEY for prose.{% endif %}</p>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Brief</th><th>Kind</th><th>Client</th><th>Written</th><th>By</th><th></th></tr></thead>
+  <tbody>{% for b in briefs %}<tr>
+    <td><a href="/briefs/{{ b.id }}"><b>{{ b.title }}</b></a></td><td class="faint">{{ b.kind }}</td><td class="faint">{{ b.client }}</td>
+    <td class="faint nowrap">{{ b.created_at.strftime('%b %d %H:%M') }}</td><td class="faint">{{ b.source }}</td>
+    <td><a class="alink" href="/briefs/{{ b.id }}/download">download</a></td>
+  </tr>{% else %}<tr><td colspan="6" class="faint">None yet. Briefs are written on each cycle for clients with active work.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

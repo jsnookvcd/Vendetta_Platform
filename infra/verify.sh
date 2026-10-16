@@ -6,7 +6,7 @@
 # plane, every module pulling its roster, escalation configured, no placeholder
 # secrets, sign-in possible. Read-only: it changes nothing.
 #
-#   PLATFORM=http://localhost:8300 IR=http://localhost:8100 MS=http://localhost:8200 MARLOW=http://localhost:8600 \
+#   PLATFORM=http://localhost:8300 IR=http://localhost:8100 MS=http://localhost:8200 SABINE=http://localhost:8600 \
 #   DW=http://localhost:8000 VM=http://localhost:8400 PT=http://localhost:8500 \
 #   PLATFORM_TOKEN=<control-plane API token> bash infra/verify.sh
 #
@@ -20,7 +20,7 @@ MS="${MS:-http://localhost:8200}"
 DW="${DW:-http://localhost:8000}"
 VM="${VM:-http://localhost:8400}"
 PT="${PT:-http://localhost:8500}"
-MARLOW="${MARLOW:-http://localhost:8600}"
+SABINE="${SABINE:-http://localhost:8600}"
 PLATFORM_TOKEN="${PLATFORM_TOKEN:-}"
 
 pass=0; fail=0; warn=0
@@ -41,7 +41,7 @@ health "managed svcs"   "$MS"
 health "dark web"       "$DW"
 health "vuln mgmt"      "$VM"
 health "pentest"        "$PT"
-health "MARLOW"         "$MARLOW"
+health "SABINE"         "$SABINE"
 
 if [ -z "$PLATFORM_TOKEN" ]; then
   echo "Cross-module wiring"

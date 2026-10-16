@@ -13,11 +13,11 @@ modules/dark-web-monitoring/infra for running that module alone.
   first boot and brings up every deployed module with `docker compose`, each a
   separate project on its own port (control plane 8300, IR hub 8100, managed
   services 8200, dark web 8000, vulnerability management 8400, penetration
-  testing 8500, MARLOW 8600), all on one shared docker network ("vendetta") where each module
+  testing 8500, SABINE 8600), all on one shared docker network ("vendetta") where each module
   answers at `http://<module-key>:8000`.
 - One ALB (optional, off by default) routing each module by hostname:
   platform.<domain>, ir.<domain>, msp.<domain>, darkweb.<domain>, vuln.<domain>,
-  pentest.<domain>, marlow.<domain>, with an ACM certificate covering all of them and Route53
+  pentest.<domain>, sabine.<domain>, with an ACM certificate covering all of them and Route53
   records. Listener priorities are fixed per module (`listener_priorities`) so
   adding one never reshuffles the rest. The instance has no inbound rules except
   the module ports from the ALB security group.

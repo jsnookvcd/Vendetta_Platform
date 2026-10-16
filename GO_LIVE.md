@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (MARLOW) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -135,7 +135,7 @@ for SSO stay admitted to the control plane as the break-glass path.
 
 ## 4. Confirm the modules are wired
 
-MARLOW is on the Connections page too (`http://marlow:8000`, host `marlow.`). Open
+SABINE is on the Connections page too (`http://sabine:8000`, host `sabine.`). Open
 its console: the overview shows what it can see and the queue. Run a cycle. On the
 Autonomy page, every default is safe for a first deployment (escalation and host
 actions propose; notes, nudges, re-syncs and briefs are automatic). Leave it

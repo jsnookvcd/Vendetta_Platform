@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Ask SABINE{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">
+  <p style="margin:0 0 10px">{{ tagline }}</p>
+  <form method="post" action="/ask">
+    <label class="field">Question<input name="question" value="{{ question }}" placeholder="Which clients have critical findings with no case open?" required autofocus></label>
+    <div style="margin-top:10px"><button class="btn btn-primary">Ask</button></div>
+  </form>
+  <p class="faint" style="font-size:12px; margin:8px 0 0">SABINE answers from what it can see across every module right now. {% if not narrative_on %}No language model is configured; set ANTHROPIC_API_KEY for a written answer.{% endif %}</p>
+</div>
+{% if answer %}<div class="panel pad"><pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.5">{{ answer }}</pre><div class="faint" style="font-size:12px; margin-top:8px">source: {{ source }}</div></div>{% endif %}
+{% endblock %}

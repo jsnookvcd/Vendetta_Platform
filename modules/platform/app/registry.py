@@ -17,7 +17,7 @@ DEFAULT_MODULES = [
     ("managed-services", "Managed Services", "managed-security", "in-progress", True, 30),
     ("vulnerability-management", "Vulnerability Management", "managed-security", "in-progress", True, 40),
     ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
-    ("marlow", "MARLOW", "agent", "in-progress", False, 55),
+    ("sabine", "SABINE", "agent", "in-progress", False, 55),
     ("mdr", "Managed Detection and Response", "managed-security", "planned", False, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
@@ -70,7 +70,7 @@ PROBE = {
         "label": "open findings",
         "severity_key": "severity",
     },
-    "marlow": {
+    "sabine": {
         "manifest": "/api/module",
         "items": "/api/queue",
         "label": "open work",

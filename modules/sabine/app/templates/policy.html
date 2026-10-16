@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Autonomy{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">What SABINE may do on its own. <b>off</b>: never raised. <b>propose</b>: written up and waits for a person. <b>auto</b>: done as soon as the rule fires, and recorded. A high-risk action can never be automatic, and SABINE never touches a client host.</p>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Action</th><th>Domain</th><th>Risk</th><th>Autonomy</th></tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td><b>{{ r.label }}</b><div class="faint" style="font-size:12px">{{ r.description }}</div></td>
+    <td class="faint">{{ r.domain }}</td><td><span class="chip">{{ r.risk }}</span></td>
+    <td class="nowrap">{% if is_admin %}<form class="inline row" method="post" action="/policy/{{ r.action }}" style="gap:6px">
+      <select name="autonomy">{% for l in levels %}{% if l != 'auto' or r.can_auto %}<option value="{{ l }}" {{ 'selected' if l == r.autonomy }}>{{ l }}</option>{% endif %}{% endfor %}</select>
+      <button class="btn btn-xs">Set</button></form>{% else %}<span class="chip">{{ r.autonomy }}</span>{% endif %}
+      {% if r.updated_by %}<div class="faint" style="font-size:11px">by {{ r.updated_by }}</div>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}
