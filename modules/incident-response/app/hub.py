@@ -1,8 +1,9 @@
 """Engagement hub logic: receiving escalations from other modules.
 
 Modules run their own databases, so a module's client_id is not this hub's
-client_id. Resolution order for the client: hub id, then exact name match
-(case-insensitive), then create the client so the escalation is never dropped.
+client_id. Resolution order for the client: the shared platform client id, then
+exact name match (case-insensitive), then create the client so the escalation is
+never dropped. The shape every module sends is docs/contracts/escalation.schema.json.
 
 Link-or-open: if the payload's case_ref names an open hub case, the finding is
 attached to that case. Otherwise a new case is opened. Either way the finding
@@ -21,14 +22,13 @@ VALID_SEV = {"low", "medium", "high", "critical"}
 
 
 def resolve_client(db: Session, client_id: str, name: str, platform_client_id: str = "") -> Client:
-    """Resolution order: the shared platform client id, then this hub's own id,
-    then an exact name match, then create. A client resolved by hub id or name is
+    """Resolution order: the shared platform client id, then an exact name match,
+    then create. The source module's own client_id is its database key, not ours,
+    so it is never used to look up a hub client. A client resolved by name is
     stamped with the platform id so later escalations match on it directly."""
     c = None
     if platform_client_id:
         c = db.execute(select(Client).where(Client.platform_client_id == platform_client_id)).scalar_one_or_none()
-    if c is None and client_id:
-        c = db.get(Client, client_id)
     if c is None and name:
         c = db.execute(select(Client).where(func.lower(Client.name) == name.strip().lower())).scalar_one_or_none()
     if c is not None:
@@ -63,7 +63,7 @@ def escalate(db: Session, payload: dict, actor: str) -> tuple[Case, bool]:
     ws = payload.get("workstream") or finding.get("workstream") or WORKSTREAMS[0]
     ws = ws if ws in WORKSTREAMS else WORKSTREAMS[0]
     module = payload.get("source_module") or finding.get("module") or "unknown"
-    summary = (payload.get("summary") or finding.get("title") or "Escalated finding")[:300]
+    summary = (payload.get("summary") or payload.get("title") or finding.get("title") or "Escalated finding")[:300]
 
     case = None
     ref = (payload.get("case_ref") or subject.get("case_ref") or "").strip()

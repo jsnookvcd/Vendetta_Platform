@@ -668,7 +668,9 @@ def portal_declare(description: str = Form(""), ident: auth.Identity = Depends(a
 def _case_json(case: Case) -> dict:
     return {
         "id": case.id, "case_id": case.number, "number": case.number, "seq": case.seq,
-        "title": case.title, "client": {"id": case.client_id, "name": case.client.name},
+        "title": case.title,
+        "client": {"id": case.client_id, "name": case.client.name,
+                   "platform_client_id": case.client.platform_client_id or ""},
         "severity": case.severity, "status": case.status, "origin": case.origin,
         "source_module": case.source_module, "lead": case.lead, "privileged": case.privileged,
         "opened_at": case.opened_at.isoformat(), "closed_at": case.closed_at.isoformat() if case.closed_at else None,
@@ -694,13 +696,18 @@ def api_module(user: str = Depends(auth.api_user)):
 
 
 @app.get("/api/ir-cases")
-def api_cases(status: str = Query("active"), client: str = Query(""), user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_cases(status: str = Query("active"), client: str = Query(""), platform_client_id: str = Query(""),
+              user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """status: active (default; "open" is a synonym), all, or a literal case status.
+    Filter by the shared platform_client_id or a client-name substring."""
     q = select(Case).options(selectinload(Case.client), selectinload(Case.workstreams), selectinload(Case.tasks))
-    if status == "active":
+    if status in ("active", "open"):
         q = q.where(Case.status != "closed")
     elif status != "all":
         q = q.where(Case.status == status)
-    if client:
+    if platform_client_id:
+        q = q.join(Client).where(Client.platform_client_id == platform_client_id)
+    elif client:
         q = q.join(Client).where(Client.name.ilike(f"%{client}%"))
     return [_case_json(c) for c in db.execute(q.order_by(desc(Case.seq)).limit(500)).scalars().all()]
 
@@ -720,7 +727,11 @@ async def api_escalate(request: Request, user: str = Depends(auth.api_user), db:
 @app.post("/api/ir-cases/declare")
 async def api_declare(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     payload = await request.json()
-    c = hub.resolve_client(db, payload.get("client_id", ""), payload.get("client", ""))
+    # client_id here is a hub client id (this is the hub's own API); fall back to the
+    # shared platform id, then the name, the same way an escalation resolves.
+    c = db.get(Client, payload.get("client_id") or "") if payload.get("client_id") else None
+    if c is None:
+        c = hub.resolve_client(db, "", payload.get("client", ""), payload.get("platform_client_id", ""))
     db.refresh(c)
     case = _declare(db, c, payload.get("description", ""), f"api:{user}", payload.get("severity", "high"))
     return {"case_id": case.number, "id": case.id}

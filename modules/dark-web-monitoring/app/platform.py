@@ -67,9 +67,11 @@ def escalate(hit: Hit, db: Session) -> dict:
         "source_module": "dark-web-monitoring",
         "client_id": hit.client_id,
         "platform_client_id": hit.client.platform_client_id,
+        "client": hit.client.name,
         "case_ref": hit.client.case_ref,
         "severity": hit.severity,
         "summary": f"Dark web {hit.reason} finding: {hit.item.title}"[:250],
+        "title": f"Dark web {hit.reason} finding: {hit.item.title}"[:250],
         "finding": finding_dict(hit, db),
         "workstream": "Forensics and Analysis",
     }

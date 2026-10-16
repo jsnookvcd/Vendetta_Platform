@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vendettacyber.com/contracts/escalation.schema.json",
+  "title": "Vendetta Platform escalation",
+  "description": "What a module POSTs to the IR hub at /api/ir-cases to open or link a case. The hub resolves the client by platform_client_id, then by client name, and never creates duplicates when the platform id is present.",
+  "type": "object",
+  "required": [
+    "source_module",
+    "platform_client_id",
+    "client",
+    "severity",
+    "summary",
+    "workstream",
+    "finding"
+  ],
+  "properties": {
+    "source_module": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": "string",
+      "description": "The module's own client id, informational only."
+    },
+    "platform_client_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "client": {
+      "type": "string",
+      "description": "Client display name."
+    },
+    "case_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "An open hub case number to attach to; blank opens a new case."
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "The case title when a new case is opened."
+    },
+    "title": {
+      "type": "string",
+      "description": "Same text as summary; kept for callers that sent title before summary existed."
+    },
+    "workstream": {
+      "type": "string",
+      "enum": [
+        "Scoping and Containment",
+        "Forensics and Analysis",
+        "Recovery and Restoration",
+        "Notification and Legal",
+        "Resilience and Hardening"
+      ]
+    },
+    "finding": {
+      "$ref": "finding.schema.json"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vendettacyber.com/contracts/escalation-result.schema.json",
+  "title": "Vendetta Platform escalation result",
+  "description": "What the hub returns from POST /api/ir-cases, and what each module's POST /api/findings/{id}/escalate returns to its caller.",
+  "type": "object",
+  "required": [
+    "case_id",
+    "id"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "description": "The hub case number, e.g. VCD-IR-2026-781."
+    },
+    "id": {
+      "type": "string"
+    },
+    "linked": {
+      "type": "boolean",
+      "description": "True when attached to an already-open case named by case_ref."
+    }
+  }
+}

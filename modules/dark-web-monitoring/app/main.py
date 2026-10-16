@@ -7,6 +7,7 @@ import logging
 
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -686,16 +687,22 @@ def api_module(user: str = Depends(auth.api_user)):
 
 
 @app.get("/api/findings")
-def api_findings(status: str = Query("open"), client: str = Query(""), reason: str = Query(""),
+def api_findings(status: str = Query("active"), client: str = Query(""), reason: str = Query(""),
+                 platform_client_id: str = Query(""),
                  user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Shared finding model. status: active (default; "open" is a synonym the hub
+    and other modules may send), all, or a literal hit status. Filter by the shared
+    platform_client_id, or by a client-name substring."""
     q = select(Hit).options(selectinload(Hit.client), selectinload(Hit.item), selectinload(Hit.term))
-    if status == "open":
+    if status in ("active", "open"):
         q = q.where(Hit.status.in_(("new", "reviewing")))
     elif status != "all":
         q = q.where(Hit.status == status)
     if reason:
         q = q.where(Hit.reason == reason)
-    if client:
+    if platform_client_id:
+        q = q.join(Client).where(Client.platform_client_id == platform_client_id)
+    elif client:
         q = q.join(Client).where(Client.name.ilike(f"%{client}%"))
     rows = db.execute(q.order_by(desc(Hit.created_at)).limit(500)).scalars().all()
     return [platform.finding_dict(h, db) for h in rows]
@@ -714,9 +721,12 @@ def api_escalate(hid: str, user: str = Depends(auth.api_user), db: Session = Dep
     h = db.get(Hit, hid)
     if not h:
         raise HTTPException(404)
-    result = platform.escalate(h, db)
+    try:
+        result = platform.escalate(h, db)
+    except httpx.HTTPError as e:
+        result = {"escalated": False, "reason": f"hub error: {type(e).__name__}"}
     _audit(db, user, "finding.escalate", f"{hid}: {result}")
-    return result
+    return JSONResponse(result, status_code=200 if result.get("escalated") else 502)
 
 
 @app.post("/hits/{hid}/escalate")

@@ -857,12 +857,20 @@ def api_module(user: str = Depends(auth.api_user)):
 
 
 @app.get("/api/findings")
-def api_findings(status: str = Query("active"), user: str = Depends(auth.api_user),
-                 db: Session = Depends(get_db)):
+def api_findings(status: str = Query("active"), platform_client_id: str = Query(""), client: str = Query(""),
+                 user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Shared finding model. status: active (default; "open" is a synonym), all, or a
+    literal alert status. Filter by the shared platform_client_id or a client-name substring."""
     from . import hub as hub_mod
     q = select(Alert).options(selectinload(Alert.client), selectinload(Alert.device))
-    if status == "active":
+    if status in ("active", "open"):
         q = q.where(Alert.status != "resolved")
+    elif status != "all":
+        q = q.where(Alert.status == status)
+    if platform_client_id:
+        q = q.join(Client).where(Client.platform_client_id == platform_client_id)
+    elif client:
+        q = q.join(Client).where(Client.name.ilike(f"%{client}%"))
     rows = db.execute(q.order_by(desc(Alert.updated_at)).limit(1000)).scalars().all()
     return [hub_mod.finding_dict(a) for a in rows]
 
@@ -871,6 +879,17 @@ def api_findings(status: str = Query("active"), user: str = Depends(auth.api_use
 def healthz(db: Session = Depends(get_db)):
     db.execute(text("select 1"))
     return {"ok": True}
+
+
+@app.post("/api/findings/{aid}/escalate")
+def api_alert_escalate(aid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Escalate one alert into the IR hub over the service API."""
+    a = _get_alert(db, aid)
+    ok, detail = act.escalate_alert(db, a, user)
+    _audit(db, user, "alert.escalate", f"{a.id}: {detail}")
+    if ok:
+        return {"escalated": True, "case": detail}
+    return JSONResponse({"escalated": False, "reason": detail}, status_code=502)
 
 
 # ---------------------------------------------------------------- platform link

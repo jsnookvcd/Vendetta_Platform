@@ -437,7 +437,7 @@ def finding_del_step(fid: str, sid: str, user: str = auth.RequireUser, db: Sessi
 @app.post("/findings/{fid}/escalate")
 def finding_escalate(fid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     f = _get_finding(db, fid)
-    result = platform_mod.escalate(f)
+    result = platform_mod.escalate(f, db)
     _audit(db, user, "finding.escalate", f"{f.title}: {result}")
     flag = "msg=escalated+to+hub" if result.get("escalated") else f"err={str(result.get('reason', 'failed')).replace(' ', '+')}"
     return RedirectResponse(f"/findings/{fid}?{flag}", status_code=302)
@@ -540,12 +540,32 @@ def api_module(user: str = Depends(auth.api_user)):
 
 
 @app.get("/api/findings")
-def api_findings(status: str = Query("active"), user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_findings(status: str = Query("active"), platform_client_id: str = Query(""), client: str = Query(""),
+                 user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Shared finding model. status: active (default; "open" is a synonym), all, or a
+    literal finding status. Filter by the shared platform_client_id or a client-name substring."""
     q = select(Finding).options(selectinload(Finding.engagement).selectinload(Engagement.client))
-    if status == "active":
+    if status in ("active", "open"):
         q = q.where(Finding.status.in_(OPEN_STATUSES))
+    elif status != "all":
+        q = q.where(Finding.status == status)
+    if platform_client_id:
+        q = q.join(Client, Finding.client_id == Client.id).where(Client.platform_client_id == platform_client_id)
+    elif client:
+        q = q.join(Client, Finding.client_id == Client.id).where(Client.name.ilike(f"%{client}%"))
     rows = db.execute(q.order_by(Finding.cvss.desc()).limit(1000)).scalars().all()
     return [platform_mod.finding_dict(f) for f in rows]
+
+
+@app.post("/api/findings/{fid}/escalate")
+def api_finding_escalate(fid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Escalate one finding into the IR hub over the service API (the control plane
+    or another module can drive this). Same result shape as every module:
+    {escalated, case, linked} or {escalated: false, reason}."""
+    f = _get_finding(db, fid)
+    result = platform_mod.escalate(f, db)
+    _audit(db, user, "finding.escalate", f"{f.title}: {result}")
+    return JSONResponse(result, status_code=200 if result.get("escalated") else 502)
 
 
 # ---------------------------------------------------------------- platform link

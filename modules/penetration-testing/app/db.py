@@ -95,6 +95,8 @@ class Finding(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     engagement_id: Mapped[str] = mapped_column(ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
     client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    # IR hub case number this finding was escalated into, if any.
+    escalated_case: Mapped[str] = mapped_column(String(60), default="")
     title: Mapped[str] = mapped_column(String(400))
     asset: Mapped[str] = mapped_column(String(300), default="")
     cve: Mapped[str] = mapped_column(String(40), default="")
@@ -280,6 +282,13 @@ def _evidence_before_flush(session, flush_context, instances):  # noqa: ANN001
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    from sqlalchemy import text as _text
+
+    with engine.begin() as conn:
+        have = conn.execute(_text("SELECT 1 FROM information_schema.columns "
+                                  "WHERE table_name = 'findings' AND column_name = 'escalated_case'")).first()
+        if not have:
+            conn.execute(_text("ALTER TABLE findings ADD COLUMN escalated_case VARCHAR(60) DEFAULT ''"))
 
 
 def severity_trend(db: Session, client_id: str, limit: int = 12) -> list[dict]:

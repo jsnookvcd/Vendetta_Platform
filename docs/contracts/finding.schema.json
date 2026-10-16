@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vendettacyber.com/contracts/finding.schema.json",
+  "title": "Vendetta Platform shared finding",
+  "description": "What every finding-serving module returns from GET /api/findings and embeds in an escalation. The IR hub reads this shape from every module the same way.",
+  "type": "object",
+  "required": [
+    "id",
+    "module",
+    "subject",
+    "type",
+    "severity",
+    "status",
+    "title",
+    "evidence",
+    "workstream"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The module's own id for the finding."
+    },
+    "module": {
+      "type": "string",
+      "enum": [
+        "dark-web-monitoring",
+        "managed-services",
+        "vulnerability-management",
+        "penetration-testing",
+        "mdr",
+        "network-operations"
+      ]
+    },
+    "platform": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "client_id",
+        "platform_client_id",
+        "client"
+      ],
+      "properties": {
+        "client_id": {
+          "type": "string",
+          "description": "The module's own client id; never used by another module to look a client up."
+        },
+        "platform_client_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The control plane's client id, the key every module shares."
+        },
+        "client": {
+          "type": "string",
+          "description": "Client display name, the fallback match."
+        },
+        "case_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "An IR hub case number, or empty."
+        }
+      }
+    },
+    "type": {
+      "type": "string"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "description": "info is collapsed to low before it leaves the module."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new",
+        "reviewing",
+        "confirmed",
+        "false_positive",
+        "closed"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "matched": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_group": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "published_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "analyst_notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "workstream": {
+      "type": "string",
+      "enum": [
+        "Scoping and Containment",
+        "Forensics and Analysis",
+        "Recovery and Restoration",
+        "Notification and Legal",
+        "Resilience and Hardening"
+      ]
+    },
+    "cve": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cvss": {
+      "type": [
+        "number",
+        "string",
+        "null"
+      ]
+    },
+    "alert_refs": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}
