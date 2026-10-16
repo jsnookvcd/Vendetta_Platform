@@ -245,9 +245,12 @@ resource "random_password" "admin" {
 }
 
 locals {
-  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing"]
+  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "marlow"]
   finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
   client_modules  = [for k in keys(local.deployed) : k if k != "platform"]
+  # Modules that serve findings or clients, as the control plane's directory lists
+  # them (MARLOW is an agent over the platform, not a module the platform pushes to).
+  directory_modules = [for k in local.client_modules : k if k != "marlow"]
 
   # Service addresses on the shared docker network ("vendetta"): each module's web
   # container is reachable by its module key on port 8000 from any other container.
@@ -256,7 +259,7 @@ locals {
 
   # What the control plane needs to wire every module without hand entry.
   module_directory = {
-    for k in local.client_modules : k => {
+    for k in local.directory_modules : k => {
       base_url   = local.service_url[k]
       token      = random_password.api_token[k].result
       public_url = local.public_url[k]
@@ -342,6 +345,22 @@ resource "aws_ssm_parameter" "module_directory" {
   type  = "SecureString"
   tier  = "Advanced"
   value = jsonencode(local.module_directory)
+}
+
+# MARLOW's reach: every deployed module including the control plane and the hub,
+# each with its own token, so the brain acts through each module's API as itself.
+resource "aws_ssm_parameter" "marlow_directory" {
+  count = contains(keys(local.deployed), "marlow") ? 1 : 0
+  name  = "${var.ssm_prefix}/marlow/MODULE_DIRECTORY"
+  type  = "SecureString"
+  tier  = "Advanced"
+  value = jsonencode({
+    for k in keys(local.deployed) : k => {
+      base_url   = local.service_url[k]
+      token      = random_password.api_token[k].result
+      public_url = local.public_url[k]
+    } if k != "marlow"
+  })
 }
 
 # Non-secret defaults per module. Rendered into .env at first boot and again on

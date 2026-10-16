@@ -107,6 +107,14 @@ def _module_checks(module, probe: dict) -> list[dict]:
     if integ.get("kind") == "response-tools":
         n, total = integ.get("wired", 0), integ.get("total", 0)
         checks.append(_chk("Response tools wired", "ok" if n else "warn", f"{n} of {total} connected"))
+    elif integ.get("kind") == "agent":
+        n = len(integ.get("reach") or [])
+        if integ.get("last_cycle_ok") is False:
+            checks.append(_chk("MARLOW cycle", "warn", f"last cycle failed: {integ.get('last_cycle_detail')}"))
+        elif n < 2:
+            checks.append(_chk("MARLOW reach", "warn", "MODULE_DIRECTORY reaches fewer than two modules"))
+        else:
+            checks.append(_chk("MARLOW reach", "ok", f"{n} modules, narrative: {integ.get('narrative')}"))
     elif integ.get("kind"):
         checks.append(_chk("Integrations", "ok", integ.get("kind").replace("-", " ")))
     return checks

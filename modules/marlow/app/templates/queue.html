@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Queue{% endblock %}
+{% block body %}
+<div class="row" style="gap:8px; margin-bottom:12px; flex-wrap:wrap">
+  {% for d, label in [('', 'All'), ('soc', 'SOC'), ('admin', 'Administration'), ('services', 'Professional services')] %}
+  <a class="btn btn-sm {{ 'btn-primary' if domain == d else 'btn-ghost' }}" href="/queue?domain={{ d }}&state={{ state }}">{{ label }}</a>{% endfor %}
+  <span style="margin-left:auto"></span>
+  {% for s, label in [('open', 'Open'), ('done', 'Done'), ('gone', 'Resolved in module'), ('all', 'Everything')] %}
+  <a class="btn btn-sm {{ 'btn-primary' if state == s else 'btn-ghost' }}" href="/queue?domain={{ domain }}&state={{ s }}">{{ label }}</a>{% endfor %}
+</div>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Sev</th><th>Item</th><th>Client</th><th>Domain</th><th>Source</th><th>Since</th><th></th></tr></thead>
+  <tbody>{% for w in items %}<tr class="{{ 'faint' if w.state in ('done', 'gone') }}">
+    <td><span class="stchip st-{{ w.severity }}">{{ w.severity }}</span></td>
+    <td>{{ w.title }}{% if w.payload.get('rationale') %}<div class="faint" style="font-size:12px">{{ w.payload.rationale|truncate(200) }}</div>{% endif %}{% if w.state == 'claimed' %}<div class="faint" style="font-size:12px">claimed by {{ w.owner }}</div>{% endif %}</td>
+    <td class="faint">{{ w.client }}</td><td class="faint">{{ w.domain }}</td><td class="faint">{{ w.source }}</td>
+    <td class="faint nowrap">{{ w.first_seen.strftime('%b %d %H:%M') }}</td>
+    <td class="nowrap">{% if w.link %}<a class="alink" href="{{ w.link }}" target="_blank" rel="noopener">open</a> {% endif %}
+      {% if w.state == 'open' %}<form class="inline" method="post" action="/queue/{{ w.id }}/claim"><button class="btn btn-xs btn-ghost">Claim</button></form>{% endif %}
+      {% if w.state in ('open', 'claimed') %}<form class="inline" method="post" action="/queue/{{ w.id }}/done"><button class="btn btn-xs btn-ghost">Done</button></form>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="7" class="faint">Nothing here.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

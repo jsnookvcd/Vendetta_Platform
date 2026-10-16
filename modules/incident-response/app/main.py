@@ -674,6 +674,7 @@ def _case_json(case: Case) -> dict:
         "severity": case.severity, "status": case.status, "origin": case.origin,
         "source_module": case.source_module, "lead": case.lead, "privileged": case.privileged,
         "opened_at": case.opened_at.isoformat(), "closed_at": case.closed_at.isoformat() if case.closed_at else None,
+        "last_update_at": (case.updates[0].at.isoformat() if case.updates else case.opened_at.isoformat()),
         "workstreams": [
             {"name": w.name, "status": w.status, "owner": w.owner,
              "cards": {s: sum(1 for t in case.tasks if t.workstream == w.name and t.status == s) for s in board.TASK_STATUSES}}
@@ -700,7 +701,8 @@ def api_cases(status: str = Query("active"), client: str = Query(""), platform_c
               user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     """status: active (default; "open" is a synonym), all, or a literal case status.
     Filter by the shared platform_client_id or a client-name substring."""
-    q = select(Case).options(selectinload(Case.client), selectinload(Case.workstreams), selectinload(Case.tasks))
+    q = select(Case).options(selectinload(Case.client), selectinload(Case.workstreams), selectinload(Case.tasks),
+                             selectinload(Case.updates))
     if status in ("active", "open"):
         q = q.where(Case.status != "closed")
     elif status != "all":

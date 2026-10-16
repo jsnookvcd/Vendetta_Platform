@@ -10,6 +10,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 - penetration-testing: engagements and findings with a retest loop, the report rendered from findings at close, a client portal with a cross-engagement trend and click-through remediation, and escalation to the hub. Built, tested and deployed. See modules/penetration-testing.
 - incident-response: IR cases and retainers; the engagement hub spine, with the five-workstream case template, one-button incident declaration, a client portal and the escalation API. Built; first deploy pending.
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
+- marlow: MARLOW, the agentic brain. One operator queue across every module, proposals with rationale at a per-action autonomy level, action only through module APIs as itself, a signed ledger of everything it did, briefs and a daily summary. Built and tested. See modules/marlow.
 - mdr: managed detection and response: investigations with verdicts and analyst actions rather than raw alerts, convertible to an IR case. Planned.
 - network-operations: managed network and infrastructure operations: device and service health, change and maintenance tracking. Planned.
 

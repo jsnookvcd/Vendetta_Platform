@@ -62,6 +62,19 @@ modules:
     role: engagement-hub
     notes: Built and tested; first deploy pending. IR cases, retainers, five-workstream template, incident declaration, client portal.
 
+  - name: marlow
+    display_name: MARLOW
+    role: agent
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    notes: >-
+      Monitoring, Analysis, Response, Lifecycle and Operations Workflow: the
+      agentic brain. One operator queue across administration, the SOC and
+      professional services; proposals with rationale at a per-action autonomy
+      level; acts only through module APIs as "api:marlow"; never touches a host;
+      signed ledger. Port 8600.
+
   - name: mdr
     display_name: Managed Detection and Response
     service_lines: [managed-security]

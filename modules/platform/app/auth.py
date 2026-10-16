@@ -130,7 +130,9 @@ def api_user(request: Request) -> str:
     the API can never return another tenant's data to a client."""
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], api_token()):
-        return "api"
+        # A caller may name itself (MARLOW does) so audit entries read api:<actor>.
+        actor = "".join(ch for ch in request.headers.get("x-vendetta-actor", "") if ch.isalnum() or ch in "-_.")[:40]
+        return f"api:{actor}" if actor else "api"
     return current_user(request)
 
 

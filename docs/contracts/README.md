@@ -20,7 +20,9 @@ Client identity across modules is the `platform_client_id` the control plane
 assigns. A module's own `client_id` is its database key and is informational
 only; name is the fallback match when the platform id is absent.
 
-Authentication is `Authorization: Bearer <that module's API_TOKEN>`. The control
+Authentication is `Authorization: Bearer <that module's API_TOKEN>`. A caller may
+name itself with `X-Vendetta-Actor: <name>` (MARLOW does), and the module's audit
+log then attributes the call to `api:<name>`. The control
 plane hands the hub each finding module's token through `GET /api/platform/modules`.
 
 Staff: `GET /api/platform/staff?module=<key>` returns `{governs, staff: [{email,

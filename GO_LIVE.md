@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (MARLOW) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -134,6 +134,14 @@ Staff page locks them out everywhere within seconds. The admin emails configured
 for SSO stay admitted to the control plane as the break-glass path.
 
 ## 4. Confirm the modules are wired
+
+MARLOW is on the Connections page too (`http://marlow:8000`, host `marlow.`). Open
+its console: the overview shows what it can see and the queue. Run a cycle. On the
+Autonomy page, every default is safe for a first deployment (escalation and host
+actions propose; notes, nudges, re-syncs and briefs are automatic). Leave it
+there until you have watched a few days of proposals; then widen what it may do.
+
+
 
 Open Connections on the control plane (`localhost:8300`). Every built module should
 already show a base URL (`http://<module>:8000`), a token, and a last roster push.

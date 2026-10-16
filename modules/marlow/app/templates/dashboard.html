@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}Overview{% endblock %}
+{% block topbar %}<form method="post" action="/run" class="inline"><button class="btn btn-sm">Run a cycle now</button></form>{% endblock %}
+{% block body %}
+<div class="row" style="gap:12px; margin-bottom:16px; flex-wrap:wrap">
+  <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Open work</div><div style="font-size:26px"><b>{{ stats.open }}</b></div><div class="faint" style="font-size:12px">{{ stats.soc }} SOC · {{ stats.admin }} admin · {{ stats.services }} services</div></div>
+  <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Waiting on a decision</div><div style="font-size:26px"><b>{{ stats.pending }}</b></div><div class="faint" style="font-size:12px"><a class="alink" href="/proposals">proposals</a></div></div>
+  <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Last cycle</div><div style="font-size:16px"><b>{% if last.at %}{{ last.at.strftime('%H:%M') }} {{ 'ok' if last.ok else 'failed' }}{% else %}never{% endif %}</b></div><div class="faint" style="font-size:12px">{% if last.at %}{{ last.proposed }} proposed, {{ last.executed }} done{% else %}{{ last.detail }}{% endif %}</div></div>
+  <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Ledger</div><div style="font-size:26px"><b>{{ ledger_n }}</b></div><div class="faint" style="font-size:12px">signed records · <a class="alink" href="/ledger">verify</a></div></div>
+</div>
+
+<div style="display:grid; grid-template-columns: 3fr 2fr; gap:16px; align-items:start">
+<div>
+  <div class="section-head"><h2>Top of the queue</h2><span class="count"><a class="alink" href="/queue">all {{ stats.open }}</a></span></div>
+  <div class="panel"><div class="table-wrap"><table>
+    <thead><tr><th>Sev</th><th>Item</th><th>Client</th><th>Source</th><th></th></tr></thead>
+    <tbody>{% for w in queue %}<tr>
+      <td><span class="stchip st-{{ w.severity }}">{{ w.severity }}</span></td>
+      <td>{{ w.title }}{% if w.state == 'claimed' %} <span class="faint">({{ w.owner }})</span>{% endif %}</td>
+      <td class="faint">{{ w.client }}</td><td class="faint">{{ w.source }}</td>
+      <td class="nowrap">{% if w.link %}<a class="alink" href="{{ w.link }}" target="_blank" rel="noopener">open</a>{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="5" class="faint">Nothing waiting. Run a cycle to look again.</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+
+  <div class="section-head" style="margin-top:16px"><h2>Proposals waiting on you</h2></div>
+  <div class="panel"><ul class="modlist">{% for p in pending %}<li>
+    <div class="ml-main"><div class="ml-name"><a href="/proposals/{{ p.id }}"><b>{{ p.title }}</b></a> <span class="chip">{{ p.risk }} risk</span> <span class="chip">{{ (p.confidence*100)|int }}%</span></div>
+    <div class="ml-sub faint">{{ p.rationale|truncate(180) }}</div></div>
+  </li>{% else %}<li><div class="ml-sub faint">Nothing pending.</div></li>{% endfor %}</ul></div>
+</div>
+<div>
+  <div class="section-head"><h2>What MARLOW can see</h2></div>
+  <div class="panel"><div class="table-wrap"><table>
+    <thead><tr><th>Source</th><th>State</th><th>At</th></tr></thead>
+    <tbody>{% for s in snaps %}<tr><td class="mono" style="font-size:12px">{{ s.source }}</td>
+      <td>{% if s.ok %}<span class="hdot up"></span> ok{% else %}<span class="hdot down"></span> <span class="faint">{{ s.detail }}</span>{% endif %}</td>
+      <td class="faint nowrap">{{ s.at.strftime('%H:%M') }}</td></tr>
+    {% else %}<tr><td colspan="3" class="faint">{% if directory %}No cycle has run yet.{% else %}MODULE_DIRECTORY is not set; MARLOW cannot reach any module.{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+  <div class="section-head" style="margin-top:16px"><h2>Recently done</h2></div>
+  <div class="panel"><ul class="modlist">{% for p in recent %}<li>
+    <div class="ml-main"><div class="ml-name"><a href="/proposals/{{ p.id }}">{{ p.title }}</a></div>
+    <div class="ml-sub faint">{{ 'done' if p.status == 'executed' else 'failed' }}: {{ p.result.get('detail', '') }} · {{ p.autonomy }}{% if p.decided_by %} by {{ p.decided_by }}{% endif %}</div></div>
+  </li>{% else %}<li><div class="ml-sub faint">Nothing yet.</div></li>{% endfor %}</ul></div>
+</div>
+</div>
+{% endblock %}

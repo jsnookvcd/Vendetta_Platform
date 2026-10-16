@@ -72,6 +72,11 @@ variable "modules" {
       port   = 8500
       deploy = true
     }
+    marlow = {
+      subdir = "modules/marlow"
+      port   = 8600
+      deploy = true
+    }
   }
 }
 
@@ -85,6 +90,7 @@ variable "listener_priorities" {
     dark-web-monitoring      = 130
     vulnerability-management = 140
     penetration-testing      = 150
+    marlow                   = 155
     mdr                      = 160
     network-operations       = 170
   }
@@ -144,6 +150,7 @@ variable "module_hosts" {
     dark-web-monitoring      = "darkweb"
     vulnerability-management = "vuln"
     penetration-testing      = "pentest"
+    marlow                   = "marlow"
   }
 }
 

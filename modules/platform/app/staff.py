@@ -8,7 +8,9 @@ when the roster lists them for that module, with the role the roster says.
 Deactivating a person here locks them out of every module on the next push.
 
 Access levels, per module: none (cannot sign in there), analyst (full operational
-access), admin (also settings, SSO, connections and, on the platform, staff).
+access), admin (also settings, SSO, connections and, on the platform, staff). In
+MARLOW, analyst decides low and medium risk proposals; admin also decides
+high-risk hand-offs and sets the autonomy policy.
 Managed services additionally carries two capabilities on the grant: can_act (may
 run response actions) and can_approve (may authorize a destructive action, the
 second-person control).
@@ -28,7 +30,7 @@ MODULE_ROLES = ("none", "analyst", "admin")
 
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
-             "vulnerability-management", "penetration-testing"]
+             "vulnerability-management", "penetration-testing", "marlow"]
 
 # profile key -> (label, description, platform role, {module: (role, config)})
 PROFILES = {
@@ -48,6 +50,7 @@ PROFILES = {
             "dark-web-monitoring": ("analyst", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("analyst", {}),
+            "marlow": ("analyst", {}),
         },
     ),
     "soc-analyst": (
@@ -60,6 +63,7 @@ PROFILES = {
             "dark-web-monitoring": ("analyst", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("none", {}),
+            "marlow": ("analyst", {}),
         },
     ),
     "offensive-security": (
@@ -72,13 +76,14 @@ PROFILES = {
             "dark-web-monitoring": ("none", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("analyst", {}),
+            "marlow": ("none", {}),
         },
     ),
     "leadership": (
         "Leadership",
-        "The platform overview and go-live screen only; no module access until granted.",
+        "The platform overview, the go-live screen and MARLOW's briefs and queue; no other module access until granted.",
         "analyst",
-        {m: ("none", {}) for m in GRANTABLE},
+        {**{m: ("none", {}) for m in GRANTABLE}, "marlow": ("analyst", {})},
     ),
 }
 

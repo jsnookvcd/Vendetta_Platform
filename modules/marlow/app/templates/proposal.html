@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% block title %}{{ prop.title }}{% endblock %}
+{% block body %}
+<div style="display:grid; grid-template-columns: 3fr 2fr; gap:16px; align-items:start">
+<div>
+  <div class="panel pad" style="margin-bottom:16px">
+    <div class="row" style="gap:6px; flex-wrap:wrap"><span class="chip">{{ spec.label }}</span><span class="chip">{{ prop.domain }}</span><span class="chip">{{ prop.risk }} risk</span><span class="chip">autonomy {{ prop.autonomy }}</span><span class="chip">{{ (prop.confidence*100)|int }}% confidence</span><span class="stchip st-{{ prop.status }}">{{ prop.status }}</span></div>
+    <h3 style="margin:12px 0 6px">Why</h3>
+    <p style="margin:0; white-space:pre-wrap">{{ prop.rationale }}</p>
+    <p class="faint" style="font-size:12px; margin:10px 0 0">Raised {{ prop.created_at.strftime('%b %d, %Y %H:%M') }} by MARLOW. {{ spec.description }}</p>
+  </div>
+  {% if prop.status == 'pending' %}
+  <div class="panel pad">
+    <h3 style="margin:0 0 8px">Your decision</h3>
+    {% if can_decide %}
+    <form method="post" action="/proposals/{{ prop.id }}/decide">
+      <label class="field">Note (optional)<textarea name="note" placeholder="Why, for the record"></textarea></label>
+      <div class="row" style="gap:8px; margin-top:10px">
+        <button class="btn btn-primary" name="approve" value="true">Approve{{ ' and hand off' if prop.risk == 'high' else ' and do it' }}</button>
+        <button class="btn btn-ghost" name="approve" value="false">Reject</button>
+      </div>
+    </form>
+    {% if prop.risk == 'high' %}<p class="faint" style="font-size:12px; margin:8px 0 0">MARLOW never performs this itself. Approving records your decision and queues the hand-off; the action is taken in the module, under its approval rules.</p>{% endif %}
+    {% else %}<p class="faint">A high-risk proposal needs an admin.</p>{% endif %}
+  </div>
+  {% elif prop.decided_by %}
+  <div class="panel pad"><b>{{ prop.status }}</b> by {{ prop.decided_by }} at {{ prop.decided_at.strftime('%b %d %H:%M') }}{% if prop.decision_note %}: {{ prop.decision_note }}{% endif %}
+    {% if prop.result %}<div class="faint" style="margin-top:6px">Result: {{ prop.result.get('detail', '') }}</div>{% endif %}</div>
+  {% elif prop.result %}
+  <div class="panel pad"><b>{{ prop.status }}</b> automatically at {{ prop.executed_at.strftime('%b %d %H:%M') if prop.executed_at }}<div class="faint" style="margin-top:6px">Result: {{ prop.result.get('detail', '') }}</div></div>
+  {% endif %}
+</div>
+<div>
+  <div class="section-head"><h2>Facts it rests on</h2></div>
+  <div class="panel pad"><pre class="mono" style="white-space:pre-wrap; font-size:12px; margin:0">{{ prop.facts|tojson(indent=2) }}</pre></div>
+  <div class="section-head" style="margin-top:16px"><h2>Target</h2></div>
+  <div class="panel pad"><pre class="mono" style="white-space:pre-wrap; font-size:12px; margin:0">{{ prop.target|tojson(indent=2) }}</pre>
+    {% if prop.target.get('link') %}<p style="margin:8px 0 0"><a class="alink" href="{{ prop.target.link }}" target="_blank" rel="noopener">open in the module</a></p>{% endif %}</div>
+</div>
+</div>
+{% endblock %}

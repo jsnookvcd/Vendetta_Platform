@@ -4,6 +4,7 @@ and the module switch."""
 import httpx
 
 from app import aggregate, auth
+from app.registry import DEFAULT_MODULES
 from app.config import settings
 from app.db import Client, ClientModule, ClientTool, Module, SessionLocal, ToolConnection
 
@@ -14,7 +15,7 @@ def _bearer():
 
 def test_registry_seeds_modules_and_tools(fresh_db):
     db = SessionLocal()
-    assert db.query(Module).count() == 7
+    assert db.query(Module).count() == len(DEFAULT_MODULES)
     assert db.get(Module, "managed-services").status == "in-progress"
     assert {t.key for t in db.query(ToolConnection).all()} == {
         "superops", "sentinelone", "crowdstrike", "huntress", "acronis"}

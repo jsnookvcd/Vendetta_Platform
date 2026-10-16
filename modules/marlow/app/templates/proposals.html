@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Proposals{% endblock %}
+{% block body %}
+<div class="row" style="gap:8px; margin-bottom:12px; flex-wrap:wrap">
+  {% for s in ['pending', 'executed', 'failed', 'rejected', 'expired', 'all'] %}<a class="btn btn-sm {{ 'btn-primary' if status == s else 'btn-ghost' }}" href="/proposals?status={{ s }}">{{ s }}</a>{% endfor %}
+</div>
+<div class="panel"><ul class="modlist">{% for p in proposals %}<li>
+  <div class="ml-main">
+    <div class="ml-name"><a href="/proposals/{{ p.id }}"><b>{{ p.title }}</b></a> <span class="chip">{{ p.domain }}</span> <span class="chip">{{ p.risk }} risk</span> <span class="chip">{{ p.autonomy }}</span> <span class="chip">{{ (p.confidence*100)|int }}%</span>{% if p.status != 'pending' %} <span class="stchip st-{{ p.status }}">{{ p.status }}</span>{% endif %}</div>
+    <div class="ml-sub faint">{{ p.rationale|truncate(220) }} <span style="opacity:.7">· {{ p.created_at.strftime('%b %d %H:%M') }}</span></div>
+  </div>
+</li>{% else %}<li><div class="ml-sub faint">None.</div></li>{% endfor %}</ul></div>
+{% endblock %}

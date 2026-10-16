@@ -1,0 +1,16 @@
+name: marlow
+display_name: MARLOW
+role: agent
+status: in-progress
+enablement: MODULE_ENABLED
+manifest: /api/module
+port: 8600
+description: >-
+  MARLOW (Monitoring, Analysis, Response, Lifecycle and Operations Workflow) is
+  the agentic brain over the platform. It watches every module through the
+  service APIs, keeps one operator queue across administration, the SOC and
+  professional services, proposes actions with a written rationale, carries out
+  what its autonomy policy allows, hands off anything that touches a host to a
+  responder, and records all of it in a signed chain.
+reach: MODULE_DIRECTORY
+endpoints: [/api/queue, /api/proposals, /api/run, /api/briefs, /api/ledger/verify, /api/module]

@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Ledger{% endblock %}
+{% block topbar %}<a class="btn btn-sm" href="/ledger/export">Export for verification</a>{% endblock %}
+{% block body %}
+<div class="panel pad" style="margin-bottom:14px">{% if verify.ok %}<span class="hdot up"></span> <b>Chain intact</b>: {{ verify.length }} records verified against key {{ verify.key_id }}.{% else %}<span class="hdot down"></span> <b>Chain broken</b> at record {{ verify.broken_at }}: {{ verify.reason }}.{% endif %}
+  <div class="faint" style="font-size:12px; margin-top:4px">Every observation summary, proposal, decision and action MARLOW makes is hash-chained and signed, so what it saw, suggested, who allowed it and what it did can be checked independently.</div></div>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>At</th><th>Kind</th><th>Actor</th><th>Record</th><th>Hash</th></tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td class="faint">{{ r.chain_seq }}</td><td class="faint nowrap">{{ r.at.strftime('%b %d %H:%M:%S') }}</td>
+    <td><span class="chip">{{ r.kind }}</span></td><td class="faint">{{ r.actor }}</td>
+    <td>{{ r.summary }}{% if r.ref %} <a class="alink faint" href="/proposals/{{ r.ref }}" style="font-size:11px">ref</a>{% endif %}</td>
+    <td class="mono faint" style="font-size:11px">{{ r.content_hash[:12] }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

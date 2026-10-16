@@ -25,6 +25,8 @@ def finding_dict(f: Finding) -> dict:
         "reason": f.engagement.kind,
         "severity": f.severity if f.severity != "info" else "low",
         "status": _STATUS.get(f.status, "confirmed"),
+        "native_status": f.status,
+        "engagement": {"id": f.engagement_id, "name": f.engagement.name, "status": f.engagement.status},
         "title": f.title,
         "matched": f.asset,
         "cve": f.cve,
