@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import boot
-from . import aggregate, auth, oidc, readiness as readiness_mod, sso
+from . import aggregate, auth, directory, oidc, readiness as readiness_mod, sso
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
 from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, ToolConnection,
                  User, get_client_module, init_db, slugify, utcnow)
@@ -214,6 +214,7 @@ def add_client(name: str = Form(...), industry: str = Form(""), user: str = auth
     db.add(c)
     db.commit()
     _audit(db, user, "client.add", name)
+    directory.push_sync(db)
     return RedirectResponse(f"/clients/{c.id}", status_code=302)
 
 
@@ -255,7 +256,8 @@ def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form("
     c.executive_emails = execs
     db.commit()
     _audit(db, user, "client.edit", c.name)
-    return _back(f"/clients/{cid}", True, "Client saved.")
+    directory.push_sync(db, keys=c.enabled_modules())
+    return _back(f"/clients/{cid}", True, "Client saved. Modules are being told to sync.")
 
 
 def _domain_clash(db: Session, cid: str, wanted: set[str]) -> tuple[str, str] | None:
@@ -286,6 +288,7 @@ def toggle_module(cid: str, key: str, enabled: bool = Form(False), user: str = a
     cm.activated_at = utcnow()
     db.commit()
     _audit(db, user, "client.module", f"{c.name} {key} {'on' if enabled else 'off'}")
+    directory.push_sync(db, keys={key, "incident-response"})
     return _back(f"/clients/{cid}", True, f"{key} {'activated' if enabled else 'deactivated'} for {c.name}.")
 
 
@@ -304,6 +307,7 @@ def map_tool(cid: str, tool: str, tenancy: str = Form(""), enabled: bool = Form(
     row.updated_at = utcnow()
     db.commit()
     _audit(db, user, "client.tool", f"{c.name} {tool} {'mapped' if row.enabled else 'cleared'}")
+    directory.push_sync(db, keys={"managed-services"})
     return _back(f"/clients/{cid}", True, f"{TOOL_NAMES[tool]} mapping saved for {c.name}.")
 
 
@@ -313,16 +317,18 @@ def connections(request: Request, user: str = auth.RequireUser, db: Session = De
     modules = _modules(db)
     ov = aggregate.overview([m for m in modules if m.base_url])
     tools = db.execute(select(ToolConnection).order_by(ToolConnection.display_name)).scalars().all()
-    return render(request, "connections.html", user=user, modules=modules, ov=ov, tools=tools)
+    return render(request, "connections.html", user=user, modules=modules, ov=ov, tools=tools,
+                  env_dir=directory.env_directory(), last_push=directory.LAST_PUSH)
 
 
 @app.post("/connections/module/{key}")
 def save_module(key: str, base_url: str = Form(""), api_token: str = Form(""), status: str = Form(""),
-                user: str = auth.RequireUser, db: Session = Depends(get_db)):
+                public_url: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     m = db.get(Module, key)
     if not m:
         raise HTTPException(404)
     m.base_url = base_url.strip().rstrip("/")
+    m.public_url = public_url.strip().rstrip("/")
     if api_token.strip():
         m.api_token = api_token.strip()
     if status in _STATUS_RANK:
@@ -331,6 +337,30 @@ def save_module(key: str, base_url: str = Form(""), api_token: str = Form(""), s
     aggregate.clear_cache()
     _audit(db, user, "module.save", f"{key} -> {m.base_url or 'no url'}")
     return _back("/connections", True, f"{m.display_name} connection saved.")
+
+
+@app.post("/connections/apply-directory")
+def apply_directory(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Overwrite module endpoints and tokens with the deployment's MODULE_DIRECTORY."""
+    if not directory.env_directory():
+        return _back("/connections", False, "MODULE_DIRECTORY is not set in this deployment.")
+    n = directory.apply_env_directory(db, force=True)
+    aggregate.clear_cache()
+    _audit(db, user, "module.directory", f"applied to {n} module(s)")
+    return _back("/connections", True, f"Deployment directory applied to {n} module(s).")
+
+
+@app.post("/connections/push")
+def push_roster(user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Tell every connected module to pull the roster now and show the result."""
+    res = directory.push_sync(db, wait=True)
+    if not res:
+        return _back("/connections", False, "No module has a base URL yet.")
+    bad = [k for k, r in res.items() if not r["ok"]]
+    _audit(db, user, "roster.push", f"{len(res)} pushed, {len(bad)} failed")
+    if bad:
+        return _back("/connections", False, f"Pushed to {len(res)} module(s); failed: {', '.join(bad)}.")
+    return _back("/connections", True, f"Roster pushed to {len(res)} module(s).")
 
 
 @app.post("/connections/refresh")
@@ -442,7 +472,8 @@ def platform_modules(user: str = Depends(auth.api_user), db: Session = Depends(g
         if not m.base_url or m.status == "planned":
             continue
         out.append({"name": m.key, "display_name": m.display_name,
-                    "base_url": m.base_url, "token": m.api_token, "findings_path": "/api/findings"})
+                    "base_url": m.base_url, "token": m.api_token, "public_url": m.public_url,
+                    "findings_path": "/api/findings"})
     return {"modules": out}
 
 
@@ -453,7 +484,8 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
         "module": "platform", "display_name": "Vendetta Platform", "role": "control-plane",
         "enabled": settings.module_enabled,
         "modules": {m.key: m.status for m in mods},
-        "endpoints": ["/api/platform/clients", "/api/module"],
+        "public_url": settings.public_url,
+        "endpoints": ["/api/platform/clients", "/api/platform/modules", "/api/platform/readiness", "/api/module"],
     }
 
 

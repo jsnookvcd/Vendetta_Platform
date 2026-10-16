@@ -50,6 +50,51 @@ def _module_checks(module, probe: dict) -> list[dict]:
     checks.append(_chk("Encryption key dedicated", "ok" if keys.get("encryption_dedicated") else "warn",
                        "" if keys.get("encryption_dedicated") else "derived from secret_key; set a dedicated key"))
 
+    post = r.get("posture") or {}
+    if post:
+        if post.get("secret_placeholder"):
+            checks.append(_chk("Secret key set", "fail", "module is running on a placeholder SECRET_KEY"))
+        else:
+            checks.append(_chk("Secret key set", "ok"))
+        if post.get("admin_login_possible") or s.get("verified"):
+            checks.append(_chk("Sign-in possible", "ok",
+                               "SSO verified" if s.get("verified") else "local admin password set"))
+        else:
+            checks.append(_chk("Sign-in possible", "fail",
+                               "no ADMIN_PASSWORD_HASH and SSO not verified: nobody can log in"))
+        checks.append(_chk("Service token dedicated", "ok" if post.get("api_token_dedicated") else "warn",
+                           "" if post.get("api_token_dedicated") else "derived from secret_key; set API_TOKEN"))
+        pub = post.get("public_url") or ""
+        if pub.startswith("https://") and not post.get("cookie_secure"):
+            checks.append(_chk("Secure cookies", "warn", "served over https but COOKIE_SECURE is false"))
+        elif pub.startswith("https://"):
+            checks.append(_chk("Secure cookies", "ok"))
+        if post.get("actions_readonly") is not None:
+            checks.append(_chk("Tool actions", "ok" if post["actions_readonly"] else "warn",
+                               "read-only: no action can touch a client host" if post["actions_readonly"]
+                               else "LIVE: isolate, contain and quarantine will fire against real hosts"))
+
+    plat = r.get("platform") or {}
+    if plat:
+        if not plat.get("configured"):
+            checks.append(_chk("Roster from platform", "fail", "PLATFORM_URL not set; clients will not provision"))
+        elif not plat.get("token_set"):
+            checks.append(_chk("Roster from platform", "fail", "PLATFORM_TOKEN not set"))
+        elif plat.get("last_ok") is True:
+            checks.append(_chk("Roster from platform", "ok", f"last pull {plat.get('last_at', '')[:16]}"))
+        elif plat.get("last_ok") is False:
+            checks.append(_chk("Roster from platform", "fail", f"last pull failed: {plat.get('last_detail')}"))
+        else:
+            checks.append(_chk("Roster from platform", "warn", "configured, no pull has run yet"))
+
+    if module.key != "incident-response" and "hub_configured" in r:
+        if r.get("hub_configured") and r.get("hub_token_set"):
+            checks.append(_chk("Escalation to IR hub", "ok"))
+        elif r.get("hub_configured"):
+            checks.append(_chk("Escalation to IR hub", "warn", "PLATFORM_HUB_TOKEN not set; escalations will be refused"))
+        else:
+            checks.append(_chk("Escalation to IR hub", "warn", "PLATFORM_HUB_URL not set; findings cannot escalate"))
+
     integ = r.get("integrations") or {}
     if integ.get("kind") == "response-tools":
         n, total = integ.get("wired", 0), integ.get("total", 0)
@@ -66,6 +111,10 @@ def _control_plane_checks(modules, ov) -> list[dict]:
     enc = bool((getattr(settings, "encryption_key", "") or "").strip())
     checks.append(_chk("Token encryption key dedicated", "ok" if enc else "warn",
                        "" if enc else "derived from secret_key; set ENCRYPTION_KEY"))
+    if (settings.admin_password_hash or "").strip() or sso.status()["verified"]:
+        checks.append(_chk("Sign-in possible", "ok"))
+    else:
+        checks.append(_chk("Sign-in possible", "fail", "no ADMIN_PASSWORD_HASH and SSO not verified"))
     st = sso.status()
     if st["verified"]:
         checks.append(_chk("Platform SSO verified", "ok", f"source: {st['source']}"))
@@ -81,6 +130,19 @@ def _control_plane_checks(modules, ov) -> list[dict]:
                            f"{len(missing)} without a base URL: {', '.join(missing)}"))
     else:
         checks.append(_chk("Live modules registered", "ok", f"{len(live)} active modules"))
+    from . import directory
+
+    if directory.env_directory():
+        checks.append(_chk("Deployment directory", "ok", f"{len(directory.env_directory())} module(s) rendered"))
+    else:
+        checks.append(_chk("Deployment directory", "warn", "MODULE_DIRECTORY not set; endpoints entered by hand"))
+    failed = [k for k, v in directory.LAST_PUSH.items() if not v.get("ok")]
+    if failed:
+        checks.append(_chk("Roster push", "warn", f"last push failed for: {', '.join(failed)}"))
+    elif directory.LAST_PUSH:
+        checks.append(_chk("Roster push", "ok", f"{len(directory.LAST_PUSH)} module(s) reached"))
+    checks.append(_chk("Public URL set", "ok" if settings.public_url else "warn",
+                       "" if settings.public_url else "PUBLIC_URL unset; modules cannot link back here"))
     return checks
 
 

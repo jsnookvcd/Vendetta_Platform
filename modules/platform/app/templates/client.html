@@ -16,9 +16,9 @@
         <div class="ml-main">
           <div class="ml-name">{{ statusdot(m.key, ov) }}<b>{{ m.display_name }}</b> {{ statuschip(m.status) }}</div>
           <div class="ml-sub faint">
-            {% if on and o.reachable and o.open is not none %}{{ o.open }} {{ o.label }} for all clients{% if m.base_url %} · <a class="alink" href="{{ m.base_url }}" target="_blank" rel="noopener">open console</a>{% endif %}
-            {% elif m.status == 'planned' %}not built yet
-            {% elif on %}activated{% else %}available{% endif %}
+            {% if m.status == 'planned' %}not built yet
+            {% elif on %}{% if o.reachable and o.open is not none %}{{ o.open }} {{ o.label }} for all clients{% else %}activated{% endif %}{% if m.public_url %} · <a class="alink" href="{{ m.public_url }}/clients/platform/{{ client.id }}" target="_blank" rel="noopener">open in {{ m.display_name }}</a>{% elif m.base_url %} · <span class="faint">set a public URL on Connections to link</span>{% endif %}
+            {% else %}available{% endif %}
           </div>
         </div>
         <form method="post" action="/clients/{{ client.id }}/modules/{{ m.key }}" class="ml-toggle">

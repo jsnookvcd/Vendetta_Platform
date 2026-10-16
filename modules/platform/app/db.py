@@ -93,6 +93,9 @@ class Module(Base):
     # Encrypted at rest; plain in Python. Ciphertext is longer than the token, so the
     # column is widened to 512.
     api_token: Mapped[str] = mapped_column(EncryptedStr(512), default="")
+    # Where a person opens the module (https://ir.example.com); base_url is the
+    # service-to-service address (http://incident-response:8000 on the shared network).
+    public_url: Mapped[str] = mapped_column(String(300), default="")
     has_portal: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -213,11 +216,20 @@ def init_db() -> None:
         )).scalar()
         if width is not None and width < 512:
             conn.execute(_text("ALTER TABLE modules ALTER COLUMN api_token TYPE VARCHAR(512)"))
+        have = conn.execute(_text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'modules' AND column_name = 'public_url'"
+        )).first()
+        if not have:
+            conn.execute(_text("ALTER TABLE modules ADD COLUMN public_url VARCHAR(300) DEFAULT ''"))
     from .registry import seed_registry
+
+    from .directory import apply_env_directory
 
     db = SessionLocal()
     try:
         seed_registry(db)
+        apply_env_directory(db)
     finally:
         db.close()
 

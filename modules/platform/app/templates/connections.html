@@ -1,18 +1,25 @@
 {% extends "base.html" %}{% block title %}Connections{% endblock %}
 {% block body %}
-<div class="section-head"><h2>Modules</h2><span class="count">how the platform reaches each module</span></div>
+<div class="section-head"><h2>Modules</h2><span class="count">how the platform reaches each module</span>
+  <div class="row" style="margin-left:auto; gap:8px">
+    {% if env_dir %}<form class="inline" method="post" action="/connections/apply-directory"><button class="btn btn-sm btn-ghost" title="Overwrite endpoints and tokens with the values the deployment rendered">Apply deployment directory</button></form>{% endif %}
+    <form class="inline" method="post" action="/connections/push"><button class="btn btn-sm">Push roster to modules</button></form>
+  </div>
+</div>
 <div class="panel" style="margin-bottom:18px"><div class="table-wrap">
 <table>
-  <thead><tr><th>Module</th><th>Status</th><th>Health</th><th>Endpoint and token</th></tr></thead>
+  <thead><tr><th>Module</th><th>Status</th><th>Health</th><th>Last roster push</th><th>Endpoint and token</th></tr></thead>
   <tbody>
   {% for m in modules %}{% set o = ov.get(m.key, {}) %}<tr>
     <td class="nowrap"><b>{{ m.display_name }}</b><div class="faint mono" style="font-size:11px">{{ m.key }}</div></td>
     <td>{{ statuschip(m.status) }}</td>
     <td class="nowrap">{{ statusdot(m.key, ov) }} <span class="faint">{% if o.reachable %}reachable{% elif o.detail %}{{ o.detail }}{% else %}no endpoint{% endif %}</span></td>
+    <td class="nowrap faint" style="font-size:12px">{% set lp = last_push.get(m.key) %}{% if lp %}<span class="hdot {{ 'up' if lp.ok else 'down' }}"></span> {{ lp.detail }} <span style="opacity:.7">{{ lp.at.strftime('%H:%M') }}</span>{% else %}never{% endif %}</td>
     <td>
       <form class="row" method="post" action="/connections/module/{{ m.key }}" style="gap:6px; align-items:flex-end">
         <label class="field" style="flex:1; min-width:220px">Base URL<input name="base_url" value="{{ m.base_url }}" placeholder="https://host:port" class="mono"></label>
         <label class="field" style="min-width:160px">Bearer token<input name="api_token" value="" placeholder="{{ 'set' if m.api_token else 'paste token' }}" class="mono"></label>
+        <label class="field" style="flex:1; min-width:200px">Public URL<input name="public_url" value="{{ m.public_url }}" placeholder="https://ir.vendettacyber.com" class="mono"></label>
         <input type="hidden" name="status" value="{{ m.status }}">
         <button class="btn btn-sm">Save</button>
       </form>

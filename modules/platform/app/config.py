@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     internal_email_domains: str = "vendettacd.io"
     admin_emails: str = ""
 
+    # Module directory rendered by the deployment: JSON of
+    # {"<module key>": {"base_url": "http://<key>:8000", "token": "...", "public_url": "https://..."}}.
+    # Applied at startup to any module row that has no base URL yet, and on demand
+    # from the Connections page, so a fresh host wires itself with no hand entry.
+    module_directory: str = ""
+    # This console's public URL, handed to modules so they can link back here.
+    public_url: str = ""
+
     # Seconds the cross-module overview caches each module probe before re-fetching.
     probe_cache_seconds: int = 45
 
