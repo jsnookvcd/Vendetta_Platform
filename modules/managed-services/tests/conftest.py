@@ -11,6 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 TEST_DB = os.environ.get("MSP_TEST_DATABASE_URL", "postgresql+psycopg://msp:msp@localhost:5432/msp_test")
 os.environ["DATABASE_URL"] = TEST_DB
 os.environ.setdefault("SECRET_KEY", "test-secret")
+# The deployed default is read-only (fail closed); the suite exercises live actions,
+# so it opts out here. test_boot.py checks the default itself.
+os.environ.setdefault("ACTIONS_READONLY", "false")
 os.environ.update(
     SUPEROPS_API_TOKEN="t", SUPEROPS_SUBDOMAIN="vendetta", SUPEROPS_BASE_URL="https://vendetta.superops.ai",
     SENTINELONE_URL="https://vendetta.sentinelone.net", SENTINELONE_API_TOKEN="t",

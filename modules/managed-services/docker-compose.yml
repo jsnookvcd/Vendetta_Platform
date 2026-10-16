@@ -32,7 +32,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    networks: [internal]
+    # Shared cross-module network: other modules reach this one as http://managed-services:8000
+    networks:
+      internal:
+      vendetta:
+        aliases: [managed-services]
 
   worker:
     build: .
@@ -43,10 +47,13 @@ services:
     command: ["python", "worker.py"]
     depends_on:
       db: {condition: service_healthy}
-    networks: [internal]
+    networks: [internal, vendetta]  # pulls the roster from the control plane
 
 volumes:
   pgdata:
 
 networks:
   internal:
+  # Created once on the host (docker network create vendetta); shared by every module stack.
+  vendetta:
+    external: true

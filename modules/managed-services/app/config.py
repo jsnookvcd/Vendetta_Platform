@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     module_enabled: bool = True
     database_url: str = "postgresql+psycopg://msp:msp@db:5432/msp"
     secret_key: str = "change-me"
+    # Bearer token other modules and the control plane present to this module's
+    # service API. Set by the deployment (Terraform generates one per module); when
+    # blank the token is derived from secret_key for backward compatibility.
+    api_token: str = ""
+    # Refuse to start on placeholder secrets. Only a local developer should set this
+    # true; the deployed stack never does.
+    allow_insecure_defaults: bool = False
     # Ed25519 private key (32 bytes, hex) that signs the per-client action chain of
     # custody. Blank derives a stable key from secret_key; set a dedicated key in
     # production so it can be backed up and rotated independently.
@@ -120,9 +127,10 @@ class Settings(BaseSettings):
     # Safety: when true, every action that writes to a tool (isolate, contain,
     # quarantine, kill, approve remediations, run backup, resolve at source, raise
     # a ticket) is refused. Module-local triage (acknowledge, publish) still works.
-    # Turn it on to bring a new client in and watch data flow without touching a
+    # On by default so a fresh deployment cannot touch a client host until an operator
+    # turns actions on deliberately (ACTIONS_READONLY=false). Use it to bring a new client in and watch data flow without touching a
     # single host; turn it off once the integration is validated.
-    actions_readonly: bool = False
+    actions_readonly: bool = True
     # Strict two-person control: when true, a destructive action's approver must be a
     # different internal user (no self-approval). Off by default so a lone on-call
     # responder can still act, with the self-approval recorded in the signed log.
@@ -144,6 +152,10 @@ class Settings(BaseSettings):
     # Vendetta Platform control plane: where this module pulls its client roster and
     # per-client tool mapping. Blank = clients are managed in this console directly.
     platform_url: str = ""
+    # Public URL of the control plane console, for links back to the client's platform page.
+    platform_public_url: str = ""
+    # Seconds between automatic roster pulls from the control plane (0 disables).
+    provision_interval_seconds: int = 300
     platform_token: str = ""
 
     @property

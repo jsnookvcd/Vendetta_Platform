@@ -41,7 +41,7 @@ def _match(db: Session, entry: dict) -> Client | None:
     return c
 
 
-def pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
+def _pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
     if not configured():
         raise ProvisionError("PLATFORM_URL not set")
     headers = {"Authorization": f"Bearer {settings.platform_token}"} if settings.platform_token else {}
@@ -71,7 +71,10 @@ def pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
         c.name = entry["name"]
         c.industry = entry.get("industry") or c.industry
         c.portal_domains = entry.get("portal_domains") or ""
-        c.portal_enabled = bool(entry.get("portal_domains"))
+        # A new client inherits the platform's portal state; an existing one keeps the
+        # toggle set here, except that losing every domain closes the portal.
+        if c.id is None or not entry.get("portal_domains"):
+            c.portal_enabled = bool(entry.get("portal_domains"))
         c.executive_emails = entry.get("executive_emails") or ""
         c.active = True
     db.flush()
@@ -85,3 +88,65 @@ def pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
     summary = {"roster": len(roster), "added": added, "updated": updated, "deactivated": deactivated}
     log.info("platform pull: %s", summary)
     return summary
+
+
+# ---------------------------------------------------------------- pull state and scheduling
+# Outcome of the most recent pull, reported to the control plane through /api/module
+# readiness so the go-live screen can tell "configured" from "actually syncing".
+LAST: dict = {"at": None, "ok": None, "detail": "never run", "summary": None}
+
+
+def _pull_recorded(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
+    import datetime as _dt
+
+    try:
+        summary = _pull(db, transport)
+    except ProvisionError as e:
+        LAST.update(at=_dt.datetime.now(_dt.timezone.utc), ok=False, detail=str(e), summary=None)
+        raise
+    except Exception as e:  # noqa: BLE001
+        LAST.update(at=_dt.datetime.now(_dt.timezone.utc), ok=False, detail=f"{type(e).__name__}: {e}", summary=None)
+        raise
+    LAST.update(at=_dt.datetime.now(_dt.timezone.utc), ok=True, detail="ok", summary=summary)
+    return summary
+
+
+pull = _pull_recorded
+
+
+def state() -> dict:
+    """Readiness view of the platform link: configured, token present, last pull."""
+    return {
+        "configured": configured(),
+        "token_set": bool(getattr(settings, "platform_token", "")),
+        "interval_seconds": int(getattr(settings, "provision_interval_seconds", 0) or 0),
+        "last_ok": LAST["ok"],
+        "last_at": LAST["at"].isoformat() if LAST["at"] else None,
+        "last_detail": LAST["detail"],
+    }
+
+
+def start_scheduler(session_factory) -> None:
+    """Pull the roster on an interval in a daemon thread. Does nothing when the
+    control plane is not configured or the interval is 0, so standalone deployments
+    and the test suite are unaffected."""
+    import threading
+    import time
+
+    interval = int(getattr(settings, "provision_interval_seconds", 0) or 0)
+    if not configured() or interval <= 0:
+        return
+
+    def _loop():
+        time.sleep(5)  # let the web process finish booting first
+        while True:
+            db = session_factory()
+            try:
+                log.info("scheduled platform pull: %s", pull(db))
+            except Exception as e:  # noqa: BLE001
+                log.warning("scheduled platform pull failed: %s", e)
+            finally:
+                db.close()
+            time.sleep(interval)
+
+    threading.Thread(target=_loop, name="platform-pull", daemon=True).start()

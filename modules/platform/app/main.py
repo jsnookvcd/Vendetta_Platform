@@ -19,6 +19,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import boot
 from . import aggregate, auth, oidc, readiness as readiness_mod, sso
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
 from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, ToolConnection,
@@ -40,6 +41,7 @@ _STATUS_RANK = {"production": 0, "in-progress": 1, "planned": 2}
 
 @app.on_event("startup")
 def _startup():
+    boot.check()
     init_db()
 
 

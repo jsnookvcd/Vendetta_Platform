@@ -11,12 +11,21 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     database_url: str = "postgresql+psycopg://pentest:pentest@db:5432/pentest"
     secret_key: str = "change-me"
+    # Bearer token other modules and the control plane present to this module's
+    # service API. Set by the deployment (Terraform generates one per module); when
+    # blank the token is derived from secret_key for backward compatibility.
+    api_token: str = ""
+    # Refuse to start on placeholder secrets. Only a local developer should set this
+    # true; the deployed stack never does.
+    allow_insecure_defaults: bool = False
     # Ed25519 private key (32 bytes hex) that signs the finding-event chain of
     # custody. Blank derives a stable key from secret_key; set a dedicated key in
     # production so it can be backed up and rotated independently.
     evidence_signing_key: str = ""
     encryption_key: str = ""
     cookie_secure: bool = False
+    # This console's public base URL (https://<host>), used for links the platform and other modules follow.
+    public_url: str = ""
     login_max_attempts: int = 8
     login_window_seconds: int = 300
     admin_user: str = "admin"
@@ -36,6 +45,10 @@ class Settings(BaseSettings):
     platform_hub_url: str = ""
     platform_hub_token: str = ""
     platform_url: str = ""
+    # Public URL of the control plane console, for links back to the client's platform page.
+    platform_public_url: str = ""
+    # Seconds between automatic roster pulls from the control plane (0 disables).
+    provision_interval_seconds: int = 300
     platform_token: str = ""
 
 

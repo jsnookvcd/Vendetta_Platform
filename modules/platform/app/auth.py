@@ -117,7 +117,10 @@ def require_owned(ident: "Identity", obj, *, extra: bool = True):
 
 
 def api_token() -> str:
-    """Static bearer token derived from SECRET_KEY. Shown on the settings page."""
+    """Bearer token for the service API: API_TOKEN when the deployment set one, else
+    a static value derived from SECRET_KEY. Shown on the settings page."""
+    if settings.api_token.strip():
+        return settings.api_token.strip()
     return hmac.new(settings.secret_key.encode(), b"api-token-v1", hashlib.sha256).hexdigest()
 
 

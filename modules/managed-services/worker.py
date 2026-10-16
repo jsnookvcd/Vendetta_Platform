@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from app import boot
 from app.config import settings
 from app.db import SessionLocal, init_db
 from app import provision
@@ -15,6 +16,7 @@ log = logging.getLogger("worker")
 
 
 def main() -> None:
+    boot.check()
     init_db()
     log.info("managed services sync worker up; interval %ss", settings.sync_interval_seconds)
     while True:

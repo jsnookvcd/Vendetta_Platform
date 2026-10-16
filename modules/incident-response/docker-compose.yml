@@ -32,10 +32,17 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    networks: [internal]
+    # Shared cross-module network: other modules reach this one as http://incident-response:8000
+    networks:
+      internal:
+      vendetta:
+        aliases: [incident-response]
 
 volumes:
   pgdata:
 
 networks:
   internal:
+  # Created once on the host (docker network create vendetta); shared by every module stack.
+  vendetta:
+    external: true

@@ -41,7 +41,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
-    networks: [internal]
+    # Shared cross-module network: other modules reach this one as http://dark-web-monitoring:8000
+    networks:
+      internal:
+      vendetta:
+        aliases: [dark-web-monitoring]
 
   worker:
     build: .
@@ -64,3 +68,6 @@ volumes:
 
 networks:
   internal:
+  # Created once on the host (docker network create vendetta); shared by every module stack.
+  vendetta:
+    external: true

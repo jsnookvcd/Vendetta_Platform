@@ -18,6 +18,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import boot
 from . import auth, board, findings as findings_mod, hub, notify, oidc, provision, sso
 from . import readiness as readiness_mod
 from .config import WORKSTREAMS, settings
@@ -50,7 +51,9 @@ DEFAULT_READINESS = [
 
 @app.on_event("startup")
 def _startup():
+    boot.check()
     init_db()
+    provision.start_scheduler(SessionLocal)
     db = SessionLocal()
     try:
         ensure_seq_counter(db)
@@ -727,3 +730,26 @@ async def api_declare(request: Request, user: str = Depends(auth.api_user), db: 
 def healthz(db: Session = Depends(get_db)):
     db.execute(text("select 1"))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- platform link
+@app.post("/api/provision/sync")
+def api_provision_sync(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The control plane calls this right after a client changes there, so a roster
+    edit lands here within seconds instead of at the next scheduled pull."""
+    if not provision.configured():
+        return JSONResponse({"ok": False, "detail": "PLATFORM_URL not set"}, status_code=409)
+    try:
+        return {"ok": True, **provision.pull(db)}
+    except provision.ProvisionError as e:
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
+
+
+@app.get("/clients/platform/{pid}")
+def client_by_platform_id(pid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Deep link from the control plane: open this module's page for the client that
+    carries the given platform client id."""
+    c = db.query(Client).filter_by(platform_client_id=pid).first()
+    if not c:
+        raise HTTPException(404, "that client has not been provisioned into this module yet")
+    return RedirectResponse(f"/clients/{c.id}", status_code=302)

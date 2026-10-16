@@ -9,6 +9,7 @@ import time
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from .collectors import ct_logs, forum_crawl, hibp, leak_feeds, onion_crawl, pastes, telegram
+from . import boot
 from .config import settings
 from .db import SessionLocal, init_db
 from .fetch import tor_check
@@ -43,6 +44,7 @@ def _seed():
 
 
 def main() -> None:
+    boot.check()
     init_db()
     for _ in range(20):
         chk = tor_check()
