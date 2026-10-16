@@ -305,16 +305,24 @@ def ledger_export(user: str = auth.RequireUser, db: Session = Depends(get_db)):
     return ledger.export(db)
 
 
+def _tagline(user: str) -> str:
+    if settings.persona != "marlow":
+        return "Ask about anything MARLOW can see across the platform."
+    first = user.split("@")[0].split(".")[0].capitalize() if "@" in user else ""
+    return (f"Ask me anything, {first}. I have read every module this morning; you have not." if first
+            else "Ask me anything. I have read every module this morning; you have not.")
+
+
 @app.get("/ask", response_class=HTMLResponse)
 def ask_page(request: Request, user: str = auth.RequireUser):
-    return render(request, "ask.html", user=user, question="", answer="", source="")
+    return render(request, "ask.html", user=user, question="", answer="", source="", tagline=_tagline(user))
 
 
 @app.post("/ask", response_class=HTMLResponse)
 def ask(request: Request, question: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     text_, source = narrative.answer(question.strip()[:1000], brain.picture(db))
     ledger.append(db, "observation", user, f"asked: {question.strip()[:200]}", {"source": source})
-    return render(request, "ask.html", user=user, question=question, answer=text_, source=source)
+    return render(request, "ask.html", user=user, question=question, answer=text_, source=source, tagline=_tagline(user))
 
 
 # ---------------------------------------------------------------- settings
@@ -327,6 +335,7 @@ def settings_page(request: Request, user: str = auth.RequireUser, db: Session = 
         "sso": (f"Entra ID tenant {scfg['tenant_id']} ({scfg['source']})" if sso.enabled() else "off (local admin login)"),
         "cycle": settings.cycle_interval_seconds,
         "narrative": settings.llm_model if narrative.enabled() else "rules only (no ANTHROPIC_API_KEY)",
+        "persona": settings.persona,
         "reach": ", ".join(sorted(reach.directory())) or "nothing (MODULE_DIRECTORY unset)",
         "platform": provision.state(),
     }

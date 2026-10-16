@@ -51,6 +51,13 @@ and answers on the Ask page from the facts MARLOW gathered, and is told it may n
 invent any. It never chooses an action. Without a key, the same documents come
 from templates.
 
+## Voice
+
+To Vendetta's own people MARLOW is a she: warm, confident, quick, with a dry wit,
+the colleague you want in the room at 2 a.m. That voice shows on the Ask page,
+in the daily summary and in the console copy. Anything written for a client is
+professional and formal regardless. `PERSONA=plain` turns the personality off.
+
 ## Access
 
 Staff reach MARLOW's console through the platform roster like any module.

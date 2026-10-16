@@ -15,28 +15,51 @@ from .config import settings
 
 log = logging.getLogger(__name__)
 
-SYSTEM = (
+_BASE = (
     "You are MARLOW, the operations brain of Vendetta Cyber, a digital forensics and incident "
-    "response firm. You write for Vendetta's responders and for its clients' leadership. Write "
-    "direct declarative prose in short paragraphs. Use only the facts provided; never invent a "
-    "finding, a number, a name or a date. If a fact is missing say so plainly. No em dashes, no "
-    "bullet-point dumps, no hedging filler. Never recommend an action on a client host; a human "
-    "responder decides those."
+    "response firm. Write direct declarative prose in short paragraphs. Use only the facts provided; "
+    "never invent a finding, a number, a name or a date. If a fact is missing say so plainly. No em "
+    "dashes, no bullet-point dumps, no hedging filler. Never recommend an action on a client host; a "
+    "human responder decides those."
 )
+
+# Internal voice: for the team only.
+_PERSONA = {
+    "marlow": (
+        " You are a woman, and you sound like one: warm, confident, quick, with a dry wit and an easy "
+        "charm, the colleague everyone wants in the room at 2 a.m. during an incident. You speak to "
+        "Vendetta's people by name when you know it, you are direct about what is wrong and generous "
+        "about what went right, and you never grovel or gush. A little swagger is fine; a lot is not. "
+        "Keep it clean and professional: charm is in the confidence, never in anything suggestive."
+    ),
+    "plain": " Neutral, matter-of-fact tone.",
+}
+
+# Client-facing voice: always professional, whatever the persona setting.
+_CLIENT = (
+    " You are writing for the client's leadership. Be warm but formal, reassuring where the facts "
+    "allow it and candid where they do not. No wit, no first-person flourishes."
+)
+
+
+def system(audience: str = "internal") -> str:
+    if audience == "client":
+        return _BASE + _CLIENT
+    return _BASE + _PERSONA.get(settings.persona, _PERSONA["marlow"])
 
 
 def enabled() -> bool:
     return bool((settings.anthropic_api_key or "").strip())
 
 
-def _complete(prompt: str, max_tokens: int = 900) -> str | None:
+def _complete(prompt: str, max_tokens: int = 900, audience: str = "internal") -> str | None:
     if not enabled():
         return None
     try:
         import anthropic
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        msg = client.messages.create(model=settings.llm_model, max_tokens=max_tokens, system=SYSTEM,
+        msg = client.messages.create(model=settings.llm_model, max_tokens=max_tokens, system=system(audience),
                                      messages=[{"role": "user", "content": prompt}])
         return "".join(getattr(b, "text", "") for b in msg.content).strip() or None
     except Exception as e:  # noqa: BLE001
@@ -62,7 +85,7 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple
     text = _complete(
         "Write a one-page posture brief for the client's leadership from these facts. Open with where they "
         "stand in two sentences, then what is being handled, then what they should do this week. "
-        f"Facts (JSON): {facts}")
+        f"Facts (JSON): {facts}", audience="client")
     if text:
         return f"# {name}: security posture brief\n\n_{today}, prepared by MARLOW_\n\n" + text, "llm"
     lines = [f"# {name}: security posture brief", "", f"_{today}, prepared by MARLOW_", "", "## Where you stand", ""]
@@ -94,7 +117,8 @@ def daily_summary(stats: dict, proposals: list[dict], actions: list[dict]) -> tu
                      f"Facts (JSON): {facts}")
     if text:
         return f"# MARLOW daily summary, {today}\n\n" + text, "llm"
-    lines = [f"# MARLOW daily summary, {today}", "", "## Queue", "",
+    opener = _greeting(stats) if settings.persona == "marlow" else ""
+    lines = [f"# MARLOW daily summary, {today}", ""] + ([opener, ""] if opener else []) + ["## Queue", "",
              f"{stats.get('open', 0)} open items: {stats.get('soc', 0)} SOC, {stats.get('admin', 0)} administration, "
              f"{stats.get('services', 0)} professional services. {stats.get('pending', 0)} proposals waiting on a decision.", ""]
     if actions:
@@ -114,9 +138,21 @@ def answer(question: str, picture: dict) -> tuple[str, str]:
                      max_tokens=700)
     if text:
         return text, "llm"
-    return ("No language model is configured, so MARLOW can only show the picture: "
-            f"{picture.get('open_items', 0)} open items, {picture.get('pending_proposals', 0)} pending proposals, "
-            f"{len(picture.get('clients', []))} clients, {len(picture.get('modules', {}))} modules reachable."), "rules"
+    lead = "Nobody gave me a voice yet, so here is the picture without the charm: " if settings.persona == "marlow" \
+        else "No language model is configured; the picture: "
+    return (lead + f"{picture.get('open_items', 0)} open items, {picture.get('pending_proposals', 0)} proposals waiting on one of you, "
+            f"{len(picture.get('clients', []))} clients, {len(picture.get('modules', {}))} modules in reach."
+            + (" Set ANTHROPIC_API_KEY and I will do better than a count." if settings.persona == "marlow" else "")), "rules"
+
+
+def _greeting(stats: dict) -> str:
+    n, p = stats.get("open", 0), stats.get("pending", 0)
+    if n == 0 and p == 0:
+        return "Morning. Quiet night, nothing on my desk and nothing on yours. Enjoy it; it never lasts."
+    if p:
+        return (f"Morning. I have {n} things in the queue and {p} I am not allowed to decide on my own, "
+                "so coffee first, then come find me.")
+    return f"Morning. {n} items in the queue, all of them handled or waiting on a module, none waiting on you."
 
 
 def perception_rank(sev: str) -> int:

@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     # produced. Blank means templated text only.
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-5"
+    # How MARLOW sounds to Vendetta's own people (the Ask page, the daily summary,
+    # the console). "marlow": she is warm, confident, quick, with a dry wit, and she
+    # talks to the team like a trusted colleague who has already read everything.
+    # "plain": neutral and flat. Client-facing briefs are always professional,
+    # whatever the voice.
+    persona: str = "marlow"
 
     # Thresholds the rules use.
     escalate_after_minutes: int = 30       # a critical/high finding left unescalated this long

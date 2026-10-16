@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Ask MARLOW{% endblock %}
 {% block body %}
 <div class="panel pad" style="margin-bottom:14px">
+  <p style="margin:0 0 10px">{{ tagline }}</p>
   <form method="post" action="/ask">
     <label class="field">Question<input name="question" value="{{ question }}" placeholder="Which clients have critical findings with no case open?" required autofocus></label>
     <div style="margin-top:10px"><button class="btn btn-primary">Ask</button></div>
