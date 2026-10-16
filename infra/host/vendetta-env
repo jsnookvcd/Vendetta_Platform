@@ -1,0 +1,48 @@
+#!/bin/bash
+# Render one module's .env from SSM. Used at first boot (user_data) and by every
+# redeploy, so a parameter added or changed in SSM reaches the containers on the
+# next deploy, never only on the first one.
+#
+#   vendetta-env <module-key> <module-dir> [ssm-prefix] [region]
+#
+# Sources, in order: the JSON _defaults blob Terraform writes, then every scalar
+# parameter under <prefix>/<key>/ (secrets Terraform generated, tool credentials
+# and Entra values an operator added by hand). ADMIN_PASSWORD is deliberately
+# skipped: the host only ever gets the hash.
+set -euo pipefail
+
+KEY="${1:?module key}"
+DIR="${2:?module dir}"
+PREFIX="${3:-${SSM_PREFIX:-/vendetta}}"
+REGION="${4:-${AWS_REGION:-$(curl -s --max-time 2 http://169.254.169.254/latest/meta-data/placement/region || echo us-east-1)}}"
+ENVFILE="$DIR/.env"
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+aws ssm get-parameter --region "$REGION" --name "$PREFIX/$KEY/_defaults" \
+    --query 'Parameter.Value' --output text 2>/dev/null \
+  | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$TMP" || true
+
+# Scalar params, decrypted. Tab-separated Name/Value; values may contain spaces
+# (a JSON blob is one line), so read the rest of the line as the value.
+aws ssm get-parameters-by-path --region "$REGION" --path "$PREFIX/$KEY/" \
+    --with-decryption --recursive --query 'Parameters[].[Name,Value]' --output text 2>/dev/null \
+  | while IFS=$'\t' read -r name value; do
+      base="$(basename "$name")"
+      case "$base" in _defaults|ADMIN_PASSWORD) continue ;; esac
+      printf '%s=%s\n' "$base" "$value" >> "$TMP"
+    done || true
+
+# A scalar parameter overrides the same key from _defaults (an operator's
+# ACTIONS_READONLY=false beats Terraform's true): keep the last occurrence of each key.
+DEDUP="$(mktemp)"
+tac "$TMP" | awk -F= '!seen[$1]++' | tac > "$DEDUP"
+mv "$DEDUP" "$TMP"
+
+if ! grep -q '^SECRET_KEY=' "$TMP"; then
+  echo "vendetta-env: no SECRET_KEY for $KEY under $PREFIX/$KEY/; refusing to render" >&2
+  exit 3
+fi
+
+install -m 0600 "$TMP" "$ENVFILE"
+echo "rendered $ENVFILE ($(wc -l < "$ENVFILE") keys)"

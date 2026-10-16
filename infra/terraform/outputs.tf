@@ -20,10 +20,19 @@ output "module_urls" {
   description = "Per-module URL once the ALB and DNS are up."
   value = var.enable_alb && var.base_domain != "" ? {
     for k, m in local.deployed : k => "https://${lookup(var.module_hosts, k, k)}.${var.base_domain}"
-  } : { note = "ALB disabled; reach modules over SSM port forwarding (platform 8300, ir 8100, msp 8200, darkweb 8000)" }
+  } : { note = "ALB disabled; reach modules over SSM port forwarding (platform 8300, ir 8100, msp 8200, darkweb 8000, vuln 8400, pentest 8500)" }
 }
 
 output "ssm_prefix" {
   description = "Put tool credentials and cross-module tokens here, e.g. <prefix>/managed-services/SENTINELONE_API_TOKEN."
   value       = var.ssm_prefix
+}
+
+output "backups_bucket" {
+  value = aws_s3_bucket.backups.id
+}
+
+output "admin_password_hint" {
+  description = "Each module's break-glass admin password is in SSM; read it once with the command shown."
+  value       = "aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name ${var.ssm_prefix}/platform/ADMIN_PASSWORD"
 }

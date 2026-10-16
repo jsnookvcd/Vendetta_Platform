@@ -166,9 +166,10 @@ resource "aws_iam_role_policy_attachment" "ssm" {
 
 data "aws_iam_policy_document" "instance" {
   statement {
-    sid       = "EvidenceWrite"
-    actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket", "s3:GetObjectRetention"]
-    resources = [aws_s3_bucket.evidence.arn, "${aws_s3_bucket.evidence.arn}/*"]
+    sid     = "EvidenceWrite"
+    actions = ["s3:PutObject", "s3:GetObject", "s3:ListBucket", "s3:GetObjectRetention"]
+    resources = [aws_s3_bucket.evidence.arn, "${aws_s3_bucket.evidence.arn}/*",
+    aws_s3_bucket.backups.arn, "${aws_s3_bucket.backups.arn}/*"]
   }
   statement {
     sid       = "Alerts"
@@ -198,8 +199,11 @@ resource "aws_iam_instance_profile" "instance" {
 }
 
 # ------------------------------------------------------------------ config in SSM
-# Per-module secret key and Postgres password, generated here and stored as
-# SecureString so they never land in plaintext anywhere but SSM.
+# Every secret a module needs is generated here and stored as a SecureString, so a
+# fresh host boots fully wired: session secret, Postgres password, a dedicated
+# service bearer token, the at-rest encryption key, the evidence signing key where
+# the module signs a chain, and a break-glass admin password. Nothing is derived
+# from SECRET_KEY on the host and nothing has to be typed in after first boot.
 resource "random_password" "secret_key" {
   for_each = local.deployed
   length   = 64
@@ -210,6 +214,54 @@ resource "random_password" "pg" {
   for_each = local.deployed
   length   = 32
   special  = false
+}
+
+# Service-to-service bearer token per module (the value other modules present).
+resource "random_password" "api_token" {
+  for_each = local.deployed
+  length   = 48
+  special  = false
+}
+
+# Fernet key: urlsafe base64 of 32 random bytes.
+resource "random_bytes" "encryption_key" {
+  for_each = local.deployed
+  length   = 32
+}
+
+# Ed25519 seed for the chain-of-custody signer, hex, in the modules that sign one.
+resource "random_bytes" "evidence_signing_key" {
+  for_each = { for k, m in local.deployed : k => m if contains(local.signing_modules, k) }
+  length   = 32
+}
+
+# Break-glass local admin. The plaintext is kept in SSM for the operator to read
+# once (aws ssm get-parameter --with-decryption --name <prefix>/<module>/ADMIN_PASSWORD);
+# the host only ever renders the bcrypt hash into .env.
+resource "random_password" "admin" {
+  for_each = local.deployed
+  length   = 24
+  special  = false
+}
+
+locals {
+  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing"]
+  finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
+  client_modules  = [for k in keys(local.deployed) : k if k != "platform"]
+
+  # Service addresses on the shared docker network ("vendetta"): each module's web
+  # container is reachable by its module key on port 8000 from any other container.
+  service_url = { for k, m in local.deployed : k => "http://${k}:8000" }
+  public_url  = { for k, m in local.deployed : k => (var.enable_alb && var.base_domain != "" ? "https://${lookup(var.module_hosts, k, k)}.${var.base_domain}" : "") }
+
+  # What the control plane needs to wire every module without hand entry.
+  module_directory = {
+    for k in local.client_modules : k => {
+      base_url   = local.service_url[k]
+      token      = random_password.api_token[k].result
+      public_url = local.public_url[k]
+    }
+  }
 }
 
 resource "aws_ssm_parameter" "secret_key" {
@@ -226,12 +278,75 @@ resource "aws_ssm_parameter" "pg" {
   value    = random_password.pg[each.key].result
 }
 
-# Non-secret defaults per module: bind to the host port behind the ALB, the shared
-# bucket and SNS, and the on-host cross-module URLs. The modules reach each other
-# over localhost on one box. The bearer tokens that authenticate those calls are
-# set after first boot (platform -> modules on the Connections page; modules ->
-# platform via <ssm_prefix>/<module>/PLATFORM_TOKEN), since each is derived from a
-# module's own SECRET_KEY.
+resource "aws_ssm_parameter" "api_token" {
+  for_each = local.deployed
+  name     = "${var.ssm_prefix}/${each.key}/API_TOKEN"
+  type     = "SecureString"
+  value    = random_password.api_token[each.key].result
+}
+
+resource "aws_ssm_parameter" "encryption_key" {
+  for_each = local.deployed
+  name     = "${var.ssm_prefix}/${each.key}/ENCRYPTION_KEY"
+  type     = "SecureString"
+  value    = replace(replace(random_bytes.encryption_key[each.key].base64, "+", "-"), "/", "_")
+}
+
+resource "aws_ssm_parameter" "evidence_signing_key" {
+  for_each = random_bytes.evidence_signing_key
+  name     = "${var.ssm_prefix}/${each.key}/EVIDENCE_SIGNING_KEY"
+  type     = "SecureString"
+  value    = each.value.hex
+}
+
+resource "aws_ssm_parameter" "admin_password" {
+  for_each = local.deployed
+  name     = "${var.ssm_prefix}/${each.key}/ADMIN_PASSWORD"
+  type     = "SecureString"
+  value    = random_password.admin[each.key].result
+}
+
+# bcrypt() salts freshly on every plan, so the hash is written once and then left
+# alone; the password it hashes never changes unless the random resource is tainted.
+resource "aws_ssm_parameter" "admin_password_hash" {
+  for_each = local.deployed
+  name     = "${var.ssm_prefix}/${each.key}/ADMIN_PASSWORD_HASH"
+  type     = "SecureString"
+  value    = bcrypt(random_password.admin[each.key].result, 12)
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# Each client module authenticates to the control plane with the platform's token,
+# and finding modules authenticate to the hub with the hub's token.
+resource "aws_ssm_parameter" "platform_token" {
+  for_each = toset(local.client_modules)
+  name     = "${var.ssm_prefix}/${each.key}/PLATFORM_TOKEN"
+  type     = "SecureString"
+  value    = random_password.api_token["platform"].result
+}
+
+resource "aws_ssm_parameter" "hub_token" {
+  for_each = toset([for k in local.finding_modules : k if contains(keys(local.deployed), k) && contains(keys(local.deployed), "incident-response")])
+  name     = "${var.ssm_prefix}/${each.key}/PLATFORM_HUB_TOKEN"
+  type     = "SecureString"
+  value    = random_password.api_token["incident-response"].result
+}
+
+# The control plane's module directory: service URL, token and public URL per
+# module, applied at startup to any module row that is still blank.
+resource "aws_ssm_parameter" "module_directory" {
+  count = contains(keys(local.deployed), "platform") ? 1 : 0
+  name  = "${var.ssm_prefix}/platform/MODULE_DIRECTORY"
+  type  = "SecureString"
+  tier  = "Advanced"
+  value = jsonencode(local.module_directory)
+}
+
+# Non-secret defaults per module. Rendered into .env at first boot and again on
+# every redeploy (infra/redeploy.sh), so a change here reaches the containers on
+# the next deploy.
 resource "aws_ssm_parameter" "common" {
   for_each = local.deployed
   name     = "${var.ssm_prefix}/${each.key}/_defaults"
@@ -245,24 +360,71 @@ resource "aws_ssm_parameter" "common" {
       COOKIE_SECURE  = var.enable_alb ? "true" : "false"
       AWS_REGION     = var.region
       SNS_TOPIC_ARN  = aws_sns_topic.alerts.arn
+      BACKUP_BUCKET  = aws_s3_bucket.backups.id
     },
+    local.public_url[each.key] != "" ? { PUBLIC_URL = local.public_url[each.key] } : {},
     contains(["dark-web-monitoring", "incident-response"], each.key) ? {
       EVIDENCE_BUCKET = aws_s3_bucket.evidence.id
     } : {},
-    # Modules that read the platform roster point at the on-host control plane.
-    contains(["dark-web-monitoring", "incident-response", "managed-services"], each.key) ? {
-      PLATFORM_URL = "http://localhost:8300"
+    # Every client module pulls its roster from the control plane by service name
+    # and links people back to the control plane's public URL.
+    each.key != "platform" && contains(keys(local.deployed), "platform") ? merge(
+      { PLATFORM_URL = local.service_url["platform"] },
+      local.public_url["platform"] != "" ? { PLATFORM_PUBLIC_URL = local.public_url["platform"] } : {}
+    ) : {},
+    # Finding modules escalate into the hub by service name.
+    contains(local.finding_modules, each.key) && contains(keys(local.deployed), "incident-response") ? {
+      PLATFORM_HUB_URL = local.service_url["incident-response"]
     } : {},
-    # Modules that escalate point at the on-host IR hub.
-    contains(["dark-web-monitoring", "managed-services"], each.key) ? {
-      PLATFORM_HUB_URL = "http://localhost:8100"
-    } : {},
-    each.key == "platform" && var.enable_alb && var.base_domain != "" ? {
-      PUBLIC_URL = "https://${var.module_hosts["platform"]}.${var.base_domain}"
-    } : {}
+    # Managed services starts read-only: no tool action can fire until an operator
+    # sets <prefix>/managed-services/ACTIONS_READONLY=false and redeploys.
+    each.key == "managed-services" ? { ACTIONS_READONLY = "true" } : {}
   ))
-  lifecycle {
-    ignore_changes = [value]
+}
+
+# ------------------------------------------------------------------ backups
+# Nightly Postgres dumps from every module stack (infra/host/vendetta-backup).
+resource "aws_s3_bucket" "backups" {
+  bucket        = "${var.name_prefix}-backups-${data.aws_caller_identity.me.account_id}"
+  force_destroy = false
+}
+
+resource "aws_s3_bucket_versioning" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "backups" {
+  bucket                  = aws_s3_bucket.backups.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  rule {
+    id     = "expire"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = var.backup_retention_days
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
   }
 }
 

@@ -109,7 +109,7 @@ resource "aws_lb_listener" "https" {
 resource "aws_lb_listener_rule" "host" {
   for_each     = var.enable_alb ? local.deployed : {}
   listener_arn = aws_lb_listener.https[0].arn
-  priority     = 100 + index(keys(local.deployed), each.key)
+  priority     = lookup(var.listener_priorities, each.key, 500 + index(keys(local.deployed), each.key))
 
   action {
     type             = "forward"

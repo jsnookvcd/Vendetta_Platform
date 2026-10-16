@@ -35,7 +35,7 @@ variable "git_ref" {
 # deploys it. Ports match each module's docker-compose. Add a module here when it is
 # ready to deploy.
 variable "modules" {
-  description = "key => { subdir, port, deploy }. The control plane, IR hub, managed services and dark web are the built ones."
+  description = "key => { subdir, port, deploy }. Every built module; mdr and network-operations join when they exist."
   type = map(object({
     subdir = string
     port   = number
@@ -62,7 +62,38 @@ variable "modules" {
       port   = 8000
       deploy = true
     }
+    vulnerability-management = {
+      subdir = "modules/vulnerability-management"
+      port   = 8400
+      deploy = true
+    }
+    penetration-testing = {
+      subdir = "modules/penetration-testing"
+      port   = 8500
+      deploy = true
+    }
   }
+}
+
+variable "listener_priorities" {
+  description = "Fixed ALB listener-rule priority per module key, so adding a module never reshuffles the others."
+  type        = map(number)
+  default = {
+    platform                 = 100
+    incident-response        = 110
+    managed-services         = 120
+    dark-web-monitoring      = 130
+    vulnerability-management = 140
+    penetration-testing      = 150
+    mdr                      = 160
+    network-operations       = 170
+  }
+}
+
+variable "backup_retention_days" {
+  description = "Days to keep nightly Postgres dumps in the backups bucket."
+  type        = number
+  default     = 35
 }
 
 variable "ssm_prefix" {
@@ -107,10 +138,12 @@ variable "module_hosts" {
   description = "Hostname label per module key. The full host is <label>.<base_domain>."
   type        = map(string)
   default = {
-    platform            = "platform"
-    incident-response   = "ir"
-    managed-services    = "msp"
-    dark-web-monitoring = "darkweb"
+    platform                 = "platform"
+    incident-response        = "ir"
+    managed-services         = "msp"
+    dark-web-monitoring      = "darkweb"
+    vulnerability-management = "vuln"
+    penetration-testing      = "pentest"
   }
 }
 

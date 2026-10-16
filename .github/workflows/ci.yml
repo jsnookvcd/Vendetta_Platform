@@ -77,3 +77,51 @@ jobs:
       - name: Run tests
         working-directory: modules/${{ matrix.module }}
         run: pytest -q
+
+  images:
+    name: docker build ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [platform, incident-response, managed-services, dark-web-monitoring,
+                 vulnerability-management, penetration-testing]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the module image the host builds
+        run: docker build -t vcd-${{ matrix.module }}:ci modules/${{ matrix.module }}
+      - name: Image refuses to boot on a placeholder secret
+        run: |
+          set +e
+          docker run --rm -e SECRET_KEY=change-me -e DATABASE_URL=postgresql+psycopg://x:x@127.0.0.1/x \
+            vcd-${{ matrix.module }}:ci python -c "from app import boot; boot.check()"
+          rc=$?
+          set -e
+          test "$rc" -ne 0 && echo "fail-closed boot confirmed"
+
+  infra:
+    name: terraform and host scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: terraform fmt
+        run: terraform -chdir=infra/terraform fmt -check -diff
+      - name: terraform validate
+        run: |
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+      - name: shellcheck host scripts
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+          shellcheck -S warning infra/redeploy.sh infra/verify.sh infra/host/vendetta-env infra/host/vendetta-backup
+      - name: compose files parse
+        run: |
+          docker network create vendetta
+          for m in modules/*/; do
+            [ -f "$m/docker-compose.yml" ] || continue
+            printf 'SECRET_KEY=ci\n' > "$m/.env"
+            docker compose -f "$m/docker-compose.yml" --project-name "ci-$(basename "$m")" config -q
+          done

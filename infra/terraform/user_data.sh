@@ -1,8 +1,9 @@
 #!/bin/bash
 # First boot for the shared platform host: Docker, code checkout from the private
 # repo via a read-only deploy key, then each module's stack brought up from its own
-# directory with an .env rendered from SSM. One host runs the control plane, the IR
-# hub, managed services and dark web, each its own compose project on its own port.
+# directory with an .env rendered from SSM by infra/host/vendetta-env. One host runs
+# every built module, each its own compose project on its own port, all joined to
+# one docker network so they reach each other by module name.
 set -euxo pipefail
 
 APP_ROOT=/opt/vendetta_platform
@@ -32,44 +33,38 @@ if aws ssm get-parameter --region "${region}" --name "${ssm_prefix}/DEPLOY_KEY" 
   ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts 2>/dev/null
 fi
 
-if [ ! -d "$APP_ROOT/.git" ] && [ -n "${repo_url}" ]; then
-  git clone --branch "${git_ref}" "${repo_url}" "$APP_ROOT" || true
+if [ ! -d "$APP_ROOT/.git" ]; then
+  if [ -z "${repo_url}" ]; then echo "no repo_url set; nothing to deploy" >&2; exit 2; fi
+  # A failed clone must be loud: an empty host with no error is the worst outcome.
+  git clone --branch "${git_ref}" "${repo_url}" "$APP_ROOT"
 fi
 
-# Render a module's .env from SSM: the JSON _defaults blob written by Terraform,
-# the per-module SECRET_KEY and POSTGRES_PASSWORD, plus any extra scalar params an
-# operator put under <ssm_prefix>/<key>/ (tool credentials, Entra, PLATFORM_TOKEN).
-render_env () {
-  local key="$1" dir="$2" envfile="$3"
-  : > "$envfile"
-  aws ssm get-parameter --region "${region}" --name "${ssm_prefix}/$${key}/_defaults" \
-      --query 'Parameter.Value' --output text 2>/dev/null \
-    | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> "$envfile" || true
-  for p in SECRET_KEY POSTGRES_PASSWORD; do
-    v=$(aws ssm get-parameter --region "${region}" --name "${ssm_prefix}/$${key}/$${p}" \
-          --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || true)
-    [ -n "$v" ] && echo "$${p}=$${v}" >> "$envfile"
-  done
-  # Flat scalar params the operator added by hand, e.g. .../managed-services/SENTINELONE_API_TOKEN.
-  aws ssm get-parameters-by-path --region "${region}" --path "${ssm_prefix}/$${key}/" \
-      --with-decryption --recursive --query 'Parameters[].[Name,Value]' --output text 2>/dev/null \
-    | while read -r name value; do
-        base=$(basename "$name")
-        case "$base" in _defaults|SECRET_KEY|POSTGRES_PASSWORD) continue;; esac
-        echo "$${base}=$${value}" >> "$envfile"
-      done || true
-}
+# Host helpers from the repo: the .env renderer (also used by every redeploy) and
+# the nightly backup. Installed on every boot so a code update refreshes them.
+install -m 0755 "$APP_ROOT/infra/host/vendetta-env" /usr/local/sbin/vendetta-env
+install -m 0755 "$APP_ROOT/infra/host/vendetta-backup" /usr/local/sbin/vendetta-backup
 
+# The shared cross-module network every stack joins (compose declares it external).
+docker network inspect vendetta >/dev/null 2>&1 || docker network create vendetta
+
+failed=""
 IFS=',' read -ra MODS <<< "${modules_csv}"
 for entry in "$${MODS[@]}"; do
   key="$${entry%%:*}"; rest="$${entry#*:}"; subdir="$${rest%%:*}"
   dir="$APP_ROOT/$${subdir}"
-  [ -f "$dir/docker-compose.yml" ] || continue
-  render_env "$key" "$dir" "$dir/.env"
-  ( cd "$dir" && docker compose --project-name "vcd-$${key}" up -d --build ) || true
+  if [ ! -f "$dir/docker-compose.yml" ]; then echo "$${key}: no compose file, skipping" >&2; continue; fi
+  if ! AWS_REGION="${region}" SSM_PREFIX="${ssm_prefix}" vendetta-env "$${key}" "$dir"; then
+    failed="$failed $${key}"; continue
+  fi
+  if ! ( cd "$dir" && docker compose --project-name "vcd-$${key}" up -d --build ); then
+    echo "$${key}: compose up failed" >&2; failed="$failed $${key}"
+  fi
 done
 
-# Nightly DB dump to S3 for each module that ships a backup script.
-cat > /etc/cron.d/vendetta-backup <<EOF
-30 5 * * * root for d in $APP_ROOT/modules/*/; do [ -f "\$d/scripts/backup_db.sh" ] && (cd "\$d" && bash scripts/backup_db.sh); done >> /var/log/vendetta-backup.log 2>&1
-EOF
+# Nightly DB dump of every module to the backups bucket (05:30 UTC).
+cat > /etc/cron.d/vendetta-backup <<CRON
+30 5 * * * root AWS_REGION=${region} /usr/local/sbin/vendetta-backup $APP_ROOT >> /var/log/vendetta-backup.log 2>&1
+CRON
+
+if [ -n "$failed" ]; then echo "first boot finished with failures:$failed" >&2; exit 1; fi
+echo "first boot complete"

@@ -1,0 +1,37 @@
+#!/bin/bash
+# Nightly Postgres dump of every module stack to the backups bucket. Each module
+# runs its own Postgres in its compose project (vcd-<key>, service "db"); the
+# database user and name match the role the module's compose file declares.
+#
+#   vendetta-backup [app-root]
+set -uo pipefail
+
+APP_ROOT="${1:-/opt/vendetta_platform}"
+REGION="${AWS_REGION:-$(curl -s --max-time 2 http://169.254.169.254/latest/meta-data/placement/region || echo us-east-1)}"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+rc=0
+
+for dir in "$APP_ROOT"/modules/*/; do
+  key="$(basename "$dir")"
+  [ -f "$dir/docker-compose.yml" ] || continue
+  [ -f "$dir/.env" ] || continue
+  bucket="$(grep -E '^BACKUP_BUCKET=' "$dir/.env" | cut -d= -f2-)"
+  if [ -z "$bucket" ]; then
+    echo "$key: no BACKUP_BUCKET in .env, skipping"
+    continue
+  fi
+  user="$(grep -E 'POSTGRES_USER:' "$dir/docker-compose.yml" | head -1 | awk '{print $2}')"
+  db="$(grep -E 'POSTGRES_DB:' "$dir/docker-compose.yml" | head -1 | awk '{print $2}')"
+  out="/tmp/${key}-${STAMP}.sql.gz"
+  if ( cd "$dir" && docker compose --project-name "vcd-$key" exec -T db pg_dump -U "$user" "$db" ) | gzip > "$out"; then
+    if aws s3 cp --region "$REGION" --only-show-errors "$out" "s3://$bucket/$key/${key}-${STAMP}.sql.gz"; then
+      echo "$key: $(du -h "$out" | cut -f1) -> s3://$bucket/$key/"
+    else
+      echo "$key: upload failed" >&2; rc=1
+    fi
+  else
+    echo "$key: pg_dump failed" >&2; rc=1
+  fi
+  rm -f "$out"
+done
+exit $rc

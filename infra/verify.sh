@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 # One-command check that the platform is up and wired. Run it after the stack
 # boots (over SSM port forwarding, or against the ALB hostnames). It checks each
-# module's health, that the control plane can see the others, and that the
-# provisioning loop returns a roster. Read-only: it changes nothing.
+# module's health, then asks the control plane's readiness report whether the
+# cross-module links actually work: every module reachable from the control
+# plane, every module pulling its roster, escalation configured, no placeholder
+# secrets, sign-in possible. Read-only: it changes nothing.
 #
-#   PLATFORM=http://localhost:8300 IR=http://localhost:8100 \
-#   MS=http://localhost:8200 DW=http://localhost:8000 \
-#   PLATFORM_TOKEN=<control-plane bearer> bash infra/verify.sh
+#   PLATFORM=http://localhost:8300 IR=http://localhost:8100 MS=http://localhost:8200 \
+#   DW=http://localhost:8000 VM=http://localhost:8400 PT=http://localhost:8500 \
+#   PLATFORM_TOKEN=<control-plane API token> bash infra/verify.sh
+#
+# The control-plane token is <ssm_prefix>/platform/API_TOKEN (also shown on its
+# Settings page).
 set -uo pipefail
 
 PLATFORM="${PLATFORM:-http://localhost:8300}"
 IR="${IR:-http://localhost:8100}"
 MS="${MS:-http://localhost:8200}"
 DW="${DW:-http://localhost:8000}"
+VM="${VM:-http://localhost:8400}"
+PT="${PT:-http://localhost:8500}"
 PLATFORM_TOKEN="${PLATFORM_TOKEN:-}"
 
-pass=0; fail=0
+pass=0; fail=0; warn=0
 ok()   { echo "  ok   $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL $1"; fail=$((fail+1)); }
+wrn()  { echo "  warn $1"; warn=$((warn+1)); }
 
 health () {
   local name="$1" url="$2"
@@ -26,13 +34,18 @@ health () {
 }
 
 echo "Module health"
-health "control plane" "$PLATFORM"
-health "IR hub"        "$IR"
-health "managed svcs"  "$MS"
-health "dark web"      "$DW"
+health "control plane"  "$PLATFORM"
+health "IR hub"         "$IR"
+health "managed svcs"   "$MS"
+health "dark web"       "$DW"
+health "vuln mgmt"      "$VM"
+health "pentest"        "$PT"
 
-echo "Provisioning loop"
-if [ -n "$PLATFORM_TOKEN" ]; then
+if [ -z "$PLATFORM_TOKEN" ]; then
+  echo "Cross-module wiring"
+  echo "  skip (set PLATFORM_TOKEN to the control-plane API token for the full report)"
+else
+  echo "Provisioning loop"
   body=$(curl -fsS -m 8 -H "Authorization: Bearer $PLATFORM_TOKEN" \
            "$PLATFORM/api/platform/clients?module=managed-services" 2>/dev/null)
   if [ -n "$body" ] && echo "$body" | grep -q '"clients"'; then
@@ -41,14 +54,30 @@ if [ -n "$PLATFORM_TOKEN" ]; then
   else
     bad "provisioning API returned nothing usable (token or URL wrong?)"
   fi
-else
-  echo "  skip provisioning (set PLATFORM_TOKEN to the control-plane bearer)"
+
+  echo "Cross-module wiring (control-plane readiness report)"
+  report=$(curl -fsS -m 30 -H "Authorization: Bearer $PLATFORM_TOKEN" "$PLATFORM/api/platform/readiness" 2>/dev/null)
+  if [ -z "$report" ]; then
+    bad "readiness report unavailable"
+  elif command -v jq >/dev/null 2>&1; then
+    echo "$report" | jq -r '
+      (.control_plane.checks[] | "control-plane\t\(.state)\t\(.label)\t\(.detail)"),
+      (.modules[] as $m | $m.checks[] | "\($m.key)\t\(.state)\t\(.label)\t\(.detail)")' \
+    | while IFS=$'\t' read -r mod state label detail; do
+        case "$state" in
+          ok)   ok   "$mod: $label${detail:+ ($detail)}" ;;
+          warn) wrn  "$mod: $label${detail:+ ($detail)}" ;;
+          *)    bad  "$mod: $label${detail:+ ($detail)}" ;;
+        esac
+      done
+    # The pipeline above runs in a subshell, so take the totals from the report itself.
+    r_ok=$(echo "$report" | jq '.summary.ok'); r_warn=$(echo "$report" | jq '.summary.warn'); r_fail=$(echo "$report" | jq '.summary.fail')
+    pass=$((pass + r_ok)); warn=$((warn + r_warn)); fail=$((fail + r_fail))
+  else
+    if echo "$report" | grep -q '"ready": *true'; then ok "readiness: no blocking items"; else bad "readiness reports blocking items (install jq for the detail)"; fi
+  fi
 fi
 
-echo "Managed services action safety"
-mode=$(curl -fsS -m 6 "$MS/api/module" 2>/dev/null | grep -o '"enabled":[a-z]*' | head -1)
-[ -n "$mode" ] && ok "managed services manifest reachable" || echo "  skip (manifest needs the bearer; health already checked)"
-
 echo
-echo "Result: $pass passed, $fail failed"
+echo "Result: $pass ok, $warn warnings, $fail failed"
 [ "$fail" -eq 0 ]
