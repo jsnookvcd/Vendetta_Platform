@@ -71,6 +71,8 @@ class Client(Base):
     crowdstrike_cid: Mapped[str] = mapped_column(String(40), default="")         # child CID (member_cid)
     huntress_org_id: Mapped[str] = mapped_column(String(60), default="")
     acronis_tenant_id: Mapped[str] = mapped_column(String(60), default="")       # tenant UUID
+    entra_tenant_ref: Mapped[str] = mapped_column(String(60), default="")        # client M365 tenant id
+    aws_role_arn: Mapped[str] = mapped_column(String(200), default="")           # cross-account role to assume
 
     devices: Mapped[list[Device]] = relationship(back_populates="client")
     alerts: Mapped[list[Alert]] = relationship(back_populates="client")
@@ -83,6 +85,8 @@ class Client(Base):
             "crowdstrike": self.crowdstrike_cid,
             "huntress": self.huntress_org_id,
             "acronis": self.acronis_tenant_id,
+            "entra": self.entra_tenant_ref,
+            "aws": self.aws_role_arn,
         }[tool]
 
     @property

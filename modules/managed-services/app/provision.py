@@ -29,6 +29,8 @@ _FIELD = {
     "crowdstrike": "crowdstrike_cid",
     "huntress": "huntress_org_id",
     "acronis": "acronis_tenant_id",
+    "entra": "entra_tenant_ref",
+    "aws": "aws_role_arn",
 }
 
 

@@ -55,6 +55,20 @@ FIELDS: dict[str, list[dict]] = {
         _f("client_id", "acronis_client_id", "API client ID", required=True),
         _f("client_secret", "acronis_client_secret", "API client secret", secret=True, required=True),
     ],
+    "entra": [
+        _f("client_id", "graph_client_id", "Entra app (client) ID", required=True,
+           help="A multi-tenant Entra app with Graph IdentityRiskEvent.Read.All and SecurityEvents.Read.All, app-only"),
+        _f("client_secret", "graph_client_secret", "Client secret", secret=True, required=True),
+        _f("base_url", "graph_base_url", "Graph base URL", placeholder="https://graph.microsoft.com"),
+        _f("login_url", "graph_login_url", "Login base URL", placeholder="https://login.microsoftonline.com"),
+    ],
+    "aws": [
+        _f("access_key_id", "aws_access_key_id", "Access key ID", required=True,
+           help="MSP base credentials that assume each client's cross-account role"),
+        _f("secret_access_key", "aws_secret_access_key", "Secret access key", secret=True, required=True),
+        _f("region", "aws_region", "Default region", placeholder="us-east-1"),
+        _f("external_id", "aws_external_id", "Role external ID"),
+    ],
 }
 
 

@@ -384,7 +384,9 @@ def _tool_link(tool: str, devices: list[Device]) -> str:
         "crowdstrike": settings.crowdstrike_console_url if settings.crowdstrike_client_id else "",
         "huntress": settings.huntress_base_url,
         "acronis": settings.acronis_dc_url,
-    }[tool]
+        "entra": "https://entra.microsoft.com",
+        "aws": f"https://{settings.aws_region}.console.aws.amazon.com/guardduty/home",
+    }.get(tool, "")
     if fixed:
         return fixed
     return next((d.link for d in devices if d.link), "")
@@ -393,13 +395,16 @@ def _tool_link(tool: str, devices: list[Device]) -> str:
 @app.post("/clients/{cid}/map")
 def map_tools(cid: str, superops_client_id: str = Form(""), sentinelone_site_ids: str = Form(""),
               crowdstrike_cid: str = Form(""), huntress_org_id: str = Form(""),
-              acronis_tenant_id: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+              acronis_tenant_id: str = Form(""), entra_tenant_ref: str = Form(""),
+              aws_role_arn: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     c = _get_client(db, cid)
     c.superops_client_id = superops_client_id.strip()
     c.sentinelone_site_ids = ",".join(x.strip() for x in sentinelone_site_ids.split(",") if x.strip())
     c.crowdstrike_cid = crowdstrike_cid.strip().lower()
     c.huntress_org_id = huntress_org_id.strip()
     c.acronis_tenant_id = acronis_tenant_id.strip()
+    c.entra_tenant_ref = entra_tenant_ref.strip()
+    c.aws_role_arn = aws_role_arn.strip()
     db.commit()
     _audit(db, user, "client.map", f"{c.name}: {', '.join(c.tools) or 'no tools'}")
     return _back(f"/clients/{cid}", True, "Tool mapping saved.")

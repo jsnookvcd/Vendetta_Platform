@@ -33,6 +33,14 @@ tools:                         # tenant-level credentials in env; per-client ten
     kind: backup
     map_field: acronis_tenant_id        # customer tenant UUID
     actions: [run_backup, dismiss_alert]
+  entra:
+    kind: identity                      # Microsoft 365 / Entra ID Identity Protection
+    map_field: entra_tenant_ref         # client M365 tenant id (multi-tenant Graph app)
+    actions: []                         # read-only: risk detections ingested as alerts
+  aws:
+    kind: cloud                         # Amazon GuardDuty findings
+    map_field: aws_role_arn             # client cross-account role the MSP assumes
+    actions: []                         # read-only: findings ingested as alerts
 
 normalized:
   device: {id: external_id, fields: [hostname, platform, status, agent_version, last_seen, link]}

@@ -20,6 +20,8 @@ os.environ.update(
     CROWDSTRIKE_CLIENT_ID="cid", CROWDSTRIKE_CLIENT_SECRET="sec",
     HUNTRESS_API_KEY="k", HUNTRESS_API_SECRET="s", HUNTRESS_BASE_URL="https://vendetta.huntress.io",
     ACRONIS_DC_URL="https://us5-cloud.acronis.com", ACRONIS_CLIENT_ID="ac", ACRONIS_CLIENT_SECRET="as",
+    GRAPH_CLIENT_ID="gid", GRAPH_CLIENT_SECRET="gsec",
+    AWS_ACCESS_KEY_ID="akid", AWS_SECRET_ACCESS_KEY="asec", AWS_REGION="us-east-1",
 )
 
 import bcrypt  # noqa: E402

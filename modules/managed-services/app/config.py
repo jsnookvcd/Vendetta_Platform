@@ -46,13 +46,15 @@ SLA_PROFILE_NAMES = {
 }
 DEFAULT_SLA_PROFILE = "standard"
 
-TOOLS = ["superops", "sentinelone", "crowdstrike", "huntress", "acronis"]
+TOOLS = ["superops", "sentinelone", "crowdstrike", "huntress", "acronis", "entra", "aws"]
 TOOL_NAMES = {
     "superops": "SuperOps RMM",
     "sentinelone": "SentinelOne",
     "crowdstrike": "CrowdStrike Falcon",
     "huntress": "Huntress MDR",
     "acronis": "Acronis Backup",
+    "entra": "Microsoft 365 / Entra ID",
+    "aws": "Amazon Web Services",
 }
 DESKS = ["soc", "noc", "helpdesk"]
 DESK_NAMES = {"soc": "SOC", "noc": "NOC", "helpdesk": "Helpdesk"}
@@ -123,6 +125,23 @@ class Settings(BaseSettings):
     acronis_dc_url: str = ""  # e.g. https://us5-cloud.acronis.com
     acronis_client_id: str = ""
     acronis_client_secret: str = ""
+
+    # Microsoft 365 / Entra ID identity signals: a multi-tenant Entra app (app-only,
+    # client-credentials) with Graph IdentityRiskEvent.Read.All and
+    # SecurityEvents.Read.All. The same app is consented in each client tenant; a
+    # client's tenant id is its per-client ref. Distinct from the entra_* SSO app above.
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
+    graph_base_url: str = "https://graph.microsoft.com"
+    graph_login_url: str = "https://login.microsoftonline.com"
+
+    # Amazon Web Services cloud signals: MSP base credentials that assume each client's
+    # cross-account role (the client's role ARN is its per-client ref). GuardDuty
+    # findings are pulled for the configured region. external_id guards the assume-role.
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = "us-east-1"
+    aws_external_id: str = ""
 
     # Safety: when true, every action that writes to a tool (isolate, contain,
     # quarantine, kill, approve remediations, run backup, resolve at source, raise
