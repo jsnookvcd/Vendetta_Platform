@@ -251,6 +251,33 @@ class Message(Base):
     channel: Mapped[Channel] = relationship(back_populates="messages")
 
 
+class ActionRequest(Base):
+    """A response action asked for in one place and approved in another. A chat
+    bridge (the Slack responder) files one when a responder asks to contain a host;
+    a different person with approval rights approves it, and only then does it run.
+    The requester can never approve their own request, whatever the console's
+    REQUIRE_SECOND_APPROVER says. An unanswered request expires."""
+
+    __tablename__ = "action_requests"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    action_id: Mapped[str] = mapped_column(String(40))
+    tool: Mapped[str] = mapped_column(String(20), default="")
+    requested_by: Mapped[str] = mapped_column(String(320))      # email
+    via: Mapped[str] = mapped_column(String(40), default="")    # the bridge, e.g. slack
+    reason: Mapped[str] = mapped_column(Text, default="")
+    source_ref: Mapped[str] = mapped_column(String(200), default="")  # e.g. the IR case number
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | done | failed | rejected | expired | blocked
+    decided_by: Mapped[str] = mapped_column(String(320), default="")
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    device: Mapped["Device"] = relationship()
+    client: Mapped["Client"] = relationship()
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)

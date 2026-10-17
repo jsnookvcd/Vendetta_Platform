@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import boot
 from . import actions as act, sso
 from . import auth, connectors, copilot, creds, indicators, messaging, oidc, posture, preflight, provision, sla, sync
+from . import requests_ as reqs
 from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
                      SLA_PROFILES, TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
@@ -979,7 +980,8 @@ def api_module(user: str = Depends(auth.api_user)):
         "platform": "Vendetta Platform", "enabled": settings.module_enabled,
         "tools": {t: getattr(connectors.get(t), "configured", False) for t in TOOLS},
         "readiness": readiness.block(),
-        "endpoints": ["/api/findings", "/api/module"],
+        "endpoints": ["/api/findings", "/api/devices", "/api/action-requests", "/api/action-requests/{id}",
+                      "/api/action-requests/{id}/decide", "/api/module"],
     }
 
 
@@ -1030,6 +1032,75 @@ def api_alert_escalate(aid: str, user: str = Depends(auth.api_user), db: Session
 
 
 # ---------------------------------------------------------------- platform link
+# ---------------------------------------------------------------- hosts and requested actions (bridges)
+@app.get("/api/devices")
+def api_devices(request: Request, platform_client_id: str = Query(...), q: str = Query(""),
+                db: Session = Depends(get_db)):
+    """A client's devices across every tool, with their open alerts and the actions
+    that apply. q matches the hostname (case-insensitive substring). Read access."""
+    auth.api_person(request, write=False)
+    c = db.query(Client).filter_by(platform_client_id=platform_client_id).one_or_none()
+    if c is None:
+        raise HTTPException(404, "that client has no managed services here")
+    stmt = select(Device).options(selectinload(Device.client)).where(Device.client_id == c.id)
+    if q.strip():
+        stmt = stmt.where(Device.hostname.ilike(f"%{q.strip()[:120]}%"))
+    rows = db.execute(stmt.order_by(Device.hostname).limit(25)).scalars().all()
+    return {"client": c.name, "actions_readonly": settings.actions_readonly,
+            "devices": [reqs.device_json(db, d) for d in rows]}
+
+
+@app.post("/api/action-requests")
+async def api_request_action(request: Request, db: Session = Depends(get_db)):
+    """{platform_client_id, device_id, action_id, reason, source_ref}. A destructive
+    action comes back pending until a different person approves it; anything else
+    runs now. See requests_.py for the rules."""
+    actor = auth.api_person(request, write=True)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    try:
+        r = reqs.create(db, actor, str(body.get("device_id") or ""), str(body.get("action_id") or ""),
+                        platform_client_id=str(body.get("platform_client_id") or ""),
+                        reason=str(body.get("reason") or ""), source_ref=str(body.get("source_ref") or ""))
+    except reqs.Refused as e:
+        raise HTTPException(e.status, e.detail)
+    _audit(db, actor, "action.request", f"{r.id} {r.action_id} {r.device.hostname}: {r.status}")
+    return reqs.request_json(r)
+
+
+@app.get("/api/action-requests/{rid}")
+def api_get_request(rid: str, request: Request, db: Session = Depends(get_db)):
+    auth.api_person(request, write=False)
+    try:
+        return reqs.request_json(reqs.get(db, rid))
+    except reqs.Refused as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/api/action-requests/{rid}/decide")
+async def api_decide_request(rid: str, request: Request, db: Session = Depends(get_db)):
+    """{approve, note}. The decider must differ from the requester and hold approval rights."""
+    actor = auth.api_person(request, write=True)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    try:
+        r = reqs.get(db, rid)
+        r = reqs.decide(db, r, actor, bool(body.get("approve")), str(body.get("note") or ""))
+    except reqs.Refused as e:
+        if e.status == 409:
+            try:
+                return JSONResponse({**reqs.request_json(reqs.get(db, rid)), "refused": e.detail}, status_code=409)
+            except reqs.Refused:
+                pass
+        raise HTTPException(e.status, e.detail)
+    _audit(db, actor, "action.decide", f"{r.id} {r.action_id} {r.device.hostname}: {r.status}")
+    return reqs.request_json(r)
+
+
 @app.post("/api/provision/sync")
 def api_provision_sync(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     """The control plane calls this right after a client changes there, so a roster

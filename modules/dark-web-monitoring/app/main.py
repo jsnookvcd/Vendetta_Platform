@@ -667,6 +667,64 @@ def api_add_terms(cid: str, payload: dict, user: str = Depends(auth.api_user), d
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- report over the service API
+def _report_client(db: Session, pid: str) -> Client:
+    c = db.query(Client).filter_by(platform_client_id=pid).first()
+    if not c:
+        raise HTTPException(404, "that client has no dark web monitoring here")
+    return c
+
+
+def _report_summary(ctx: dict) -> dict:
+    """The report as data, for a chat bridge or an agent: counts, the exposures that
+    drive the recommendations, and the recommendations themselves."""
+    def hit(h):
+        return {"severity": h.severity, "matched": h.matched_text[:200], "kind": h.item.kind,
+                "group": h.item.group_name or "", "title": (h.item.title or "")[:200],
+                "seen": h.created_at.isoformat() if h.created_at else None}
+    c = ctx["client"]
+    return {
+        "client": c.name, "platform_client_id": c.platform_client_id, "period_days": ctx["period_days"],
+        "generated_at": ctx["generated_at"].isoformat(), "total": ctx["total"], "by_severity": ctx["by_sev"],
+        "credential_count": ctx["credential_count"], "credential_domains": ctx["credential_domains"][:20],
+        "credentials": [hit(h) for h in ctx["credential"][:15]],
+        "leak_posts": [hit(h) for h in ctx["leak"][:10]],
+        "access_broker": [hit(h) for h in ctx["iab"][:10]],
+        "lookalike_certs": len(ctx["certs"]), "mentions": len(ctx["mentions"]),
+        "evidence_captured": len(ctx["evidence"]),
+        "actions": [{"title": t, "detail": d} for t, d in ctx["actions"]],
+    }
+
+
+@app.get("/api/clients/platform/{pid}/report")
+def api_report(pid: str, request: Request, days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
+    """The client's exposure report as JSON. A bridge call names the person; any
+    staff grant may read it."""
+    actor = auth.api_person(request, write=False)
+    c = _report_client(db, pid)
+    out = _report_summary(report_mod.build_report(db, c, days))
+    _audit(db, actor, "report.api", f"{c.name} {days}d")
+    return out
+
+
+@app.get("/api/clients/platform/{pid}/report.pdf")
+def api_report_pdf(pid: str, request: Request, days: int = Query(30, ge=1, le=365), db: Session = Depends(get_db)):
+    actor = auth.api_person(request, write=False)
+    c = _report_client(db, pid)
+    ctx = report_mod.build_report(db, c, days)
+    html = templates.env.get_template("report.html").render(request=request, **ctx)
+    try:
+        from weasyprint import HTML
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=501, detail="PDF engine not installed")
+    pdf = HTML(string=html, base_url=str(_APP_DIR)).write_pdf()
+    _audit(db, actor, "report.pdf", f"{c.name} {days}d")
+    safe = "".join(ch for ch in c.name if ch.isalnum() or ch in " -_").strip().replace(" ", "_")
+    fname = f"Vendetta_Dark_Web_Exposure_{safe}_{dt.date.today():%Y%m%d}.pdf"
+    return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 # ---------------------------------------------------------------- Vendetta Platform module
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user)):
@@ -682,7 +740,8 @@ def api_module(user: str = Depends(auth.api_user)):
         "statuses": ["new", "reviewing", "confirmed", "false_positive", "closed"],
         "hub_configured": bool(settings.platform_hub_url),
         "readiness": readiness.block(),
-        "endpoints": ["/api/findings", "/api/findings/{id}", "/api/findings/{id}/escalate", "/api/hits", "/api/victims"],
+        "endpoints": ["/api/findings", "/api/findings/{id}", "/api/findings/{id}/escalate", "/api/hits", "/api/victims",
+                      "/api/clients/platform/{pid}/report", "/api/clients/platform/{pid}/report.pdf"],
     }
 
 
