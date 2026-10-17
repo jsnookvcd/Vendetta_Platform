@@ -4,7 +4,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 
 ## Modules
 
-- platform: the control plane and front door. System of record for the client directory, which modules are on per client, how each client maps into the tools, and the staff roster with each person's access level per module, with a live cross-module overview and the go-live readiness screen. Every module consumes it. See modules/platform.
+- platform: the control plane and front door. System of record for the client directory, which modules are on per client, how each client maps into the tools, each client's service tier, response commitments and account lead, the Security Journey and client communications, and the staff roster with each person's access level per module. A Client 360 per client reads every module live; the client portal home at /portal gives the client one front door into every service line they have. Live cross-module overview and the go-live readiness screen. Every module consumes it. See modules/platform.
 - dark-web-monitoring: leak-site, forum, credential and certificate monitoring with evidence preservation and a client portal. In production. See modules/dark-web-monitoring.
 - vulnerability-management: scan ingest (POST /api/scans), findings deduped across scans, a client portal with an exposure trend over time and click-through remediation steps, and escalation to the hub. Built, tested and deployed. See modules/vulnerability-management.
 - penetration-testing: engagements and findings with a retest loop, the report rendered from findings at close, a client portal with a cross-engagement trend and click-through remediation, and escalation to the hub. Built, tested and deployed. See modules/penetration-testing.
@@ -13,8 +13,8 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 - evidence-export: shared library that turns any module's signed chain of custody into a court-admissible, self-verifying export package (sealed manifest, embedded standalone verifier, optional RFC 3161 trusted timestamp), with an independent verifier that confirms a package offline with no access to the platform. professional-services is the reference wiring; incident-response (per case) and managed-services (per client) are wired too. Built and tested. See modules/evidence-export.
 - ai-triage: shared evidence-grounded triage copilot for the finding-bearing modules. Proposes a verdict with a calibrated confidence and a written rationale, with a deterministic rules fallback that always runs and grounds any LLM output; a human accepts or rejects, a second approver is required for high-stakes or low-confidence verdicts, and both the proposal and the decision are written to the signed evidence chain. managed-services is the reference wiring, and SABINE reads the verdict from the shared finding. Built and tested. See modules/ai-triage.
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
-- sabine: SABINE, the agentic brain. One operator queue across every module, proposals with rationale at a per-action autonomy level, action only through module APIs as itself, a signed ledger of everything it did, briefs and a daily summary. Built and tested. See modules/sabine.
-- mdr: managed detection and response: investigations with verdicts and analyst actions rather than raw alerts, convertible to an IR case. Planned.
+- sabine: SABINE, the agentic brain. One operator queue across every module, proposals with rationale at a per-action autonomy level (per client where an admin sets it), action only through module APIs as itself, a signed ledger of everything it did, briefs and a daily summary. She also runs the client relationship and the business: pages on-call when a critical sits past the client's commitment, maintains each client's Security Journey, drafts monthly posture reviews and proactive outreach for a person to approve, learns from every human decision, proposes MDR suppressions for repeated noise, and watches Harvest burn and capacity and HubSpot renewals and new wins. Built and tested. See modules/sabine.
+- mdr: managed detection and response. Detection rules over managed-services signals (EDR, identity, cloud, backup), readable and editable by the operator and mapped to MITRE ATT&CK, with per-client overrides and expiring suppressions. Investigations with verdicts, a signed timeline, escalation to the IR hub and a containment hand-off to managed services; MTTD, MTTA and MTTR published per client; client portal. Built and tested (port 8800). See modules/mdr.
 - network-operations: managed network and infrastructure operations: device and service health, change and maintenance tracking. Planned.
 
 modules/registry.yaml lists them with status and the environment flag that enables each.
@@ -60,7 +60,7 @@ modules/
   professional-services/ Office of Special Projects (built, deployed)
   evidence-export/       shared court-admissible export + standalone verifier (built and tested)
   ai-triage/             shared evidence-grounded triage copilot (built and tested)
-  mdr/
+  mdr/                   detection and investigation over managed-services signals (built)
   network-operations/
   registry.yaml          module catalog with status and enablement
 infra/

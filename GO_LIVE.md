@@ -54,7 +54,7 @@ Rotating either needs a plan (keep prior public keys to verify old proofs; re-en
 stored secrets under the new key), so treat them as permanent:
 
 ```bash
-for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing sabine professional-services; do
+for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing sabine professional-services mdr; do
   for k in ENCRYPTION_KEY EVIDENCE_SIGNING_KEY; do
     aws ssm get-parameter --with-decryption --name /vendetta/$m/$k --query Parameter.Value --output text 2>/dev/null \
       | sed "s|^|$m $k |"
@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP), 8800 (MDR) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -176,6 +176,15 @@ it escalates into the hub from an engagement instead, and SABINE reads its open
 engagements to queue deliverables awaiting client acceptance and engagements past
 their planned end.
 
+Managed Detection and Response (`http://mdr:8000`, host `mdr.`, port 8800) is a
+finding module. Terraform hands it the managed-services URL and token, so it reads
+managed-services alerts as signals on its own schedule; open its Overview and click
+**Run detection** to see it work once managed services has alerts. Its Rules page
+holds the seeded detections, each mapped to MITRE ATT&CK; read them before the first
+client, switch off any that do not fit, and set per-client overrides there. It never
+acts on a host: a containment hand-off links the responder to the managed-services
+alert page, where the two-person rule still applies.
+
 This directory is also how the IR hub discovers its finding sources: the hub pulls
 findings from every connected finding module into its per-client view and /findings
 page automatically, with no second list to maintain. Leave the hub's
@@ -213,7 +222,49 @@ connected from source "env" and lets you override it in place.
 5. Confirm they render: the client page shows the tool's devices and open alerts, and
    the alert pages show the real payloads.
 
+6. Back on the control plane client page, set the **service tier** (core, advanced,
+   premier) and the **account lead**. The tier sets the response commitments the
+   client sees on their portal (critical acknowledged in 15, 10 or 5 minutes) and
+   that SABINE pages against; override either number per client if the contract says
+   otherwise. The account lead is the person who approves what SABINE drafts for this
+   client.
+7. Turn on MDR for the client and run detection once. The Client 360 panel on the
+   client page now shows everything the platform knows about them: findings by
+   module, MDR investigations, open IR cases, open engagements, the Security Journey
+   and any communications waiting.
+
 Nothing has touched a client machine. Read-only mode is still on.
+
+### What SABINE drafts for the client, and who sends it
+
+SABINE never sends anything to a client. Monthly posture reviews and proactive
+outreach (a campaign that touched them, a deliverable waiting, a commitment at risk)
+arrive as drafts on the control plane under **Communications**. The account lead or
+a platform admin reads, edits and approves; approval publishes it to the client
+portal and emails it to the client's executive list when SMTP is configured. Items
+SABINE suggests for the client's Security Journey arrive as proposed; a person
+accepts or declines each one, and only accepted items appear on the portal.
+
+### The client portal front door
+
+The control plane now has a client portal at `https://platform.<domain>/portal`:
+the client signs in with their own Microsoft 365 account, mapped to their client by
+email domain, and sees their tier and commitments, a tile into every service line
+they have, their Security Journey and the communications you approved. Sign-in runs
+against Vendetta's own Entra tenant, the same as every module portal, so a client
+user signs in as a B2B guest in that tenant: invite each client user (Entra >
+Users > Invite external user) before they first open a portal. A self-service
+multi-tenant sign-in would need the authority switched to `organizations` with
+issuer validation per client tenant, which is not built yet.
+
+### Business sources for SABINE (optional)
+
+With Harvest and HubSpot connected, SABINE also watches engagement budget burn,
+people over capacity, renewals coming up and closed-won deals not yet onboarded.
+Put `/vendetta/sabine/HARVEST_ACCOUNT_ID`, `/vendetta/sabine/HARVEST_TOKEN` and
+`/vendetta/sabine/HUBSPOT_TOKEN` in SSM (SecureString) and run
+`infra/redeploy.sh sabine`. Without them the Business tab says not configured and
+nothing else changes.
 
 ## 7. Add an EDR, still read-only
 
@@ -248,7 +299,7 @@ infra/redeploy.sh
 ```
 
 This brings every module up under the domain (platform., ir., msp., darkweb.,
-vuln., pentest., sabine. and osp.) and, on the redeploy, switches each module to bind for the
+vuln., pentest., sabine., osp. and mdr.) and, on the redeploy, switches each module to bind for the
 load balancer, turns on secure cookies, and sets each module's public URL so the
 control plane's client page links straight into the right client in each module
 and each module links back.
@@ -282,7 +333,7 @@ redirect URI on it.
 2. Redirect URIs (Authentication > Web). Add `https://<host>/auth/callback` for
    every module host, one per line, exactly:
    `platform.<domain>`, `ir.<domain>`, `msp.<domain>`, `darkweb.<domain>`,
-   `vuln.<domain>`, `pentest.<domain>`, `sabine.<domain>` and `osp.<domain>`. Each
+   `vuln.<domain>`, `pentest.<domain>`, `sabine.<domain>`, `osp.<domain>` and `mdr.<domain>`. Each
    module sends its own Redirect URL setting when set, and otherwise the URL it
    computes for its `/auth/callback` route from the request host; behind the ALB
    that is the public hostname, so leaving the setting blank works once the public
@@ -404,8 +455,15 @@ on the host and in the module as follows.
 - Live Entra SSO and the dark web Tor path have not been exercised against the real
   services yet; the Live verification section above is the runbook for the first
   time on the deployed host.
-- MDR and network operations are still scaffolds (every other module is built,
-  containerized and deployed).
+- Network operations is still a scaffold (every other module is built and
+  containerized). MDR is built and wired but has only seen inserted test alerts; the
+  first real SentinelOne, CrowdStrike, Entra and GuardDuty alerts through managed
+  services are its shakeout, and the seeded rules will need tuning against them.
+- Client portal sign-in relies on B2B guest invitations into Vendetta's tenant for
+  every portal (control plane and modules); multi-tenant self-service sign-in is
+  not built.
+- Harvest and HubSpot connectors follow the published APIs and are tested against
+  mocks only. Projects and companies match platform clients by name.
 - The scanner-to-API path exposes POST /api/scans with a reference adapter
   (modules/vulnerability-management/scripts), but has not run against the live Go
   scanner service yet; the first real scan is its shakeout.
