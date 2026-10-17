@@ -1,0 +1,7 @@
+{% extends "portal_base.html" %}{% block title %}{{ m.title }}{% endblock %}
+{% block body %}
+<p style="margin:0 0 10px"><a class="faint" href="/portal">Back to your portal</a></p>
+<div class="title-row"><h1>{{ m.title }}</h1><span class="chip">{{ COMM_KIND_NAMES.get(m.kind, m.kind) }}</span></div>
+<p class="faint" style="margin:2px 0 14px">{{ (m.decided_at or m.created_at).strftime('%B %d, %Y') }}</p>
+<div class="panel pad"><div class="mdbody">{{ render_md(m.body_md) }}</div></div>
+{% endblock %}

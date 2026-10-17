@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% block title %}{{ m.title }}{% endblock %}
+{% block body %}
+<div class="title-row">
+  <h1>{{ m.title }}</h1>
+  <span class="pill {{ 'pill-warn' if m.status == 'draft' else ('pill-ok' if m.status in ('approved','sent') else '') }}">{{ m.status }}</span>
+  <span class="chip">{{ COMM_KIND_NAMES.get(m.kind, m.kind) }}</span>
+  <a class="alink" href="/clients/{{ client.id }}" style="margin-left:auto">{{ client.name }}</a>
+</div>
+<p class="faint" style="margin:2px 0 14px">Drafted by {{ 'SABINE' if m.source == 'sabine' else 'staff' }} on {{ m.created_at.strftime('%b %d, %Y %H:%M') }} UTC{% if m.source_ref %} · <span class="mono">{{ m.source_ref }}</span>{% endif %}. Account lead: {{ client.account_lead or 'not set' }}.</p>
+
+<div class="detail-grid">
+  <div>
+    {% if m.status == 'draft' and can_approve %}
+    <form method="post" action="/clients/{{ client.id }}/communications/{{ m.id }}/approve">
+      <div class="panel pad" style="margin-bottom:12px">
+        <label class="field">Title (shown on the portal)<input name="title" value="{{ m.title }}" required></label>
+        <label class="field" style="margin-top:8px">Email subject<input name="subject" value="{{ m.subject }}"></label>
+        <label class="field" style="margin-top:8px">Body (Markdown)<textarea name="body_md" class="mdedit">{{ m.body_md }}</textarea></label>
+      </div>
+      <div class="row" style="gap:8px">
+        <button class="btn btn-primary">Approve and publish</button>
+        <button class="btn" formaction="/clients/{{ client.id }}/communications/{{ m.id }}/edit">Save draft</button>
+      </div>
+    </form>
+    <form method="post" action="/clients/{{ client.id }}/communications/{{ m.id }}/discard" style="margin-top:10px">
+      <button class="btn btn-sm btn-ghost">Discard</button>
+    </form>
+    <div class="section-head" style="margin-top:18px"><h2>Preview</h2></div>
+    {% endif %}
+    <div class="panel pad"><div class="mdbody">{{ render_md(m.body_md) }}</div></div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Delivery</h2></div>
+    <div class="panel pad">
+      <dl class="kv">
+        <dt>Published</dt><dd>{{ 'yes' if m.published else 'no' }}</dd>
+        <dt>Recipients</dt><dd>{{ recipients|join(', ') if recipients else 'no executive emails on file' }}</dd>
+        <dt>Mail</dt><dd>{{ 'configured' if mail_ready else 'not configured; approval publishes to the portal only' }}</dd>
+        {% if m.decided_by %}<dt>Decided by</dt><dd>{{ m.decided_by }}{% if m.decided_at %}, {{ m.decided_at.strftime('%b %d %H:%M') }} UTC{% endif %}</dd>{% endif %}
+        {% if m.sent_detail %}<dt>Outcome</dt><dd style="font-size:12px">{{ m.sent_detail }}</dd>{% endif %}
+      </dl>
+      {% if m.status == 'draft' and not can_approve %}
+      <p class="faint" style="font-size:12px; margin:10px 0 0">Only {{ client.account_lead or "this client's account lead" }} or a platform admin can approve, edit or discard this draft.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

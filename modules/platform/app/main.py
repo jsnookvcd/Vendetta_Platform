@@ -15,22 +15,26 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import boot
-from . import aggregate, auth, directory, notify, oidc, readiness as readiness_mod, sso, staff as staff_mod
+from . import aggregate, auth, client360, directory, journey, notify, oidc, readiness as readiness_mod, sso, staff as staff_mod
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
-from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, Staff, ToolConnection,
-                 User, get_client_module, init_db, slugify, utcnow)
+from .db import (AuditLog, Client, ClientModule, ClientTool, Communication, JourneyItem, Module, SessionLocal, Staff,
+                 ToolConnection, User, get_client_module, init_db, slugify, utcnow)
 
 log = logging.getLogger(__name__)
 _APP_DIR = Path(__file__).resolve().parent
 app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
 templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 templates.env.globals.update(app_name=settings.app_name, TOOLS=TOOLS, TOOL_NAMES=TOOL_NAMES,
-                             TOOL_HINTS=TOOL_HINTS)
+                             TOOL_HINTS=TOOL_HINTS, TIERS=journey.TIERS, TIER_NAMES=journey.TIER_NAMES,
+                             TIER_DEFAULTS=journey.TIER_DEFAULTS, AREAS=journey.AREAS,
+                             STATUS_NAMES=journey.STATUS_NAMES, COMM_KIND_NAMES=journey.COMM_KIND_NAMES,
+                             render_md=lambda s: Markup(journey.render_md(s)))
 app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="static")
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax",
                    https_only=settings.cookie_secure)
@@ -67,7 +71,20 @@ async def _gate(request: Request, call_next):
         return await call_next(request)
     if not settings.module_enabled and path != "/api/module":
         return HTMLResponse(_DISABLED_HTML, status_code=503)
+    # Tenant boundary, gate half: a client-portal session reaches only the portal,
+    # sign-in and sign-out. Every staff route and the service API also refuse a
+    # client at the route itself (auth.current_user, auth.api_user).
+    if request.cookies.get(auth.COOKIE) and not _portal_open(path):
+        ident = auth.resolve_identity(request)
+        if ident and ident.is_client:
+            if path.startswith("/api/"):
+                return JSONResponse({"detail": "client portal only"}, status_code=403)
+            return RedirectResponse("/portal", status_code=302)
     return await call_next(request)
+
+
+def _portal_open(path: str) -> bool:
+    return path == "/portal" or path.startswith(("/portal/", "/auth/", "/logout"))
 
 
 @app.middleware("http")
@@ -234,14 +251,27 @@ def client_page(cid: str, request: Request, user: str = auth.RequireUser, db: Se
     enabled = c.enabled_modules()
     tool_map = {t.tool_key: t for t in c.tools}
     ms_on = "managed-services" in enabled
+    c360 = client360.build(db, c, modules)
+    ident = auth.require_identity(request)
     return render(request, "client.html", user=user, client=c, modules=modules, ov=ov,
-                  enabled=enabled, tool_map=tool_map, ms_on=ms_on)
+                  enabled=enabled, tool_map=tool_map, ms_on=ms_on, c360=c360,
+                  journey_items=journey.items_for(db, c.id), comms=journey.comms_for(db, c.id),
+                  can_approve=journey.may_approve(ident, c), staff_emails=_staff_emails(db))
+
+
+def _staff_emails(db: Session) -> list[str]:
+    return [p.email for p in db.execute(select(Staff).where(Staff.active.is_(True)).order_by(Staff.email)).scalars()]
 
 
 @app.post("/clients/{cid}/edit")
 def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form(""),
                 executive_emails: str = Form(""), active: bool = Form(False),
+                tier: str | None = Form(None), account_lead: str | None = Form(None),
+                critical_ack_minutes: str | None = Form(None), critical_contain_minutes: str | None = Form(None),
+                portal_enabled: str | None = Form(None),
                 user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Saves the fields the form sent. Tier, lead, commitments and the portal switch
+    are on the client page form; a caller that omits them leaves them unchanged."""
     c = _get_client(db, cid)
     wanted = {d.strip().lower() for d in portal_domains.split(",") if d.strip()}
     # A portal domain must belong to one client only; two clients sharing a domain
@@ -250,12 +280,29 @@ def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form("
     if clash:
         return _back(f"/clients/{cid}", False,
                      f"Portal domain {clash[0]} is already used by {clash[1]}. A domain belongs to one client.")
+    try:
+        new_tier = journey.clean_tier(tier) if tier is not None else c.tier
+        ack = journey.clean_minutes(critical_ack_minutes) if critical_ack_minutes is not None else c.critical_ack_minutes
+        contain = (journey.clean_minutes(critical_contain_minutes) if critical_contain_minutes is not None
+                   else c.critical_contain_minutes)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    lead = c.account_lead
+    if account_lead is not None:
+        lead = staff_mod.normalize_email(account_lead)
+        if lead and "@" not in lead:
+            return _back(f"/clients/{cid}", False, "The account lead is the Vendetta person's work email.")
     # Normalise executive emails to a clean, lower-cased, comma-separated list.
     execs = ",".join(sorted({e.strip().lower() for e in executive_emails.split(",") if e.strip()}))
     c.industry, c.portal_domains, c.active = industry.strip(), portal_domains.strip(), active
     c.executive_emails = execs
+    c.tier, c.account_lead = new_tier, lead
+    c.critical_ack_minutes, c.critical_contain_minutes = ack, contain
+    if portal_enabled is not None:
+        c.portal_enabled = portal_enabled == "true"
     db.commit()
-    _audit(db, user, "client.edit", c.name)
+    _audit(db, user, "client.edit", f"{c.name} tier={c.tier} lead={c.account_lead or 'none'} "
+           f"portal={'on' if c.portal_enabled else 'off'}")
     directory.push_sync(db, keys=c.enabled_modules())
     return _back(f"/clients/{cid}", True, "Client saved. Modules are being told to sync.")
 
@@ -309,6 +356,223 @@ def map_tool(cid: str, tool: str, tenancy: str = Form(""), enabled: bool = Form(
     _audit(db, user, "client.tool", f"{c.name} {tool} {'mapped' if row.enabled else 'cleared'}")
     directory.push_sync(db, keys={"managed-services"})
     return _back(f"/clients/{cid}", True, f"{TOOL_NAMES[tool]} mapping saved for {c.name}.")
+
+
+@app.post("/clients/{cid}/refresh-360")
+def refresh_360(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _get_client(db, cid)
+    client360.clear_cache()
+    return _back(f"/clients/{cid}", True, "Client 360 refreshed.")
+
+
+# ---------------------------------------------------------------- Security Journey (staff)
+def _journey_item(db: Session, cid: str, iid: str) -> tuple[Client, JourneyItem]:
+    c = _get_client(db, cid)
+    item = db.get(JourneyItem, iid)
+    if not item or item.client_id != c.id:
+        raise HTTPException(404)
+    return c, item
+
+
+@app.post("/clients/{cid}/journey")
+def journey_add(cid: str, title: str = Form(""), detail: str = Form(""), area: str = Form(""),
+                due_on: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """A person adding an item has already agreed to it, so it starts planned."""
+    c = _get_client(db, cid)
+    try:
+        item, _ = journey.create_item(db, c, title=title, detail=detail, area=area, due_on=due_on,
+                                      source="staff", status="planned", actor=user)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}#journey", False, e.detail)
+    _audit(db, user, "journey.add", f"{c.name}: {item.title} [{item.area}]")
+    return _back(f"/clients/{cid}", True, "Journey item added.")
+
+
+@app.post("/clients/{cid}/journey/{iid}/accept")
+def journey_accept(cid: str, iid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c, item = _journey_item(db, cid, iid)
+    try:
+        journey.decide_item(db, item, True, user)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    _audit(db, user, "journey.accept", f"{c.name}: {item.title}")
+    return _back(f"/clients/{cid}", True, f"Accepted: {item.title}.")
+
+
+@app.post("/clients/{cid}/journey/{iid}/decline")
+def journey_decline(cid: str, iid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c, item = _journey_item(db, cid, iid)
+    try:
+        journey.decide_item(db, item, False, user)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    _audit(db, user, "journey.decline", f"{c.name}: {item.title}")
+    return _back(f"/clients/{cid}", True, f"Declined: {item.title}.")
+
+
+@app.post("/clients/{cid}/journey/{iid}/status")
+def journey_status(cid: str, iid: str, status: str = Form(""), user: str = auth.RequireUser,
+                   db: Session = Depends(get_db)):
+    c, item = _journey_item(db, cid, iid)
+    try:
+        journey.set_status(db, item, status, user)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    _audit(db, user, "journey.status", f"{c.name}: {item.title} -> {status}")
+    return _back(f"/clients/{cid}", True, f"{item.title}: {journey.STATUS_NAMES[status].lower()}.")
+
+
+@app.post("/clients/{cid}/journey/{iid}/edit")
+def journey_edit(cid: str, iid: str, title: str = Form(""), detail: str = Form(""), area: str = Form(""),
+                 due_on: str = Form(""), note: str = Form(""), user: str = auth.RequireUser,
+                 db: Session = Depends(get_db)):
+    c, item = _journey_item(db, cid, iid)
+    try:
+        journey.edit_item(db, item, title=title, detail=detail, area=area, due_on=due_on, note=note)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    _audit(db, user, "journey.edit", f"{c.name}: {item.title}")
+    return _back(f"/clients/{cid}", True, "Journey item saved.")
+
+
+# ---------------------------------------------------------------- communications (staff)
+def _comm(db: Session, cid: str, mid: str) -> tuple[Client, Communication]:
+    c = _get_client(db, cid)
+    m = db.get(Communication, mid)
+    if not m or m.client_id != c.id:
+        raise HTTPException(404)
+    return c, m
+
+
+def _approver(request: Request, client: Client) -> str:
+    """The one approval point: the client's account lead or a platform admin."""
+    ident = auth.require_internal(request)
+    auth.require_write(request, ident)
+    if not journey.may_approve(ident, client):
+        raise HTTPException(403, "only this client's account lead or a platform admin can approve, edit or "
+                                 "discard a communication")
+    return ident.email
+
+
+@app.get("/communications", response_class=HTMLResponse)
+def comms_inbox(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Drafts waiting for a person across every client, oldest first."""
+    rows = db.execute(select(Communication, Client).join(Client, Client.id == Communication.client_id)
+                      .where(Communication.status == "draft")
+                      .order_by(Communication.created_at)).all()
+    ident = auth.require_identity(request)
+    now = utcnow()
+    drafts = [{"m": m, "client": c, "age_days": (now - m.created_at).days,
+               "mine": journey.may_approve(ident, c)} for m, c in rows]
+    recent = db.execute(select(Communication, Client).join(Client, Client.id == Communication.client_id)
+                        .where(Communication.status != "draft")
+                        .order_by(Communication.decided_at.desc().nullslast()).limit(20)).all()
+    return render(request, "communications.html", user=user, drafts=drafts, recent=recent,
+                  stale_days=journey.STALE_DRAFT_DAYS)
+
+
+@app.get("/clients/{cid}/communications/{mid}", response_class=HTMLResponse)
+def comm_page(cid: str, mid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c, m = _comm(db, cid, mid)
+    ident = auth.require_identity(request)
+    return render(request, "communication.html", user=user, client=c, m=m,
+                  can_approve=journey.may_approve(ident, c), recipients=sorted(c.executive_set()),
+                  mail_ready=notify.can_send())
+
+
+@app.post("/clients/{cid}/communications/{mid}/edit")
+def comm_edit(cid: str, mid: str, request: Request, title: str = Form(""), subject: str = Form(""),
+              body_md: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c, m = _comm(db, cid, mid)
+    actor = _approver(request, c)
+    try:
+        journey.edit_comm(db, m, title=title, subject=subject, body_md=body_md)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}/communications/{mid}", False, e.detail)
+    _audit(db, actor, "comm.edit", f"{c.name}: {m.title}")
+    return _back(f"/clients/{cid}/communications/{mid}", True, "Draft saved.")
+
+
+@app.post("/clients/{cid}/communications/{mid}/approve")
+def comm_approve(cid: str, mid: str, request: Request, title: str | None = Form(None),
+                 subject: str | None = Form(None), body_md: str | None = Form(None),
+                 user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Approve (with any last edits from the same form): published to the client
+    portal and emailed to the executives when mail is configured."""
+    c, m = _comm(db, cid, mid)
+    actor = _approver(request, c)
+    try:
+        if title is not None or subject is not None or body_md is not None:
+            journey.edit_comm(db, m, title=title, subject=subject, body_md=body_md)
+        journey.approve_comm(db, c, m, actor)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}/communications/{mid}", False, e.detail)
+    _audit(db, actor, "comm.approve", f"{c.name}: {m.title} status={m.status}; {m.sent_detail}")
+    return _back(f"/clients/{cid}/communications/{mid}", True,
+                 "Approved and published to the portal. " + ("Emailed to the executives." if m.status == "sent"
+                                                             else m.sent_detail.capitalize() + "."))
+
+
+@app.post("/clients/{cid}/communications/{mid}/discard")
+def comm_discard(cid: str, mid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c, m = _comm(db, cid, mid)
+    actor = _approver(request, c)
+    try:
+        journey.discard_comm(db, m, actor)
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}/communications/{mid}", False, e.detail)
+    _audit(db, actor, "comm.discard", f"{c.name}: {m.title}")
+    return _back(f"/clients/{cid}", True, f"Discarded: {m.title}.")
+
+
+@app.post("/clients/{cid}/communications")
+def comm_add(cid: str, kind: str = Form("outreach"), title: str = Form(""), subject: str = Form(""),
+             body_md: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = _get_client(db, cid)
+    try:
+        m, _ = journey.create_comm(db, c, kind=kind, title=title, subject=subject, body_md=body_md, source="staff")
+    except journey.JourneyError as e:
+        return _back(f"/clients/{cid}", False, e.detail)
+    _audit(db, user, "comm.draft", f"{c.name}: {m.kind} {m.title}")
+    return RedirectResponse(f"/clients/{cid}/communications/{m.id}", status_code=302)
+
+
+# ---------------------------------------------------------------- client portal
+def _portal_client(db: Session, ident: auth.Identity) -> Client:
+    """The signed-in client's own record, only while it is active with the portal on."""
+    c = db.execute(select(Client).options(selectinload(Client.modules))
+                   .where(Client.id == ident.client_id)).scalar_one_or_none()
+    if not c or not c.active or not c.portal_enabled:
+        raise HTTPException(404, "not found")
+    return c
+
+
+def _service_tiles(db: Session, c: Client) -> list[dict]:
+    enabled = c.enabled_modules()
+    tiles = []
+    for m in _modules(db):
+        if m.key in enabled and m.has_portal and m.public_url and m.status != "planned":
+            tiles.append({"key": m.key, "name": m.display_name, "url": f"{m.public_url.rstrip('/')}/portal"})
+    return tiles
+
+
+@app.get("/portal", response_class=HTMLResponse)
+def portal_home(request: Request, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    c = _portal_client(db, ident)
+    items = journey.items_for(db, c.id, statuses=journey.PORTAL_STATUSES)
+    comms = journey.comms_for(db, c.id, published_only=True)
+    return render(request, "portal.html", portal_user=ident.email, client=c, exec_view=ident.is_executive,
+                  commitments=c.commitments(), tiles=_service_tiles(db, c), items=items, comms=comms)
+
+
+@app.get("/portal/communications/{mid}", response_class=HTMLResponse)
+def portal_comm(mid: str, request: Request, ident: auth.Identity = Depends(auth.require_client),
+                db: Session = Depends(get_db)):
+    c = _portal_client(db, ident)
+    m = db.get(Communication, mid)
+    auth.require_owned(ident, m, extra=bool(m and m.published))
+    return render(request, "portal_communication.html", portal_user=ident.email, client=c, m=m,
+                  exec_view=ident.is_executive)
 
 
 # ---------------------------------------------------------------- connections
@@ -613,11 +877,109 @@ def provision_clients(module: str = "", user: str = Depends(auth.api_user), db: 
             continue
         entry = {"id": c.id, "name": c.name, "slug": c.slug, "industry": c.industry,
                  "portal_domains": c.portal_domains, "executive_emails": c.executive_emails,
-                 "modules": sorted(enabled)}
+                 "modules": sorted(enabled), "services": sorted(enabled),
+                 "tier": c.tier or "core", "account_lead": c.account_lead or "",
+                 "commitments": c.commitments()}
         if not module or module == "managed-services":
             entry["tools"] = c.tool_map()
         out.append(entry)
     return {"module": module or "all", "clients": out}
+
+
+# ---------------------------------------------------------------- journey and communications API
+def _api_client(db: Session, pid: str) -> Client:
+    c = db.get(Client, pid)
+    if not c:
+        raise HTTPException(404, "unknown client")
+    return c
+
+
+async def _json_body(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "body must be JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body must be a JSON object")
+    return body
+
+
+def _rule(e: journey.JourneyError):
+    raise HTTPException(e.status, e.detail)
+
+
+@app.get("/api/platform/clients/{pid}/journey")
+def api_journey(pid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    c = _api_client(db, pid)
+    return {"client": {"id": c.id, "name": c.name},
+            "items": [journey.item_dict(i) for i in journey.items_for(db, c.id)]}
+
+
+@app.post("/api/platform/clients/{pid}/journey")
+async def api_journey_add(pid: str, request: Request, user: str = Depends(auth.api_user),
+                          db: Session = Depends(get_db)):
+    """A proposal. Idempotent on (client, source_ref) when source_ref is set, so
+    SABINE can raise the same evidence every cycle without duplicating it."""
+    c = _api_client(db, pid)
+    body = await _json_body(request)
+    try:
+        item, created = journey.create_item(
+            db, c, title=str(body.get("title") or ""), detail=str(body.get("detail") or ""),
+            area=str(body.get("area") or ""), source_ref=str(body.get("source_ref") or ""),
+            due_on=body.get("due_on"), source=journey.source_for(user), status="proposed")
+    except journey.JourneyError as e:
+        _rule(e)
+    if created:
+        _audit(db, user, "journey.propose", f"{c.name}: {item.title} [{item.area}] ref={item.source_ref or '-'}")
+    return {"id": item.id, "created": created}
+
+
+@app.post("/api/platform/clients/{pid}/journey/{item_id}/progress")
+async def api_journey_progress(pid: str, item_id: str, request: Request, user: str = Depends(auth.api_user),
+                               db: Session = Depends(get_db)):
+    c = _api_client(db, pid)
+    item = db.get(JourneyItem, item_id)
+    if not item or item.client_id != c.id:
+        raise HTTPException(404, "unknown journey item")
+    body = await _json_body(request)
+    try:
+        journey.progress_item(db, item, str(body.get("status") or ""), str(body.get("note") or ""))
+    except journey.JourneyError as e:
+        _rule(e)
+    _audit(db, user, "journey.progress", f"{c.name}: {item.title} -> {item.status}"
+           f" ref={body.get('source_ref') or '-'}")
+    return {"id": item.id, "status": item.status}
+
+
+@app.get("/api/platform/clients/{pid}/communications")
+def api_comms(pid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    c = _api_client(db, pid)
+    return {"items": [journey.comm_dict(m) for m in journey.comms_for(db, c.id)]}
+
+
+@app.post("/api/platform/clients/{pid}/communications")
+async def api_comm_add(pid: str, request: Request, user: str = Depends(auth.api_user),
+                       db: Session = Depends(get_db)):
+    """A draft for a person to approve. Idempotent on (client, source_ref)."""
+    c = _api_client(db, pid)
+    body = await _json_body(request)
+    try:
+        m, created = journey.create_comm(
+            db, c, kind=str(body.get("kind") or ""), title=str(body.get("title") or ""),
+            subject=str(body.get("subject") or ""), body_md=str(body.get("body_md") or ""),
+            source_ref=str(body.get("source_ref") or ""), source=journey.source_for(user))
+    except journey.JourneyError as e:
+        _rule(e)
+    if created:
+        _audit(db, user, "comm.draft", f"{c.name}: {m.kind} {m.title} ref={m.source_ref or '-'}")
+    return {"id": m.id, "created": created}
+
+
+@app.get("/api/platform/clients/{pid}/360")
+def api_client_360(pid: str, refresh: bool = False, user: str = Depends(auth.api_user),
+                   db: Session = Depends(get_db)):
+    c = _get_client(db, pid)
+    return client360.build(db, c, _modules(db), force=refresh)
 
 
 @app.get("/api/platform/modules")
@@ -655,7 +1017,9 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
         "modules": {m.key: m.status for m in mods},
         "public_url": settings.public_url,
         "endpoints": ["/api/platform/clients", "/api/platform/staff", "/api/platform/modules",
-                      "/api/platform/readiness", "/api/module"],
+                      "/api/platform/readiness", "/api/platform/clients/{pid}/journey",
+                      "/api/platform/clients/{pid}/communications", "/api/platform/clients/{pid}/360",
+                      "/api/module"],
     }
 
 

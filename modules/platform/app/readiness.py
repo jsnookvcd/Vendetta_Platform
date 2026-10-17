@@ -164,6 +164,7 @@ def _control_plane_checks(modules, ov) -> list[dict]:
     try:
         n = len(staff_mod.roster_all(db))
         admins = sum(1 for p in staff_mod.roster_all(db) if p["active"] and p["platform_role"] == "admin")
+        checks += _client_checks(db)
     finally:
         db.close()
     if n == 0:
@@ -174,6 +175,33 @@ def _control_plane_checks(modules, ov) -> list[dict]:
         checks.append(_chk("Staff roster", "ok", f"{n} onboarded, {admins} admin(s); roster governs sign-in"))
     checks.append(_chk("Public URL set", "ok" if settings.public_url else "warn",
                        "" if settings.public_url else "PUBLIC_URL unset; modules cannot link back here"))
+    return checks
+
+
+def _client_checks(db) -> list[dict]:
+    """The client relationship: every client on the portal has someone who owns the
+    relationship (and so can approve what it is sent), and drafts do not sit."""
+    from sqlalchemy import select
+
+    from . import journey
+    from .db import Client
+
+    checks: list[dict] = []
+    portal = db.execute(select(Client).where(Client.active.is_(True), Client.portal_enabled.is_(True))
+                        .order_by(Client.name)).scalars().all()
+    leaderless = [c.name for c in portal if not (c.account_lead or "").strip()]
+    if leaderless:
+        checks.append(_chk("Portal clients have an account lead", "warn",
+                           f"{len(leaderless)} without one: {', '.join(leaderless)}; only a platform admin can "
+                           "approve their communications"))
+    elif portal:
+        checks.append(_chk("Portal clients have an account lead", "ok", f"{len(portal)} portal client(s)"))
+    stale = journey.stale_drafts(db)
+    if stale:
+        checks.append(_chk("Communications drafts", "warn",
+                           f"{len(stale)} draft(s) waiting more than {journey.STALE_DRAFT_DAYS} days for approval"))
+    else:
+        checks.append(_chk("Communications drafts", "ok", "none waiting more than a week"))
     return checks
 
 

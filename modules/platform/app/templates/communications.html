@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}Communications{% endblock %}
+{% block body %}
+<p class="faint" style="margin:2px 0 16px">Posture reviews and outreach drafted by SABINE or the team, waiting for one person to approve. Approving publishes the note to the client portal and emails the client's executives. The account lead or a platform admin approves.</p>
+
+<div class="section-head"><h2>Drafts waiting</h2><span class="count">{{ drafts|length }}</span></div>
+<div class="panel" style="margin-bottom:18px"><div class="table-wrap">
+{% if drafts %}
+<table>
+  <thead><tr><th>Title</th><th>Client</th><th>Kind</th><th>From</th><th>Account lead</th><th>Waiting</th></tr></thead>
+  <tbody>{% for d in drafts %}<tr>
+    <td><a href="/clients/{{ d.client.id }}/communications/{{ d.m.id }}"><b>{{ d.m.title }}</b></a>{% if d.mine %} <span class="pill pill-ok">yours to approve</span>{% endif %}</td>
+    <td class="nowrap"><a href="/clients/{{ d.client.id }}">{{ d.client.name }}</a></td>
+    <td class="faint">{{ COMM_KIND_NAMES.get(d.m.kind, d.m.kind) }}</td>
+    <td class="faint">{{ 'SABINE' if d.m.source == 'sabine' else 'staff' }}</td>
+    <td class="faint">{{ d.client.account_lead or 'not set' }}</td>
+    <td class="nowrap">{% if d.age_days > stale_days %}<span class="pill pill-warn">{{ d.age_days }} days</span>{% else %}<span class="faint">{{ d.age_days }} day{{ 's' if d.age_days != 1 }}</span>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+{% else %}<div class="empty"><h3>Nothing waiting</h3><p>Every draft has been approved or discarded.</p></div>{% endif %}
+</div></div>
+
+<div class="section-head"><h2>Recently decided</h2></div>
+<div class="panel"><div class="table-wrap">
+{% if recent %}
+<table>
+  <thead><tr><th>Title</th><th>Client</th><th>Status</th><th>Decided by</th><th>When</th></tr></thead>
+  <tbody>{% for m, c in recent %}<tr>
+    <td><a href="/clients/{{ c.id }}/communications/{{ m.id }}">{{ m.title }}</a></td>
+    <td class="nowrap">{{ c.name }}</td>
+    <td><span class="pill {{ 'pill-ok' if m.status in ('approved','sent') }}">{{ m.status }}</span></td>
+    <td class="faint">{{ m.decided_by }}</td>
+    <td class="faint nowrap">{{ m.decided_at.strftime('%b %d, %Y %H:%M') if m.decided_at else '' }}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+{% else %}<div class="empty"><p>No decisions yet.</p></div>{% endif %}
+</div></div>
+{% endblock %}

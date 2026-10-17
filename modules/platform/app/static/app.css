@@ -330,3 +330,36 @@ label.field.chk { flex-direction: row; align-items: center; gap: 7px; }
 .fieldgrid .field { margin: 0; }
 .req { color: #ff9ba6; }
 .hint { display: block; font-size: 11.5px; color: var(--faint); }
+
+/* ---------------------------------------------------------------- client 360, journey, communications */
+.c360 { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.c360 .cell { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 14px; min-width: 0; }
+.c360 .cell h3 { font-size: 12px; font-weight: 700; color: var(--muted); margin: 0 0 6px; letter-spacing: 0.02em; }
+.c360 .cell .n { font-size: 22px; font-weight: 800; }
+.c360 .cell .down { color: var(--faint); font-size: 12px; }
+.c360 .sevrow { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.c360 ul { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12px; }
+.c360 li { padding: 3px 0; border-top: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jlist { list-style: none; margin: 0; padding: 0; }
+.jlist > li { padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.jlist > li:last-child { border-bottom: 0; }
+.jlist .jtop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jlist .jtop b { font-size: 13px; }
+.jlist .jdetail { font-size: 12.5px; color: var(--muted); margin: 4px 0 0; }
+.jlist .jactions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+.jlist details summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.js-proposed { color: var(--info); border-color: #2a4470; }
+.js-planned { color: var(--fg); }
+.js-in_progress { color: #ffc96b; border-color: #6a5224; }
+.js-done { color: #8fd98a; border-color: #2f5a34; }
+.js-declined { color: var(--faint); text-decoration: line-through; }
+.mdbody { font-size: 14px; line-height: 1.6; max-width: 72ch; }
+.mdbody h3, .mdbody h4, .mdbody h5 { margin: 16px 0 6px; }
+.mdbody ul, .mdbody ol { padding-left: 20px; }
+.mdbody code { font-family: var(--mono); font-size: 12.5px; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+textarea.mdedit { width: 100%; min-height: 280px; font-family: var(--mono); font-size: 12.5px; }
+.portal-wrap { max-width: 1040px; margin: 0 auto; padding: 22px 16px 40px; }
+.svc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.svc-tiles a { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 14px 16px; color: var(--fg); text-decoration: none; }
+.svc-tiles a:hover { border-color: var(--line-2); background: var(--panel-2); }
+.svc-tiles a span { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }

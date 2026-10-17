@@ -10,7 +10,7 @@ module:
   role: control-plane
   status: in-progress          # built and tested; adoption by all modules in progress
   enablement: MODULE_ENABLED
-  staff_only: true             # clients use each module's own portal, not the control plane
+  staff_only: false            # client users reach /portal only, mapped by portal domain
 
 system_of_record:
   clients: canonical directory, one row per client with a stable platform id
@@ -40,8 +40,13 @@ connections:
 api:
   module_manifest: GET /api/module
   provisioning: GET /api/platform/clients
+  journey: GET|POST /api/platform/clients/{pid}/journey, POST /api/platform/clients/{pid}/journey/{item}/progress
+  communications: GET|POST /api/platform/clients/{pid}/communications
+  client_360: GET /api/platform/clients/{pid}/360
   docs: /api/docs
 
 roles:
-  admin: full
-  analyst: full
+  admin: full; approves any client communication
+  analyst: full; approves communications only for clients they lead
+  viewer: reads everything, changes nothing
+  client: /portal only, scoped to one client by portal domain

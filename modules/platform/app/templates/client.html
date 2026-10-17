@@ -1,13 +1,141 @@
 {% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% macro jstate(s) %}<span class="pill js-{{ s }}">{{ STATUS_NAMES.get(s, s) }}</span>{% endmacro %}
+{% macro modstate(b) %}{% if b.state == 'ok' %}{% elif b.state == 'not_enabled' %}<span class="down">not turned on</span>{% elif b.state == 'not_connected' %}<span class="down">not connected</span>{% elif b.detail.startswith('unreachable') %}<span class="down">{{ b.detail }}</span>{% else %}<span class="down">unreachable: {{ b.detail }}</span>{% endif %}{% endmacro %}
+{% block topbar %}
+<form method="post" action="/clients/{{ client.id }}/refresh-360"><button class="btn btn-sm">Refresh 360</button></form>
+{% endblock %}
 {% block body %}
+{% set cm = client.commitments() %}
 <div class="title-row">
   <h1>{{ client.name }}</h1>
+  <span class="pill">{{ TIER_NAMES.get(client.tier or 'core', client.tier) }}</span>
   {% if client.industry %}<span class="chip">{{ client.industry }}</span>{% endif %}
   {% if not client.active %}<span class="faint">paused</span>{% endif %}
+  <span class="faint" style="font-size:12px">Account lead: {{ client.account_lead or 'not set' }}</span>
+</div>
+
+<div class="section-head"><h2>Client 360</h2><span class="count">live from each module, cached briefly</span></div>
+{% set f = c360.findings %}
+<div class="c360">
+  <div class="cell">
+    <h3>Active findings</h3>
+    <div class="n">{{ f.total }}</div>
+    <div class="sevrow">{% for s in ('critical','high','medium','low') %}{% if f.by_severity[s] %}<span class="sev sev-{{ s }}">{{ f.by_severity[s] }} {{ s }}</span>{% endif %}{% endfor %}</div>
+    <ul>{% for b in f.modules %}<li>{{ b.display_name }}: {% if b.state == 'ok' %}{{ b.total }}{% if b.by_severity.critical or b.by_severity.high %} ({{ b.by_severity.critical + b.by_severity.high }} crit/high){% endif %}{% else %}{{ modstate(b) }}{% endif %}</li>{% endfor %}</ul>
+  </div>
+  {% set md = c360.mdr %}
+  <div class="cell">
+    <h3>MDR investigations</h3>
+    {% if md.state == 'ok' %}<div class="n">{{ md.open }}</div><div class="faint" style="font-size:12px">{{ md.unacknowledged }} not yet acknowledged</div>
+    <ul>{% for i in md['items'] %}<li><span class="sev sev-{{ i.severity }}">{{ i.severity }}</span> {{ i.number }} {{ i.title }} <span class="faint">{{ i.status }}</span></li>{% endfor %}</ul>
+    {% else %}{{ modstate(md) }}{% endif %}
+  </div>
+  {% set ir = c360.incident_response %}
+  <div class="cell">
+    <h3>Open IR cases</h3>
+    {% if ir.state == 'ok' %}<div class="n">{{ ir.open }}</div>
+    <ul>{% for c in ir.cases %}<li><span class="sev sev-{{ c.severity }}">{{ c.severity }}</span> {{ c.number }} {{ c.title }}</li>{% endfor %}</ul>
+    {% else %}{{ modstate(ir) }}{% endif %}
+  </div>
+  {% set osp = c360.professional_services %}
+  <div class="cell">
+    <h3>Office of Special Projects</h3>
+    {% if osp.state == 'ok' %}<div class="n">{{ osp.open }}</div><div class="faint" style="font-size:12px">open engagements, {{ osp.deliverables_waiting }} deliverable{{ 's' if osp.deliverables_waiting != 1 }} waiting on the client</div>
+    <ul>{% for e in osp.engagements %}<li>{{ e.name }}{% if e.waiting %} <span class="faint">({{ e.waiting|length }} waiting)</span>{% endif %}{% if e.overdue %} <span class="sev sev-high">overdue</span>{% endif %}</li>{% endfor %}</ul>
+    {% else %}{{ modstate(osp) }}{% endif %}
+  </div>
+  <div class="cell">
+    <h3>Security Journey</h3>
+    {% set jc = c360.journey.counts %}
+    <div class="n">{{ jc.in_progress + jc.planned }}</div><div class="faint" style="font-size:12px">planned or in progress</div>
+    <ul><li>{{ jc.proposed }} proposed, waiting on a decision</li><li>{{ jc.done }} done</li></ul>
+  </div>
+  <div class="cell">
+    <h3>Communications</h3>
+    <div class="n">{{ c360.communications.drafts }}</div><div class="faint" style="font-size:12px">draft{{ 's' if c360.communications.drafts != 1 }} waiting for approval</div>
+    <ul>{% for m in c360.communications['items'][:4] %}<li><a href="/clients/{{ client.id }}/communications/{{ m.id }}">{{ m.title }}</a></li>{% endfor %}</ul>
+  </div>
 </div>
 
 <div class="detail-grid">
   <div>
+    <div class="section-head" id="journey"><h2>Security Journey</h2><span class="count">what this client is improving, and what SABINE proposes</span></div>
+    <div class="panel" style="margin-bottom:16px">
+      {% if journey_items %}
+      <ul class="jlist">
+      {% for i in journey_items %}
+        <li>
+          <div class="jtop">{{ jstate(i.status) }}<b>{{ i.title }}</b><span class="chip">{{ i.area }}</span>
+            {% if i.due_on %}<span class="faint" style="font-size:12px">due {{ i.due_on.strftime('%b %d, %Y') }}</span>{% endif %}
+            <span class="faint" style="font-size:11.5px">{{ 'SABINE' if i.source == 'sabine' else 'staff' }}{% if i.decided_by %} · decided by {{ i.decided_by }}{% endif %}</span></div>
+          {% if i.detail %}<p class="jdetail">{{ i.detail }}</p>{% endif %}
+          {% if i.note %}<p class="jdetail"><b>Note:</b> {{ i.note }}</p>{% endif %}
+          <div class="jactions">
+            {% if i.status == 'proposed' %}
+            <form method="post" action="/clients/{{ client.id }}/journey/{{ i.id }}/accept"><button class="btn btn-xs btn-primary">Accept</button></form>
+            <form method="post" action="/clients/{{ client.id }}/journey/{{ i.id }}/decline"><button class="btn btn-xs btn-ghost">Decline</button></form>
+            {% else %}
+            <form method="post" action="/clients/{{ client.id }}/journey/{{ i.id }}/status" class="row" style="gap:6px">
+              <select name="status">{% for s in ('planned','in_progress','done','declined') %}<option value="{{ s }}" {{ 'selected' if s == i.status }}>{{ STATUS_NAMES[s] }}</option>{% endfor %}</select>
+              <button class="btn btn-xs">Move</button>
+            </form>
+            {% endif %}
+            <details><summary>Edit</summary>
+              <form method="post" action="/clients/{{ client.id }}/journey/{{ i.id }}/edit" style="margin-top:8px">
+                <label class="field">Title<input name="title" value="{{ i.title }}" required></label>
+                <label class="field" style="margin-top:6px">Area<select name="area">{% for a in AREAS %}<option {{ 'selected' if a == i.area }}>{{ a }}</option>{% endfor %}</select></label>
+                <label class="field" style="margin-top:6px">Due<input type="date" name="due_on" value="{{ i.due_on.isoformat() if i.due_on else '' }}"></label>
+                <label class="field" style="margin-top:6px">Detail<textarea name="detail" rows="3">{{ i.detail }}</textarea></label>
+                <label class="field" style="margin-top:6px">Note<input name="note" value="{{ i.note }}"></label>
+                <button class="btn btn-xs" style="margin-top:8px">Save</button>
+              </form>
+            </details>
+          </div>
+        </li>
+      {% endfor %}
+      </ul>
+      {% else %}<div class="empty"><p>No journey items yet. Add one below, or SABINE will propose them from what it sees.</p></div>{% endif %}
+    </div>
+    <div class="panel pad" style="margin-bottom:16px">
+      <form method="post" action="/clients/{{ client.id }}/journey">
+        <div class="fieldgrid">
+          <label class="field">New item<input name="title" required placeholder="Enforce phishing-resistant MFA for admins"></label>
+          <label class="field">Area<select name="area">{% for a in AREAS %}<option>{{ a }}</option>{% endfor %}</select></label>
+          <label class="field">Due<input type="date" name="due_on"></label>
+        </div>
+        <label class="field" style="margin-top:8px">Detail<textarea name="detail" rows="2"></textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-sm btn-primary">Add to journey</button> <span class="faint" style="font-size:12px">Items you add start planned.</span></div>
+      </form>
+    </div>
+
+    <div class="section-head" id="communications"><h2>Communications</h2><span class="count">posture reviews and outreach; one approval publishes and emails</span></div>
+    <div class="panel" style="margin-bottom:16px"><div class="table-wrap">
+      {% if comms %}
+      <table>
+        <thead><tr><th>Title</th><th>Kind</th><th>Status</th><th>From</th><th>Created</th></tr></thead>
+        <tbody>{% for m in comms %}<tr>
+          <td><a href="/clients/{{ client.id }}/communications/{{ m.id }}"><b>{{ m.title }}</b></a></td>
+          <td class="faint">{{ COMM_KIND_NAMES.get(m.kind, m.kind) }}</td>
+          <td><span class="pill {{ 'pill-warn' if m.status == 'draft' else ('pill-ok' if m.status in ('approved','sent') else '') }}">{{ m.status }}</span></td>
+          <td class="faint">{{ 'SABINE' if m.source == 'sabine' else 'staff' }}</td>
+          <td class="faint nowrap">{{ m.created_at.strftime('%b %d, %Y') }}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty"><p>No communications yet.</p></div>{% endif %}
+    </div></div>
+    <details class="panel pad" style="margin-bottom:16px">
+      <summary class="faint" style="cursor:pointer">Draft a communication</summary>
+      <form method="post" action="/clients/{{ client.id }}/communications" style="margin-top:10px">
+        <div class="fieldgrid">
+          <label class="field">Title<input name="title" required></label>
+          <label class="field">Kind<select name="kind"><option value="outreach">Outreach</option><option value="posture_review">Posture review</option></select></label>
+        </div>
+        <label class="field" style="margin-top:8px">Email subject<input name="subject"></label>
+        <label class="field" style="margin-top:8px">Body (Markdown)<textarea name="body_md" class="mdedit" style="min-height:140px"></textarea></label>
+        <div style="margin-top:10px"><button class="btn btn-sm">Save draft</button></div>
+      </form>
+    </details>
+
     <div class="section-head"><h2>Modules</h2><span class="count">turn on what this client gets</span></div>
     <div class="panel" style="margin-bottom:16px">
       <ul class="modlist">
@@ -47,14 +175,30 @@
   </div>
 
   <div>
+    <div class="section-head"><h2>Response commitments</h2></div>
+    <div class="panel pad" style="margin-bottom:14px">
+      <dl class="kv">
+        <dt>Tier</dt><dd>{{ TIER_NAMES.get(client.tier or 'core', client.tier) }}</dd>
+        <dt>Critical acknowledged</dt><dd>{{ cm.critical_ack_minutes }} min{% if client.critical_ack_minutes %} <span class="faint">(override)</span>{% endif %}</dd>
+        <dt>Critical contained</dt><dd>{{ cm.critical_contain_minutes }} min{% if client.critical_contain_minutes %} <span class="faint">(override)</span>{% endif %}</dd>
+      </dl>
+    </div>
+
     <div class="section-head"><h2>Client</h2></div>
     <div class="panel pad">
       <form method="post" action="/clients/{{ client.id }}/edit">
         <label class="field">Industry<input name="industry" value="{{ client.industry }}"></label>
+        <label class="field" style="margin-top:9px">Tier<select name="tier">{% for t in TIERS %}<option value="{{ t }}" {{ 'selected' if t == (client.tier or 'core') }}>{{ TIER_NAMES[t] }} (ack {{ TIER_DEFAULTS[t].critical_ack_minutes }}, contain {{ TIER_DEFAULTS[t].critical_contain_minutes }} min)</option>{% endfor %}</select></label>
+        <label class="field" style="margin-top:9px">Account lead<input name="account_lead" value="{{ client.account_lead }}" list="staff-emails" placeholder="name@vendettacd.io"></label>
+        <datalist id="staff-emails">{% for e in staff_emails %}<option value="{{ e }}">{% endfor %}</datalist>
+        <label class="field" style="margin-top:9px">Critical ack override (minutes)<input name="critical_ack_minutes" value="{{ client.critical_ack_minutes or '' }}" inputmode="numeric" placeholder="tier default"></label>
+        <label class="field" style="margin-top:9px">Critical contain override (minutes)<input name="critical_contain_minutes" value="{{ client.critical_contain_minutes or '' }}" inputmode="numeric" placeholder="tier default"></label>
         <label class="field" style="margin-top:9px">Portal email domains<input name="portal_domains" value="{{ client.portal_domains }}" placeholder="example.com, example.org"></label>
         <label class="field" style="margin-top:9px">Executive emails<input name="executive_emails" value="{{ client.executive_emails }}" placeholder="ceo@example.com, cfo@example.com"></label>
-        <label class="field chk" style="margin-top:9px"><input type="checkbox" name="active" value="true" {{ 'checked' if client.active }}> Active</label>
-        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal domains flow to each module's client portal so this client's staff can sign in there. Executive emails get the summary-only view; everyone else at the client gets the technical view.</p>
+        <input type="hidden" name="portal_enabled" value="false">
+        <label class="field chk" style="margin-top:9px"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Client portal on the platform</label>
+        <label class="field chk" style="margin-top:6px"><input type="checkbox" name="active" value="true" {{ 'checked' if client.active }}> Active</label>
+        <p class="faint" style="font-size:12px; margin:8px 0 0">Portal domains flow to each module's client portal so this client's staff can sign in there, and to the platform portal when it is on. Executive emails get the summary-only view and receive approved communications. Leave an override blank to use the tier default.</p>
         <div style="margin-top:12px"><button class="btn btn-primary">Save</button></div>
       </form>
     </div>

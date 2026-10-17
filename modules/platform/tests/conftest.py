@@ -37,10 +37,11 @@ def _release(engine):
 def fresh_db():
     if not _db_up():
         pytest.skip("test database not reachable")
-    from app import aggregate
+    from app import aggregate, client360
     from app.db import Base, engine, init_db
 
     aggregate.clear_cache()
+    client360.use_transport(None)
     _release(engine)
     Base.metadata.drop_all(engine)
     init_db()
