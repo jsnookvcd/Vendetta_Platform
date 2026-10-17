@@ -57,15 +57,19 @@ def _get_source(db: Session, name: str, url: str) -> Source:
     return src
 
 
-def run_ransomware_live(db: Session) -> int:
+def rl_headers() -> dict:
+    return {settings.ransomware_live_api_header: settings.ransomware_live_api_key} if settings.ransomware_live_api_key else {}
+
+
+def run_ransomware_live(db: Session) -> dict:
+    """Returns a run summary: {"ok", "new", "rows"} and "error" on failure."""
     url = f"{_rl_base()}/recentvictims"
     src = _get_source(db, "ransomware.live recent victims", url)
-    headers = {settings.ransomware_live_api_header: settings.ransomware_live_api_key} if settings.ransomware_live_api_key else {}
     try:
-        data = fetch_json(url, headers=headers)
+        data = fetch_json(url, headers=rl_headers())
     except Exception as e:  # noqa: BLE001
         mark_source(db, src, False, str(e))
-        return 0
+        return {"ok": False, "new": 0, "error": str(e)}
     rows = data if isinstance(data, list) else data.get("victims") or data.get("data") or []
     n = 0
     for v in rows:
@@ -95,16 +99,17 @@ def run_ransomware_live(db: Session) -> int:
         n += 1 if item else 0
     mark_source(db, src, True)
     log.info("ransomware.live: %d new victims", n)
-    return n
+    return {"ok": True, "new": n, "rows": len(rows)}
 
 
-def run_ransomwatch_posts(db: Session) -> int:
+def run_ransomwatch_posts(db: Session) -> dict:
+    """Returns a run summary: {"ok", "new", "rows"} and "error" on failure."""
     src = _get_source(db, "ransomwatch posts", RANSOMWATCH_POSTS)
     try:
         rows = fetch_json(RANSOMWATCH_POSTS)
     except Exception as e:  # noqa: BLE001
         mark_source(db, src, False, str(e))
-        return 0
+        return {"ok": False, "new": 0, "error": str(e)}
     n = 0
     for v in rows:
         victim = v.get("post_title") or ""
@@ -124,15 +129,14 @@ def run_ransomwatch_posts(db: Session) -> int:
         n += 1 if item else 0
     mark_source(db, src, True)
     log.info("ransomwatch posts: %d new victims", n)
-    return n
+    return {"ok": True, "new": n, "rows": len(rows)}
 
 
 def _group_lists() -> list[tuple[str, list]]:
     """Group lists from ransomware.live (live) and ransomwatch (archived mid-2025, still a useful seed)."""
     out = []
-    headers = {settings.ransomware_live_api_header: settings.ransomware_live_api_key} if settings.ransomware_live_api_key else {}
     for label, url, hdrs in [
-        ("ransomware.live", f"{_rl_base()}/groups", headers),
+        ("ransomware.live", f"{_rl_base()}/groups", rl_headers()),
         ("ransomwatch", RANSOMWATCH_GROUPS, {}),
     ]:
         try:
@@ -177,6 +181,10 @@ def seed_onion_sources(db: Session) -> int:
     return added
 
 
-def run(db: Session) -> None:
-    run_ransomware_live(db)
-    run_ransomwatch_posts(db)
+def run(db: Session) -> dict:
+    """Both feeds in one call. The worker schedules them as separate connectors
+    (see app/connectors.py); this stays for scripts and manual use."""
+    rl = run_ransomware_live(db)
+    rw = run_ransomwatch_posts(db)
+    errors = [f"{k}: {v['error']}" for k, v in (("ransomware.live", rl), ("ransomwatch", rw)) if not v.get("ok")]
+    return {"ok": not errors, "error": "; ".join(errors), "ransomware_live": rl, "ransomwatch": rw}

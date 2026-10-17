@@ -29,15 +29,18 @@ def _source(db: Session, channel: str) -> Source:
     return src
 
 
-async def _collect(db: Session) -> None:
+async def _collect(db: Session) -> dict:
     from telethon import TelegramClient  # type: ignore
 
     client = TelegramClient(SESSION_PATH, int(settings.telegram_api_id), settings.telegram_api_hash)
     await client.connect()
     if not await client.is_user_authorized():
         log.error("telegram session not authorized; run scripts/telegram_login.py")
-        return
-    for channel in [c.strip().lstrip("@") for c in settings.telegram_channels.split(",") if c.strip()]:
+        await client.disconnect()
+        return {"ok": False, "error": "telegram session not authorized; run scripts/telegram_login.py"}
+    failed: list[str] = []
+    channels = [c.strip().lstrip("@") for c in settings.telegram_channels.split(",") if c.strip()]
+    for channel in channels:
         src = _source(db, channel)
         last_id = int((src.meta or {}).get("last_message_id", 0))
         try:
@@ -63,15 +66,19 @@ async def _collect(db: Session) -> None:
             mark_source(db, src, True)
         except Exception as e:  # noqa: BLE001
             mark_source(db, src, False, str(e))
+            failed.append(f"@{channel}: {e}")
     await client.disconnect()
+    if channels and len(failed) == len(channels):
+        return {"ok": False, "error": "; ".join(failed)[:2000], "channels": len(channels)}
+    return {"ok": True, "channels": len(channels), "failed": len(failed)}
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     if not (settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_channels):
-        return
+        return {"ok": True, "skipped": "TELEGRAM_API_ID, TELEGRAM_API_HASH and TELEGRAM_CHANNELS not all set"}
     try:
         import telethon  # noqa: F401
     except ImportError:
         log.info("telethon not installed; telegram collector skipped")
-        return
-    asyncio.run(_collect(db))
+        return {"ok": True, "skipped": "telethon not installed"}
+    return asyncio.run(_collect(db))

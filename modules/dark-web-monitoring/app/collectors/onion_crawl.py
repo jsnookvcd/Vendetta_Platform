@@ -116,22 +116,33 @@ def crawl_source(db: Session, src: Source) -> bool:
     return True
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     now = dt.datetime.now(dt.timezone.utc)
     sources = db.execute(
         select(Source).where(Source.kind == "onion", Source.enabled.is_(True)).order_by(Source.last_ok.asc().nullsfirst())
     ).scalars().all()
     done = 0
+    failed = 0
+    last_error = ""
     for src in sources:
         if done >= MAX_SOURCES_PER_RUN:
             break
         if not _due(src, now):
             continue
         try:
-            crawl_source(db, src)
+            if not crawl_source(db, src):
+                failed += 1
+                last_error = src.last_error
         except Exception as e:  # noqa: BLE001
             log.exception("crawl error %s", src.url)
             mark_source(db, src, False, str(e))
+            failed += 1
+            last_error = str(e)
         done += 1
         time.sleep(PAUSE_SECONDS)
     log.info("onion crawl: %d sources attempted", done)
+    summary = {"ok": True, "attempted": done, "failed": failed, "enabled_sources": len(sources)}
+    if done and failed == done:
+        # Every mirror failing at once usually means Tor itself is down.
+        summary.update(ok=False, error=f"all {done} attempted onion sources failed; last error: {last_error}"[:2000])
+    return summary

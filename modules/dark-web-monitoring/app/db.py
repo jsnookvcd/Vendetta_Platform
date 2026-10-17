@@ -229,6 +229,60 @@ class AuditLog(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
 
 
+class CollectorRun(Base):
+    """One execution of a scheduled or manually requested collector job. Written by
+    the worker's job wrapper so the console can show what ran, what it produced and
+    why it failed. Rows older than RUN_RETENTION_DAYS are pruned daily."""
+
+    __tablename__ = "collector_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(50), index=True)
+    trigger: Mapped[str] = mapped_column(String(20), default="schedule")  # schedule | manual | startup
+    requested_by: Mapped[str] = mapped_column(String(320), default="")
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None while running
+    items_new: Mapped[int] = mapped_column(Integer, default=0)
+    hits_new: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WorkerState(Base):
+    """Small key/value store the worker writes and the web container reads:
+    the heartbeat, the latest Tor check and similar singletons."""
+
+    __tablename__ = "worker_state"
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkerRequestMixin:
+    """A unit of work the web container queues and the worker drains. The web
+    container never runs collectors or Tor requests itself; it inserts a row and the
+    worker claims it on its next poll. Reused by every worker-polled request table
+    (run_requests now; search_requests and similar later): subclass with a
+    __tablename__ and hand the model to app.work_requests."""
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    # pending | running | done | failed
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    requested_by: Mapped[str] = mapped_column(String(320), default="")
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class RunRequest(WorkerRequestMixin, Base):
+    """"Run now" on the Connectors page. payload: {"connector": key}."""
+
+    __tablename__ = "run_requests"
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     with engine.begin() as conn:

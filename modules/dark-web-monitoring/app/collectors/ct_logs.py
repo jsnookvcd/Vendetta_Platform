@@ -63,12 +63,14 @@ def _source(db: Session) -> Source:
     return src
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     src = _source(db)
     rows = db.execute(
         select(WatchTerm, Client).join(Client)
         .where(WatchTerm.enabled.is_(True), Client.active.is_(True), WatchTerm.kind == "domain")
     ).all()
+    if not rows:
+        return {"ok": True, "skipped": "no domain watch terms"}
     try:
         for term, client in rows:
             domain = term.term.strip().lower()
@@ -111,6 +113,8 @@ def run(db: Session) -> None:
                 )
                 time.sleep(1.5)
         mark_source(db, src, True)
+        return {"ok": True, "domains": len(rows)}
     except Exception as e:  # noqa: BLE001
         log.exception("ct run failed")
         mark_source(db, src, False, str(e))
+        return {"ok": False, "error": str(e)}

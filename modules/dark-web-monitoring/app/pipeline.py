@@ -1,6 +1,8 @@
 """Ingest -> dedupe -> match -> alert -> preserve. Every collector calls ingest()."""
 from __future__ import annotations
 
+import contextvars
+import dataclasses
 import datetime as dt
 import logging
 
@@ -13,6 +15,28 @@ from .matcher import match_item
 from .redact import redact_for_kind
 
 log = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class RunStats:
+    """New items and hits produced during one collector run. The worker's job
+    wrapper opens one per run so every collector is counted without each having
+    to tally its own ingest calls."""
+
+    items: int = 0
+    hits: int = 0
+
+
+_run_stats: contextvars.ContextVar[RunStats | None] = contextvars.ContextVar("run_stats", default=None)
+
+
+def begin_stats() -> tuple[RunStats, contextvars.Token]:
+    stats = RunStats()
+    return stats, _run_stats.set(stats)
+
+
+def end_stats(token: contextvars.Token) -> None:
+    _run_stats.reset(token)
 
 
 def ingest(
@@ -51,6 +75,10 @@ def ingest(
     db.commit()
     hits = match_item(db, item)
     hits += iab.match_iab(db, item)
+    stats = _run_stats.get()
+    if stats is not None:
+        stats.items += 1
+        stats.hits += len(hits)
     if hits:
         log.info("%d hit(s) on %s item %s", len(hits), kind, item.title[:80])
         alerts.dispatch(db, hits)

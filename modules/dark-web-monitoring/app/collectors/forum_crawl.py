@@ -104,15 +104,23 @@ def _crawl_thread(db: Session, src: Source, profile: dict, thread_url: str, titl
         )
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     sources = db.execute(select(Source).where(Source.kind == "forum", Source.enabled.is_(True))).scalars().all()
+    if not sources:
+        return {"ok": True, "skipped": "no forum sources"}
+    failed: list[str] = []
     for src in sources:
         profile = profiles.get(src.profile) if src.profile else None
         if not profile or profile.get("kind") != "forum":
             mark_source(db, src, False, "forum source needs a profile of kind forum")
+            failed.append(f"{src.name}: no forum profile")
             continue
         try:
             _crawl(db, src, profile)
         except Exception as e:  # noqa: BLE001
             log.exception("forum crawl error %s", src.url)
             mark_source(db, src, False, str(e))
+            failed.append(f"{src.name}: {e}")
+    if len(failed) == len(sources):
+        return {"ok": False, "error": "; ".join(failed)[:2000], "sources": len(sources)}
+    return {"ok": True, "sources": len(sources), "failed": len(failed)}

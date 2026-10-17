@@ -27,16 +27,21 @@ def _source(db: Session) -> Source:
     return src
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     src = _source(db)
     terms = db.execute(
         select(WatchTerm.term).join(Client)
         .where(WatchTerm.enabled.is_(True), Client.active.is_(True), WatchTerm.kind.in_(("domain", "email_domain", "brand", "keyword")))
     ).scalars().all()
+    searched = sorted(set(t.strip() for t in terms if len(t.strip()) >= 4))
+    if not searched:
+        return {"ok": True, "skipped": "no watch terms to search"}
+    refused: list[int] = []
     try:
-        for term in sorted(set(t.strip() for t in terms if len(t.strip()) >= 4)):
+        for term in searched:
             r = httpx.get(f"{API}/search/{term}", timeout=30)
             if r.status_code != 200:
+                refused.append(r.status_code)
                 continue
             data = r.json().get("data", []) if isinstance(r.json(), dict) else []
             for d in data[:50]:
@@ -64,7 +69,13 @@ def run(db: Session) -> None:
                 )
                 time.sleep(1)
             time.sleep(2)
+        if refused and len(refused) == len(searched):
+            err = f"psbdmp returned HTTP {refused[-1]} for all {len(searched)} searches"
+            mark_source(db, src, False, err)
+            return {"ok": False, "error": err, "terms": len(searched)}
         mark_source(db, src, True)
+        return {"ok": True, "terms": len(searched), "refused": len(refused)}
     except Exception as e:  # noqa: BLE001
         log.exception("paste run failed")
         mark_source(db, src, False, str(e))
+        return {"ok": False, "error": str(e)}
