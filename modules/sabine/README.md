@@ -73,7 +73,9 @@ it without the token.
 synthesis, costs nothing and sends no text off the host. `elevenlabs` (API key
 plus a voice id you pick) or `azure` (key, region, neural voice name) render
 audio server-side in one consistent voice, cached by content hash so a sentence
-is never rendered twice. Hear her on the Ask page, on the daily summary, and on
+is never rendered twice. Her voice is Azure's Jane (Dragon HD,
+`en-US-Jane:DragonHDLatestNeural`): rich, warm, friendly. HD voices manage their
+own pacing, so the SSML prosody nudge applies only to the classic neural voices. Hear her on the Ask page, on the daily summary, and on
 the board (the voice toggle speaks her line when it changes). Push to talk on
 the Ask page uses the browser's own recognition and sends the transcript to the
 same Ask endpoint as typed text. Everything she says aloud is text that is

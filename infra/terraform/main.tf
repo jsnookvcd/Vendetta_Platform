@@ -412,7 +412,14 @@ resource "aws_ssm_parameter" "common" {
     } : {},
     # Managed services starts read-only: no tool action can fire until an operator
     # sets <prefix>/managed-services/ACTIONS_READONLY=false and redeploys.
-    each.key == "managed-services" ? { ACTIONS_READONLY = "true" } : {}
+    each.key == "managed-services" ? { ACTIONS_READONLY = "true" } : {},
+    # SABINE speaks in Azure's Jane (Dragon HD) once an operator adds
+    # <prefix>/sabine/AZURE_SPEECH_KEY (SecureString) and AZURE_SPEECH_REGION and
+    # redeploys; until then she falls back to the browser's own voice.
+    each.key == "sabine" ? {
+      TTS_PROVIDER       = "azure"
+      AZURE_SPEECH_VOICE = "en-US-Jane:DragonHDLatestNeural"
+    } : {}
   ))
 }
 

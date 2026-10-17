@@ -143,10 +143,16 @@ there until you have watched a few days of proposals; then widen what it may do.
 
 For the SOC wall display, read `/vendetta/sabine/KIOSK_TOKEN` from SSM and open
 `https://sabine.<domain>/board?k=<token>` once on that screen; it keeps a cookie
-and refreshes itself, and nothing on it can approve anything. The board and the
-Ask page speak through the browser by default; set `TTS_PROVIDER=elevenlabs` (or
-`azure`) with its key and a voice id under `/vendetta/sabine/` for one consistent
-voice everywhere, then redeploy sabine.
+and refreshes itself, and nothing on it can approve anything.
+
+SABINE's voice is Azure's Jane (Dragon HD), set by Terraform as
+`TTS_PROVIDER=azure` and `AZURE_SPEECH_VOICE=en-US-Jane:DragonHDLatestNeural`.
+To turn it on: create an Azure AI Speech resource in East US (Dragon HD voices
+are served from a short list of regions; East US is one), then put its key at
+`/vendetta/sabine/AZURE_SPEECH_KEY` (SecureString) and `eastus` at
+`/vendetta/sabine/AZURE_SPEECH_REGION`, and run `infra/redeploy.sh sabine`.
+Until the key is there she speaks through the browser. ElevenLabs stays
+available by setting `TTS_PROVIDER=elevenlabs` with its key and voice id.
 
 
 

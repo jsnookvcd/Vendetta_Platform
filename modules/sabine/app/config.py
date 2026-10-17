@@ -91,7 +91,10 @@ class Settings(BaseSettings):
     elevenlabs_model: str = "eleven_multilingual_v2"
     azure_speech_key: str = ""
     azure_speech_region: str = ""
-    azure_speech_voice: str = "en-US-AvaMultilingualNeural"
+    # Jane (Dragon HD): rich, warm, friendly, the one you want in the room at 2 a.m.
+    # Alternate if the region lacks HD voices: en-US-Ava:DragonHDLatestNeural or
+    # en-US-AvaMultilingualNeural.
+    azure_speech_voice: str = "en-US-Jane:DragonHDLatestNeural"
 
     # Thresholds the rules use.
     escalate_after_minutes: int = 30       # a critical/high finding left unescalated this long

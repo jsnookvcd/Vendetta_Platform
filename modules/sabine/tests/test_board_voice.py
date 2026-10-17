@@ -111,6 +111,13 @@ def test_speak_azure_and_render_failure(client, fresh_db, monkeypatch):
         voice.set_transport(None)
 
 
+def test_azure_ssml_skips_prosody_for_hd_voices(monkeypatch):
+    monkeypatch.setattr(settings, "azure_speech_voice", "en-US-Jane:DragonHDLatestNeural")
+    assert voice._azure_body("hello") == "hello"
+    monkeypatch.setattr(settings, "azure_speech_voice", "en-US-AriaNeural")
+    assert voice._azure_body("hello").startswith("<prosody")
+
+
 def test_speak_requires_auth_and_text(client, fresh_db):
     assert client.post("/api/speak", json={"text": "hi"}).status_code == 401
     client.post("/login", data={"username": "admin", "password": "pw", "next": "/"})

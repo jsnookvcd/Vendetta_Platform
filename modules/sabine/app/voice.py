@@ -69,11 +69,18 @@ def _render_elevenlabs(text: str) -> tuple[bytes, str]:
     return r.content, "audio/mpeg"
 
 
+def _azure_body(safe: str) -> str:
+    """Dragon HD voices set their own pacing and reject prosody tuning; the classic
+    neural voices take a slight slow-down so she sounds unhurried."""
+    if "dragonhd" in settings.azure_speech_voice.lower():
+        return safe
+    return f"<prosody rate='-3%' pitch='-1%'>{safe}</prosody>"
+
+
 def _render_azure(text: str) -> tuple[bytes, str]:
     url = f"https://{settings.azure_speech_region}.tts.speech.microsoft.com/cognitiveservices/v1"
     safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    ssml = (f"<speak version='1.0' xml:lang='en-US'><voice name='{settings.azure_speech_voice}'>"
-            f"<prosody rate='-3%' pitch='-1%'>{safe}</prosody></voice></speak>")
+    ssml = f"<speak version='1.0' xml:lang='en-US'><voice name='{settings.azure_speech_voice}'>{_azure_body(safe)}</voice></speak>"
     with httpx.Client(timeout=60.0, transport=_TRANSPORT) as http:
         r = http.post(url, content=ssml.encode(), headers={
             "Ocp-Apim-Subscription-Key": settings.azure_speech_key, "Content-Type": "application/ssml+xml",
