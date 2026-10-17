@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1033,33 +1033,63 @@ def api_alert_escalate(aid: str, user: str = Depends(auth.api_user), db: Session
 
 # ---------------------------------------------------------------- platform link
 # ---------------------------------------------------------------- hosts and requested actions (bridges)
+def _json_body(request: Request, body) -> dict:
+    """These routes change real hosts, so they take JSON only: a cross-site form or
+    text/plain post (which a browser sends with cookies) is refused outright."""
+    if not request.headers.get("content-type", "").split(";")[0].strip().lower() == "application/json":
+        raise HTTPException(415, "application/json required")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "JSON object required")
+    return body
+
+
+def _client_by_pid(db: Session, pid: str) -> Client:
+    pid = (pid or "").strip()
+    if not pid:
+        raise HTTPException(400, "platform_client_id is required")
+    c = db.query(Client).filter_by(platform_client_id=pid).first()
+    if c is None:
+        raise HTTPException(404, "that client has no managed services here")
+    return c
+
+
+def _like(q: str) -> str:
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@app.get("/api/devices/{did}")
+def api_device(did: str, request: Request, platform_client_id: str = Query(""), db: Session = Depends(get_db)):
+    auth.api_person(request, write=False)
+    c = _client_by_pid(db, platform_client_id)
+    d = db.execute(select(Device).options(selectinload(Device.client))
+                   .where(Device.id == did, Device.client_id == c.id)).scalar_one_or_none()
+    if d is None:
+        raise HTTPException(404, "no such device for that client")
+    return {"client": c.name, "actions_readonly": settings.actions_readonly, "device": reqs.device_json(db, d)}
+
+
 @app.get("/api/devices")
-def api_devices(request: Request, platform_client_id: str = Query(...), q: str = Query(""),
+def api_devices(request: Request, platform_client_id: str = Query(""), q: str = Query(""),
                 db: Session = Depends(get_db)):
     """A client's devices across every tool, with their open alerts and the actions
     that apply. q matches the hostname (case-insensitive substring). Read access."""
     auth.api_person(request, write=False)
-    c = db.query(Client).filter_by(platform_client_id=platform_client_id).one_or_none()
-    if c is None:
-        raise HTTPException(404, "that client has no managed services here")
+    c = _client_by_pid(db, platform_client_id)
     stmt = select(Device).options(selectinload(Device.client)).where(Device.client_id == c.id)
     if q.strip():
-        stmt = stmt.where(Device.hostname.ilike(f"%{q.strip()[:120]}%"))
+        stmt = stmt.where(Device.hostname.ilike(f"%{_like(q.strip()[:120])}%", escape="\\"))
     rows = db.execute(stmt.order_by(Device.hostname).limit(25)).scalars().all()
     return {"client": c.name, "actions_readonly": settings.actions_readonly,
             "devices": [reqs.device_json(db, d) for d in rows]}
 
 
 @app.post("/api/action-requests")
-async def api_request_action(request: Request, db: Session = Depends(get_db)):
+def api_request_action(request: Request, payload: dict | None = Body(None), db: Session = Depends(get_db)):
     """{platform_client_id, device_id, action_id, reason, source_ref}. A destructive
     action comes back pending until a different person approves it; anything else
     runs now. See requests_.py for the rules."""
     actor = auth.api_person(request, write=True)
-    try:
-        body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "JSON body required")
+    body = _json_body(request, payload)
     try:
         r = reqs.create(db, actor, str(body.get("device_id") or ""), str(body.get("action_id") or ""),
                         platform_client_id=str(body.get("platform_client_id") or ""),
@@ -1080,13 +1110,10 @@ def api_get_request(rid: str, request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/action-requests/{rid}/decide")
-async def api_decide_request(rid: str, request: Request, db: Session = Depends(get_db)):
+def api_decide_request(rid: str, request: Request, payload: dict | None = Body(None), db: Session = Depends(get_db)):
     """{approve, note}. The decider must differ from the requester and hold approval rights."""
     actor = auth.api_person(request, write=True)
-    try:
-        body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "JSON body required")
+    body = _json_body(request, payload)
     try:
         r = reqs.get(db, rid)
         r = reqs.decide(db, r, actor, bool(body.get("approve")), str(body.get("note") or ""))

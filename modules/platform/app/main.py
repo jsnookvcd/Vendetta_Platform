@@ -842,7 +842,9 @@ def staff_grant(sid: str, key: str, role: str = Form("none"), can_act: bool = Fo
         raise HTTPException(400)
     db.commit()
     _audit(db, user, "staff.grant", f"{p.email} {key}={role} {cfg or ''}".strip())
-    directory.push_sync(db, keys={key})
+    # The module itself, plus any bridge acting through it (a removed grant must
+    # reach the bridge too, so the person cannot keep acting through Slack).
+    directory.push_sync(db, keys={key} | {b for b, via in staff_mod.BRIDGES.items() if key in via})
     return _back(f"/staff/{sid}", True, f"{key}: {role}.")
 
 

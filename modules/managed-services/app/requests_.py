@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from . import actions as act
@@ -33,11 +33,16 @@ class Refused(Exception):
 
 
 def caps(db: Session, email: str) -> tuple[bool, bool]:
-    """(can_act, can_approve) from this module's mirror of the staff roster."""
-    if email == settings.admin_user:
-        return True, True
+    """(can_act, can_approve) for a requested action, from this module's mirror of
+    the staff roster. The break-glass admin account is not a person on the roster
+    and gets neither here (it still works in the console); once the roster governs,
+    only rows the platform mirrored count, so an older SSO row confers nothing."""
+    if not email or email == settings.admin_user.strip().lower():
+        return False, False
     u = db.query(User).filter_by(email=email).one_or_none()
     if not u or not u.active or u.role in ("viewer", "client"):
+        return False, False
+    if u.source != "platform" and db.query(User).filter(User.source == "platform").count():
         return False, False
     if u.role == "admin":
         return True, True
@@ -109,8 +114,10 @@ def _run(db: Session, r: ActionRequest, approver: str) -> None:
 def create(db: Session, actor: str, device_id: str, action_id: str, *, platform_client_id: str = "",
            reason: str = "", source_ref: str = "") -> ActionRequest:
     email, via = split_actor(actor)
+    if not platform_client_id:
+        raise Refused("platform_client_id is required", 400)
     d = db.execute(select(Device).options(selectinload(Device.client)).where(Device.id == device_id)).scalar_one_or_none()
-    if d is None or (platform_client_id and (not d.client or d.client.platform_client_id != platform_client_id)):
+    if d is None or not d.client or d.client.platform_client_id != platform_client_id:
         raise Refused("no such device for that client", 404)
     spec = act.spec(action_id)
     if spec is None or spec not in act.DEVICE_ACTIONS.get(d.tool, []):
@@ -145,10 +152,25 @@ def decide(db: Session, r: ActionRequest, actor: str, approve: bool, note: str =
     _, can_approve = caps(db, email)
     if not can_approve:
         raise Refused("approving a destructive action needs approval rights in managed services", 403)
-    r.decided_by, r.decided_at = email, utcnow()
-    if not approve:
-        r.status, r.detail = "rejected", (note or "rejected")[:2000]
-    else:
-        _run(db, r, approver=email)
+    # Claim the request atomically before anything runs: only one decision can ever
+    # move it out of pending, so two clicks cannot both reach the vendor and an
+    # approve cannot overwrite a reject that landed a moment earlier.
+    now = utcnow()
+    claimed = db.execute(
+        update(ActionRequest)
+        .where(ActionRequest.id == r.id, ActionRequest.status == "pending",
+               or_(ActionRequest.expires_at.is_(None), ActionRequest.expires_at > now))
+        .values(status="running" if approve else "rejected", decided_by=email, decided_at=now,
+                detail="" if approve else (note or "rejected")[:2000])
+        .execution_options(synchronize_session=False)
+    ).rowcount
     db.commit()
+    db.refresh(r)
+    if claimed != 1:
+        if _expire(r):
+            db.commit()
+        raise Refused(f"this request is already {r.status}" + (f" ({r.decided_by})" if r.decided_by else ""))
+    if approve:
+        _run(db, r, approver=email)
+        db.commit()
     return r

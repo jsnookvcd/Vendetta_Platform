@@ -157,3 +157,52 @@ def test_bridge_header_needs_the_bridge_token(world):
     # the module token is its own actor ("api"), which holds no rights to act
     assert r.status_code == 403 and not world["falcon"].calls
     assert act.spec("cs_contain").danger
+
+
+# ---------------------------------------------------------------- review hardening
+def test_a_stale_decision_cannot_overwrite_or_double_run(world):
+    from app import requests_ as reqs
+    req = _ask(world).json()
+    a, b = SessionLocal(), SessionLocal()
+    ra, rb = reqs.get(a, req["id"]), reqs.get(b, req["id"])   # both see it pending
+    reqs.decide(b, rb, "kenedi@vendettacd.io via slack", approve=False)
+    with pytest.raises(reqs.Refused):
+        reqs.decide(a, ra, "jordan@vendettacd.io via slack", approve=True)
+    assert SessionLocal().get(ActionRequest, req["id"]).status == "rejected" and not world["falcon"].calls
+    # two approvals racing: only the first claims it
+    req = _ask(world).json()
+    a, b = SessionLocal(), SessionLocal()
+    ra, rb = reqs.get(a, req["id"]), reqs.get(b, req["id"])
+    reqs.decide(a, ra, "kenedi@vendettacd.io via slack", approve=True)
+    with pytest.raises(reqs.Refused):
+        reqs.decide(b, rb, "jordan@vendettacd.io via slack", approve=True)
+    assert len(world["falcon"].calls) == 1
+
+
+def test_break_glass_and_stale_sso_rows_confer_nothing(world):
+    from app import requests_ as reqs
+    db = SessionLocal()
+    assert reqs.caps(db, settings.admin_user) == (False, False)
+    db.add(User(email="old@vendettacd.io", role="admin", source="entra"))
+    db.commit()
+    assert reqs.caps(db, "old@vendettacd.io") == (False, False)
+    req = _ask(world).json()
+    r = world["client"].post("/login", data={"username": "admin", "password": "pw", "next": "/"})
+    r = world["client"].post(f"/api/action-requests/{req['id']}/decide", json={"approve": True})
+    assert r.status_code == 403 and not world["falcon"].calls
+
+
+def test_json_only_and_pid_required(world):
+    r = world["client"].post("/api/action-requests", headers={**_h("dan@vendettacd.io"), "Content-Type": "text/plain"},
+                             content=b'{"platform_client_id":"plat-rb","device_id":"x","action_id":"cs_contain"}')
+    assert r.status_code in (415, 422)
+    assert _ask(world, pid="").status_code == 400
+    assert world["client"].get("/api/devices?platform_client_id=", headers=_h("vic@vendettacd.io")).status_code == 400
+
+
+def test_device_by_id_is_tenant_scoped_and_like_is_escaped(world):
+    c = world["client"]
+    ok = c.get(f"/api/devices/{world['device']}?platform_client_id=plat-rb", headers=_h("vic@vendettacd.io"))
+    assert ok.status_code == 200 and ok.json()["device"]["hostname"] == "RB-WS01"
+    assert c.get(f"/api/devices/{world['other_device']}?platform_client_id=plat-rb", headers=_h("vic@vendettacd.io")).status_code == 404
+    assert c.get("/api/devices?platform_client_id=plat-rb&q=%25", headers=_h("vic@vendettacd.io")).json()["devices"] == []

@@ -414,7 +414,8 @@ resource "aws_ssm_parameter" "sabine_directory" {
   })
 }
 
-# The Slack responder's own credential into the IR hub and into SABINE. It is the
+# The Slack responder's own credential into each module it acts through (the IR
+# hub, SABINE, dark web, vulnerability management, managed services). It is the
 # only token under which those modules honor X-Vendetta-On-Behalf-Of, so no other
 # module that holds their API token can put a person's name on the record.
 resource "random_password" "bridge" {

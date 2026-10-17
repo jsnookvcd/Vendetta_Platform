@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Where announcements go, by channel id (C0123...). Blank turns that feed off.
     slack_ir_channel: str = ""       # new cases, from anywhere: escalations, portal, console, Slack
     slack_sabine_channel: str = ""   # SABINE proposals waiting on a person
+    # Containment requests made outside a war room wait for approval here. Blank
+    # falls back to SLACK_IR_CHANNEL; with neither, containment needs a war room.
+    slack_approvals_channel: str = ""
 
     # War rooms: one channel per case, named <prefix>-<case number>.
     warroom_prefix: str = "ir"

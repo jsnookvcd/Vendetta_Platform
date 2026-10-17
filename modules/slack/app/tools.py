@@ -40,9 +40,42 @@ def _clients(module: str) -> list[dict]:
     return [{"id": c["id"], "name": c["name"]} for c in ((r["data"] or {}).get("clients") or [])] if r["ok"] else []
 
 
+class Where:
+    """Where a result about one client may go. public is True only in a war room
+    whose case is about that same client, that is not counsel-directed, in a
+    channel not shared outside Vendetta's workspace. case is the case number to
+    note the result on, under the same conditions minus the sharing check."""
+
+    def __init__(self, public: bool = False, case: str = ""):
+        self.public, self.case = public, case
+
+
+def _channel_private(channel: str) -> bool:
+    info = slack.try_call("conversations.info", channel=channel)
+    chan = (info or {}).get("channel") or {}
+    return bool(chan) and bool(chan.get("is_private")) and not any(
+        chan.get(k) for k in ("is_ext_shared", "is_shared", "is_org_shared", "is_pending_ext_shared"))
+
+
+def where(db, ctx: Ctx, person: Person, client: dict) -> Where:
+    room = responder.room_for_channel(db, ctx.channel)
+    if not room:
+        return Where()
+    try:
+        case = responder.fetch_case(room.case_number, person.email)
+    except Refused:
+        return Where()
+    if (case["client"].get("platform_client_id") or "") != client["id"]:
+        return Where()  # another client's data stays private in this room and off this case
+    if case.get("privileged"):
+        return Where(public=False, case=room.case_number)
+    return Where(public=_channel_private(ctx.channel), case=room.case_number)
+
+
 def resolve_client(db, ctx: Ctx, person: Person, module: str, words: list[str]) -> tuple[dict, str]:
     """(client, case_number). A war room supplies its case's client; otherwise the
-    words name the client among those that have this module turned on."""
+    words name the client among those that have this module turned on. The case
+    number comes back only when the client is the room's own case client."""
     room = responder.room_for_channel(db, ctx.channel)
     if room and not words:
         case = responder.fetch_case(room.case_number, person.email)
@@ -59,7 +92,7 @@ def resolve_client(db, ctx: Ctx, person: Person, module: str, words: list[str]) 
         if hits:
             raise Refused("More than one client matches: " + ", ".join(c["name"] for c in hits[:8]) + ".")
         raise Refused(f"No client with {responder.MODULE_NAMES[module]} turned on matches '{name}'.")
-    return match, (room.case_number if room else "")
+    return match, ""
 
 
 def _note(case_number: str, person: Person, text: str) -> None:
@@ -68,16 +101,13 @@ def _note(case_number: str, person: Person, text: str) -> None:
                    json_body={"note": text, "internal_only": True})
 
 
-def _in_room(db, ctx: Ctx) -> bool:
-    return responder.room_for_channel(db, ctx.channel) is not None
-
-
 # ---------------------------------------------------------------- dark web
 def cmd_darkweb(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     days = 30
     if args and args[-1].isdigit():
         days, args = max(1, min(int(args[-1]), 365)), args[:-1]
-    client, case = resolve_client(db, ctx, person, DW, args)
+    client, _ = resolve_client(db, ctx, person, DW, args)
+    w = where(db, ctx, person, client)
     r = reach.get(DW, f"/api/clients/platform/{client['id']}/report", person=person.email, params={"days": days}, timeout=60.0)
     if not r["ok"]:
         raise Refused(f"Dark web monitoring did not answer: {r['detail']}")
@@ -101,7 +131,7 @@ def cmd_darkweb(db, ctx: Ctx, person: Person, args: list[str]) -> None:
         out.append(blocks.md(f"*Recommended*\n{acts}"))
     out.append(blocks.ctx(f"Pulled by {blocks.esc(person.name or person.email)}. "
                           f"{d.get('evidence_captured', 0)} evidence captures on file."))
-    in_room = _in_room(db, ctx)
+    in_room = w.public
     ctx.reply(f"Dark web exposure for {d.get('client', client['name'])}", out, public=in_room)
     pdf, err = reach.get_bytes(DW, f"/api/clients/platform/{client['id']}/report.pdf", person=person.email,
                                params={"days": days})
@@ -114,7 +144,7 @@ def cmd_darkweb(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     elif err:
         ctx.reply(f"The summary is above; the PDF did not come through ({err}).")
     audit(db, "tool.darkweb", f"{client['name']} {days}d total={d.get('total', 0)}", slack_user=person.slack_id, actor=person.email)
-    _note(case, person, f"Dark web report pulled from Slack ({days} days): {d.get('total', 0)} hits, "
+    _note(w.case, person, f"Dark web report pulled from Slack ({days} days): {d.get('total', 0)} hits, "
                         f"{sev.get('critical', 0)} critical, {d.get('credential_count', 0)} exposed credentials.")
 
 
@@ -132,7 +162,8 @@ def cmd_shodan(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     responder._need(person, VM)
     words = [a for a in args if not _is_target(a)]
     targets = [a.strip().lower().rstrip(".,") for a in args if _is_target(a)]
-    client, case = resolve_client(db, ctx, person, VM, words)
+    client, _ = resolve_client(db, ctx, person, VM, words)
+    w = where(db, ctx, person, client)
     body = {"targets": " ".join(targets)} if targets else {}
     r = reach.post(VM, f"/api/clients/platform/{client['id']}/shodan", person=person.email, json_body=body, timeout=180.0)
     if not r["ok"]:
@@ -149,12 +180,12 @@ def cmd_shodan(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     for h in hosts[:15]:
         label = f" ({blocks.esc(h['label'])})" if h.get("label") else ""
         if not h.get("known"):
-            rows.append(f"`{h['ip']}`{label}  nothing indexed")
+            rows.append(f"`{blocks.esc(h['ip'])}`{label}  nothing indexed")
             continue
         risky = f"  :rotating_light: {blocks.esc(', '.join(h['risky']))}" if h.get("risky") else ""
         cves = f"  {len(h['cves'])} CVE{'s' if len(h['cves']) != 1 else ''}" if h.get("cves") else ""
         ports = ", ".join(str(p) for p in (h.get("ports") or [])[:12])
-        rows.append(f"`{h['ip']}`{label}  ports {ports or 'none'}{risky}{cves}")
+        rows.append(f"`{blocks.esc(h['ip'])}`{label}  ports {ports or 'none'}{risky}{cves}")
     if rows:
         out.append(blocks.md("\n".join(rows)))
     top = d.get("top") or []
@@ -166,9 +197,9 @@ def cmd_shodan(db, ctx: Ctx, person: Person, args: list[str]) -> None:
         out.append(blocks.ctx(blocks.esc("; ".join(notes[:6]))))
     base = reach.public_url(VM)
     out.append(blocks.ctx("Findings are recorded in vulnerability management" + (f": {base}" if base else ".")))
-    ctx.reply(f"Shodan exposure for {d.get('client', client['name'])}", out, public=_in_room(db, ctx))
+    ctx.reply(f"Shodan exposure for {d.get('client', client['name'])}", out, public=w.public)
     audit(db, "tool.shodan", f"{client['name']} hosts={len(hosts)} {counts}", slack_user=person.slack_id, actor=person.email)
-    _note(case, person, f"Shodan exposure check from Slack: {len(hosts)} hosts, "
+    _note(w.case, person, f"Shodan exposure check from Slack: {len(hosts)} hosts, "
                         f"{counts.get('critical', 0)} critical, {counts.get('high', 0)} high findings recorded in vulnerability management.")
 
 
@@ -177,7 +208,8 @@ def _find_devices(db, ctx: Ctx, person: Person, args: list[str]) -> tuple[list[d
     if not args:
         raise Refused("Which host? `/ir host WS01`, or outside a war room `/ir host WS01 Riverbend`.")
     host, rest = args[0], args[1:]
-    client, case = resolve_client(db, ctx, person, MS, rest)
+    client, _ = resolve_client(db, ctx, person, MS, rest)
+    case = where(db, ctx, person, client).case
     r = reach.get(MS, "/api/devices", person=person.email, params={"platform_client_id": client["id"], "q": host})
     if not r["ok"]:
         raise Refused(f"Managed services did not answer: {r['detail']}")
@@ -220,7 +252,7 @@ def cmd_host(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     if len(devs) > 5:
         out.append(blocks.ctx(f"and {len(devs) - 5} more matches; be more specific"))
     audit(db, "tool.host", f"{client['name']} {args[0]} matches={len(devs)}", slack_user=person.slack_id, actor=person.email)
-    ctx.reply(f"{len(devs)} host(s) matching {args[0]}", out[:49], public=_in_room(db, ctx))
+    ctx.reply(f"{len(devs)} host(s) matching {args[0]}", out[:49], public=where(db, ctx, person, client).public)
 
 
 def request_card(req: dict, *, decided: str = "") -> list[dict]:
@@ -254,12 +286,16 @@ def _file_request(db, ctx: Ctx, person: Person, device: dict, action_id: str, re
     if not r["ok"]:
         raise Refused(f"Managed services refused: {r['detail']}")
     req = r["data"]
-    in_room = _in_room(db, ctx)
-    channel = ctx.channel if in_room else ""
+    w = where(db, ctx, person, {"id": device["platform_client_id"]})
+    # A pending request must be seen by someone who can approve it: the war room
+    # when it is this client's, otherwise the approvals channel.
+    channel = ctx.channel if w.public else (approvals_channel() if req["status"] == "pending" else "")
     posted = None
     if channel:
         posted = slack.try_call("chat.postMessage", channel=channel, text=f"{req['action']} on {req['hostname']}: {req['status']}",
                                 blocks=request_card(req))
+        if channel != ctx.channel:
+            ctx.reply(f"Filed. {req['action']} on {req['hostname']} is waiting for approval in <#{channel}>.")
     else:
         ctx.reply(f"{req['action']} on {req['hostname']}: {req['status']}", request_card(req))
     db.add(Posted(kind="action", ref=req["id"], channel=channel, ts=(posted or {}).get("ts", ""), state=req["status"]))
@@ -267,12 +303,20 @@ def _file_request(db, ctx: Ctx, person: Person, device: dict, action_id: str, re
     audit(db, f"tool.request.{req['status']}", f"{req['id']} {action_id} {req['hostname']} {req['client']}",
           slack_user=person.slack_id, actor=person.email)
     verb = "requested" if req["status"] == "pending" else req["status"]
-    _note(case, person, f"{req['action']} on {req['hostname']} ({TOOL_NAME.get(req['tool'], req['tool'])}) {verb} from Slack"
+    _note(w.case if w.case == case else "", person, f"{req['action']} on {req['hostname']} ({TOOL_NAME.get(req['tool'], req['tool'])}) {verb} from Slack"
                         + (f": {reason}" if reason else "") + ".")
+
+
+def approvals_channel() -> str:
+    from .config import settings
+    return settings.slack_approvals_channel or settings.slack_ir_channel
 
 
 def _contain_or_release(db, ctx: Ctx, person: Person, args: list[str], table: dict) -> None:
     responder._need(person, MS)
+    if table is CONTAIN and not responder.room_for_channel(db, ctx.channel) and not approvals_channel():
+        raise Refused("Run containment in the case's war room so a second person can approve it there "
+                      "(no approvals channel is set for requests made elsewhere).")
     if not args:
         raise Refused("Which host? `/ir contain WS01 <reason>`")
     room = responder.room_for_channel(db, ctx.channel)
@@ -310,13 +354,15 @@ def cmd_release(db, ctx: Ctx, person: Person, args: list[str]) -> None:
 # ---------------------------------------------------------------- buttons
 def _button_request(db, ctx: Ctx, person: Person, args: list) -> None:
     pid, device_id, action_id = args
-    r = reach.get(MS, "/api/devices", person=person.email, params={"platform_client_id": pid})
-    devs = ((r["data"] or {}).get("devices") or []) if r["ok"] else []
-    d = next((x for x in devs if x["id"] == device_id), None)
-    if d is None:
-        raise Refused("That host is no longer listed in managed services.")
-    room = responder.room_for_channel(db, ctx.channel)
-    _file_request(db, ctx, person, d, action_id, "Requested from Slack", room.case_number if room else "")
+    if action_id not in set(CONTAIN.values()) | set(RELEASE.values()):
+        raise Refused("That button is not one I offer.")
+    if action_id in CONTAIN.values() and not where(db, ctx, person, {"id": pid}).public and not approvals_channel():
+        raise Refused("Request containment from the case's war room so a second person can approve it there.")
+    r = reach.get(MS, f"/api/devices/{device_id}", person=person.email, params={"platform_client_id": pid})
+    if not r["ok"]:
+        raise Refused(f"That host is not available in managed services: {r['detail']}")
+    d = (r["data"] or {}).get("device")
+    _file_request(db, ctx, person, d, action_id, "Requested from Slack", where(db, ctx, person, {"id": pid}).case)
 
 
 def _button_decide(db, ctx: Ctx, person: Person, args: list) -> None:
@@ -346,12 +392,12 @@ def _button_decide(db, ctx: Ctx, person: Person, args: list) -> None:
         row.state = req["status"]
         db.commit()
     if channel and ts:
-        slack.try_call("chat.update", channel=channel, ts=ts, text=decided, blocks=request_card(req, decided=decided))
+        slack.try_call("chat.update", channel=channel, ts=ts, text=blocks.esc(decided), blocks=request_card(req, decided=decided))
     if channel:
         slack.try_call("chat.postMessage", channel=channel, text=blocks.esc(f"{STATUS_ICON.get(req['status'], '')} "
                        f"{req['action']} on {req['hostname']}: {decided}"))
     else:
-        ctx.reply(decided)
+        ctx.reply(blocks.esc(decided))
     audit(db, f"tool.decide.{req['status']}", f"{rid} {decided}", slack_user=person.slack_id, actor=person.email,
           ok=r["ok"])
     if r["ok"] and req.get("source_ref"):

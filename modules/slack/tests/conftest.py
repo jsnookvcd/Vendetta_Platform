@@ -90,6 +90,7 @@ class World:
         self.uploads: list[tuple[str, bytes]] = []
         self.ms_readonly = False
         self.requests: dict[str, dict] = {}
+        self.shared_channels: set[str] = set()
         self.governs = True
         self.clients = [{"id": "plat-rb", "name": "Riverbend Credit Union"}, {"id": "plat-hp", "name": "Harbor Point"},
                         {"id": "plat-rf", "name": "Riverfront Dental"}]
@@ -188,7 +189,9 @@ class World:
         if method == "conversations.open":
             return ok(channel={"id": "D_" + params.get("users", "")})
         if method == "conversations.info":
-            return ok(channel={"id": params["channel"], "name": "general-ir", "is_member": True, "is_private": False})
+            ch = params["channel"]
+            return ok(channel={"id": ch, "name": "general-ir", "is_member": True, "is_private": ch.startswith("G"),
+                               "is_ext_shared": ch in self.shared_channels})
         return ok()
 
     def _platform(self, req: httpx.Request) -> httpx.Response:
@@ -281,7 +284,7 @@ class World:
                            "risky": ["Remote Desktop (RDP)"], "cves": ["CVE-2024-21762"]}],
                 "top": [{"severity": "critical", "title": "CVE-2024-21762 in Fortinet FortiGate 7.0.12 on 443/tcp",
                          "asset": "34.120.10.10"}], "errors": [], "rejected": []})
-        if p == "/api/devices":
+        if p.startswith("/api/devices"):
             q = (req.url.params.get("q") or "").lower()
             devs = [{"id": "dev1", "tool": "crowdstrike", "hostname": "RB-WS01", "status": "online", "platform": "Windows 11",
                      "agent_version": "7.18", "last_seen": "2026-10-17T18:00:00+00:00", "link": "https://falcon.example/hosts/aid1",
@@ -293,6 +296,11 @@ class World:
                      "agent_version": "", "last_seen": None, "link": "", "client": "Riverbend Credit Union",
                      "platform_client_id": "plat-rb", "open_alerts": [],
                      "actions": [{"id": "cs_contain", "label": "Network contain", "destructive": True}]}]
+            if p != "/api/devices":
+                did = p.rsplit("/", 1)[-1]
+                d = next((x for x in devs if x["id"] == did and x["platform_client_id"] == req.url.params.get("platform_client_id")), None)
+                return httpx.Response(200, json={"device": d, "actions_readonly": self.ms_readonly}) if d else \
+                    httpx.Response(404, json={"detail": "no such device for that client"})
             return httpx.Response(200, json={"client": "Riverbend Credit Union", "actions_readonly": self.ms_readonly,
                                              "devices": [d for d in devs if q in d["hostname"].lower()]})
         if p == "/api/action-requests":

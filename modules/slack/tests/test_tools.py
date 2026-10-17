@@ -173,3 +173,54 @@ def test_upload_refuses_a_foreign_upload_url(world, monkeypatch):
         return real(req)
     monkeypatch.setattr(world, "_slack", evil)
     assert slack.upload("C1", "x.pdf", b"x") is False and not world.uploads
+
+
+# ---------------------------------------------------------------- review hardening
+def test_another_clients_data_stays_private_and_off_the_case(world):
+    case, room = _room(world)
+    before_posts, before_notes = len(_posts(world, room.channel_id)), len(world.ir("/updates"))
+    responder.handle_command(cmd("darkweb harbor", channel=room.channel_id))
+    assert world.tools("/report")[-1]["path"] == "/api/clients/platform/plat-hp/report"
+    assert len(_posts(world, room.channel_id)) == before_posts            # nothing public in Riverbend's room
+    assert world.slack("files.completeUploadExternal")[-1]["channel_id"] == "D_U_DAN"
+    assert len(world.ir("/updates")) == before_notes                       # nothing on Riverbend's case
+
+
+def test_shared_or_privileged_room_gets_private_results(world):
+    case, room = _room(world)
+    world.shared_channels.add(room.channel_id)
+    n = len(_posts(world, room.channel_id))
+    responder.handle_command(cmd("darkweb", channel=room.channel_id))
+    assert len(_posts(world, room.channel_id)) == n
+    world.shared_channels.clear()
+    case["privileged"] = True
+    responder.handle_command(cmd("shodan", channel=room.channel_id))
+    assert len(_posts(world, room.channel_id)) == n
+    assert any("Shodan exposure check" in u["body"]["note"] for u in world.ir("/updates"))  # still on its own case
+
+
+def test_outside_room_contain_goes_to_the_approvals_channel(world):
+    responder.handle_command(cmd("contain RB-WS01 riverbend credit: lateral movement"))
+    card = [p for p in world.slack("chat.postMessage") if p.get("channel") == "C_IR"][-1]
+    ids = [e["action_id"] for b in card["blocks"] if b["type"] == "actions" for e in b["elements"]]
+    assert ids == ["host_approve", "host_reject"]
+    assert any("waiting for approval in <#C_IR>" in m for m in _eph(world))
+
+
+def test_no_approvals_channel_means_war_room_only(world, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "slack_ir_channel", "")
+    monkeypatch.setattr(settings, "slack_approvals_channel", "")
+    responder.handle_command(cmd("contain RB-WS01 riverbend credit: x"))
+    assert not world.tools("/api/action-requests") and any("war room" in m for m in _eph(world))
+
+
+def test_forged_button_action_is_refused(world):
+    payload = {"type": "block_actions", "team": {"id": "T_VCD"}, "user": {"id": "U_DAN"}, "channel": {"id": "C_SOC"},
+               "response_url": "https://hooks.slack.com/actions/q",
+               "actions": [{"action_id": "host_request", "value": "plat-rb|dev1|s1_kill"}]}
+    responder.handle_interaction(payload)
+    assert not world.tools("/api/action-requests")
+    payload["actions"][0]["value"] = "plat-hp|dev1|cs_contain"   # dev1 is Riverbend's
+    responder.handle_interaction(payload)
+    assert not world.tools("/api/action-requests")
