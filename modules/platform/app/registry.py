@@ -19,7 +19,8 @@ DEFAULT_MODULES = [
     ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
     ("sabine", "SABINE", "agent", "in-progress", False, 55),
     ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 57),
-    ("mdr", "Managed Detection and Response", "managed-security", "planned", False, 60),
+    # Port 8800, host mdr.<domain>; serves the finding model (type investigation).
+    ("mdr", "Managed Detection and Response", "managed-security", "in-progress", True, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
 
@@ -29,7 +30,7 @@ DEFAULT_MODULES = [
 # delivers engagements, not detections, and escalates live risk to the IR hub instead
 # of feeding the finding model.
 FINDING_MODULES = {"dark-web-monitoring", "managed-services", "vulnerability-management",
-                   "penetration-testing"}
+                   "penetration-testing", "mdr"}
 
 # Who may read the module directory (GET /api/platform/modules?module=<caller>) and
 # which modules, with their tokens, each caller receives. The incident-response
@@ -88,6 +89,13 @@ PROBE = {
         "label": "open work",
         "severity_key": "severity",
     },
+    # MDR serves its investigations as findings (type investigation).
+    "mdr": {
+        "manifest": "/api/module",
+        "items": "/api/findings?status=active",
+        "label": "open investigations",
+        "severity_key": "severity",
+    },
     # Engagements carry no severity; the count is what the overview shows.
     "professional-services": {
         "manifest": "/api/module",
@@ -102,9 +110,15 @@ def seed_registry(db: Session) -> None:
     from .db import Module, ToolConnection
 
     for key, name, category, status, portal, pos in DEFAULT_MODULES:
-        if not db.get(Module, key):
+        row = db.get(Module, key)
+        if not row:
             db.add(Module(key=key, display_name=name, category=category, status=status,
                           has_portal=portal, position=pos))
+        elif row.status == "planned" and status != "planned":
+            # A module that was only planned when this control plane first booted has
+            # since been built: bring its row up to the registry. An operator's own
+            # status choice on a live module is never overwritten.
+            row.status, row.has_portal = status, portal
     for key, kind, owner in DEFAULT_TOOLS:
         if not db.get(ToolConnection, key):
             db.add(ToolConnection(key=key, display_name=TOOL_NAMES.get(key, key), kind=kind, owner_module=owner))

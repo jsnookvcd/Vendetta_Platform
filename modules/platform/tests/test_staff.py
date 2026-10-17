@@ -139,3 +139,23 @@ def test_office_of_special_projects_grants(admin):
     osp = admin.get("/api/platform/staff", params={"module": "professional-services"}, headers=_bearer()).json()
     assert {s["email"]: s["role"] for s in osp["staff"]} == {
         "vciso@vendettacd.io": "analyst", "lead@vendettacd.io": "viewer", "boss@vendettacd.io": "admin"}
+
+
+def test_mdr_grants_by_profile(admin):
+    """MDR is grantable: Administrator admin, Incident responder and SOC analyst
+    analyst, Leadership viewer, everyone else none; the roster MDR pulls follows."""
+    assert "mdr" in staff.GRANTABLE
+    expected = {"administrator": "admin", "incident-responder": "analyst", "soc-analyst": "analyst",
+                "leadership": "viewer", "offensive-security": "none", "vciso-advisory": "none"}
+    for profile, role in expected.items():
+        p = _onboard(admin, f"{profile}@vendettacd.io", profile.title(), profile)
+        assert {g.module_key: g.role for g in p.grants}["mdr"] == role, profile
+    roster = admin.get("/api/platform/staff", params={"module": "mdr"}, headers=_bearer()).json()["staff"]
+    assert {s["email"]: s["role"] for s in roster} == {
+        "administrator@vendettacd.io": "admin", "incident-responder@vendettacd.io": "analyst",
+        "soc-analyst@vendettacd.io": "analyst", "leadership@vendettacd.io": "viewer"}
+    # a single grant can be set like any other module
+    p = SessionLocal().query(Staff).filter_by(email="vciso-advisory@vendettacd.io").one()
+    admin.post(f"/staff/{p.id}/grant/mdr", data={"role": "viewer"})
+    p = SessionLocal().get(Staff, p.id)
+    assert {g.module_key: g.role for g in p.grants}["mdr"] == "viewer"

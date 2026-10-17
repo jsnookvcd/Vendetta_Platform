@@ -25,7 +25,7 @@ from sqlalchemy import select
 
 from . import auth, sso, staff
 from .config import settings
-from .db import AuditLog, SessionLocal, User, utcnow
+from .db import AuditLog, Client, SessionLocal, User, utcnow
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,8 +38,10 @@ def _email_domain(email: str) -> str:
 def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
     """Return (email, role, client_id) for an allowed sign-in, or None to deny.
 
-    Internal Vendetta staff get admin or analyst. Everyone else is denied; the
-    control plane is staff-only."""
+    Internal Vendetta staff get their roster role (or admin or analyst before a
+    roster exists). Anyone else is admitted only to the client portal, and only if
+    their email domain matches exactly one active client with the portal on; a
+    domain matching two clients is refused, never guessed."""
     email = (claims.get("email") or claims.get("preferred_username") or "").lower()
     if not email:
         return None
@@ -66,14 +68,36 @@ def _map_identity(claims: dict) -> tuple[str, str, str | None] | None:
                 return email, person.platform_role, None
             if email in admins:
                 return email, "admin", None
-            log.warning("oidc: %s is not on the staff roster (or is deactivated); denied", email)
-            return None
+            if is_internal or person is not None:
+                log.warning("oidc: %s is not on the staff roster (or is deactivated); denied", email)
+                return None
     finally:
         db.close()
     if is_internal:
         return email, ("admin" if email in admins else "analyst"), None
-    # The control plane is staff-only; clients use each module's own portal.
-    log.warning("oidc: %s is not internal; the platform control plane is staff-only", email)
+    return _map_client(email, domain)
+
+
+def _map_client(email: str, domain: str) -> tuple[str, str, str | None] | None:
+    """The client portal: the one active, portal-enabled client whose portal domains
+    include this email's domain."""
+    if not domain:
+        return None
+    db = SessionLocal()
+    try:
+        rows = db.execute(select(Client).where(Client.portal_enabled.is_(True),
+                                               Client.active.is_(True))).scalars().all()
+        matches = [c for c in rows
+                   if domain in {d.strip().lower() for d in (c.portal_domains or "").split(",") if d.strip()}]
+    finally:
+        db.close()
+    if len(matches) == 1:
+        return email, "client", matches[0].id
+    if len(matches) > 1:
+        log.warning("oidc: %s domain %s maps to %d clients; refusing sign-in (ambiguous tenant)",
+                    email, domain, len(matches))
+        return None
+    log.warning("oidc: %s is not internal and no client has the portal on for %s; denied", email, domain)
     return None
 
 

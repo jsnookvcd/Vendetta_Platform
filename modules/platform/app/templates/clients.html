@@ -9,10 +9,12 @@
 </div>
 <div class="panel"><div class="table-wrap">
 <table>
-  <thead><tr><th>Client</th><th>Industry</th><th>Modules</th><th>Tools mapped</th><th>Portal domains</th><th>Status</th></tr></thead>
+  <thead><tr><th>Client</th><th>Tier</th><th>Account lead</th><th>Industry</th><th>Modules</th><th>Tools mapped</th><th>Portal domains</th><th>Status</th></tr></thead>
   <tbody>
   {% for c in clients %}{% set en = c.enabled_modules() %}<tr>
     <td class="nowrap"><a href="/clients/{{ c.id }}"><b>{{ c.name }}</b></a></td>
+    <td>{{ TIER_NAMES.get(c.tier or "core", c.tier) }}</td>
+    <td class="faint">{{ c.account_lead }}</td>
     <td class="faint">{{ c.industry }}</td>
     <td>{% for m in modules if m.key in en %}<span class="modchip">{{ m.display_name }}</span>{% else %}<span class="faint">none</span>{% endfor %}</td>
     <td class="num">{{ c.tool_map()|length }}</td>

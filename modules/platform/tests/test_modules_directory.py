@@ -47,3 +47,12 @@ def test_directory_requires_bearer(admin):
     from app.main import app
     with TestClient(app) as anon:
         assert anon.get("/api/platform/modules").status_code == 401
+
+
+def test_mdr_is_a_finding_source_for_the_hub(admin):
+    admin.post("/connections/module/mdr",
+               data={"base_url": "http://mdr:8000", "api_token": "mdrtok", "status": "in-progress"})
+    out = admin.get("/api/platform/modules", params={"module": "incident-response"}, headers=_bearer()).json()["modules"]
+    by = {m["name"]: m for m in out}
+    assert by["mdr"]["token"] == "mdrtok" and by["mdr"]["findings_path"] == "/api/findings"
+    assert by["mdr"]["display_name"] == "Managed Detection and Response"

@@ -86,8 +86,54 @@ loopback; reach it over SSM port forwarding, or set WEB_BIND=0.0.0.0 behind the
 ALB. Co-host on the platform instance as a fourth compose project (dark web 8000,
 IR hub 8100, managed services 8200, control plane 8300).
 
-The control plane is staff-only; clients never sign in here, they use each module's
-own portal.
+## The client relationship
+
+Tier, lead and commitments
+- Each client has a tier (core, advanced, premier) and an account lead (the Vendetta
+  person who owns the relationship). The tier sets the response commitments the
+  client is promised: a critical acknowledged within 15, 10 or 5 minutes and
+  contained within 240, 120 or 60. Either number can be overridden per client. The
+  provisioning API carries `tier`, `account_lead`, `commitments` and `services` on
+  every client, which is what SABINE pages against.
+
+Security Journey
+- The client's agreed improvement plan, one item per step, each in an area
+  (identity, endpoint, cloud, email, network, data, vulnerability, response,
+  governance, awareness). SABINE proposes items through
+  `POST /api/platform/clients/{pid}/journey` (idempotent on source_ref); a person
+  accepts or declines on the client page; SABINE may then report progress through
+  `.../journey/{item}/progress`, which answers 409 for an item that is still
+  proposed or was declined. Staff can add, edit and move items directly.
+
+Communications
+- Posture reviews and outreach drafted by SABINE (`POST .../communications`,
+  idempotent on source_ref) or by staff. The client's account lead or a platform
+  admin reviews, edits and approves; a viewer or any other analyst cannot. Approval
+  publishes the note to the client portal and emails the client's executive emails
+  through the same SMTP transport as the onboarding note. Mail is attempted only
+  when SMTP is configured and never fails the approval; the per-recipient outcome is
+  recorded. Discard is final. The Communications page lists every draft waiting.
+
+Client 360
+- The client page reads each module turned on for the client live, with the stored
+  per-module bearer token, in parallel: active findings by module and severity
+  (MDR, managed services, dark web, vulnerability management, pentest), MDR
+  investigations, open IR cases, open OSP engagements with deliverables waiting,
+  the journey and drafts. Reads are cached for CLIENT360_CACHE_SECONDS (30) with a
+  CLIENT360_TIMEOUT_SECONDS (5) timeout; a module that is down, slow or refusing
+  the token shows as unreachable. Every row read back is checked against the
+  client's platform id. The same data is `GET /api/platform/clients/{pid}/360`.
+
+Client portal
+- Client users sign in at /login with Microsoft 365 and are mapped to one client by
+  email domain: the client must be active, have the portal switched on, and list
+  the domain; a domain that matches two clients is refused. /portal shows the
+  tier and commitments, a tile into each enabled service's own portal, the journey
+  (planned, in progress and done only) and approved communications. A client
+  session reaches only /portal, /auth and /logout: the access gate redirects or
+  refuses everything else, and every staff route and the service API refuse a
+  client at the route as well. tests/test_portal_tenant.py is the cross-tenant
+  suite.
 
 Onboarding a person on the Staff page (or reactivating one) sends them a plain-text
 welcome from "SABINE at Vendetta Cyber" with the console link for every module they

@@ -101,3 +101,42 @@ def test_office_of_special_projects_is_probed_by_engagements(monkeypatch):
     monkeypatch.setattr(settings, "secret_key", "a-real-secret")
     rep = readiness.assess([m], {"professional-services": res})
     assert any(c["label"] == "Reachable" and c["state"] == "ok" for c in rep["modules"][0]["checks"])
+
+
+def _cp(label):
+    rep = readiness.assess([], {})
+    return next((c for c in rep["control_plane"]["checks"] if c["label"] == label), None)
+
+
+def test_portal_client_without_account_lead_warns(admin):
+    from helpers import make_client
+
+    assert _cp("Portal clients have an account lead") is None  # no portal clients, nothing to say
+    c = make_client(admin, "Alpha", portal_domains="alpha.example", portal_enabled="true")
+    chk = _cp("Portal clients have an account lead")
+    assert chk["state"] == "warn" and "Alpha" in chk["detail"]
+    # a client without the portal on is not graded
+    make_client(admin, "Bravo")
+    admin.post(f"/clients/{c.id}/edit", data={"active": "true", "portal_domains": "alpha.example",
+                                              "account_lead": "dan@vendettacd.io"})
+    assert _cp("Portal clients have an account lead")["state"] == "ok"
+
+
+def test_stale_communication_drafts_warn(admin):
+    import datetime as dt
+
+    from app.db import Communication, SessionLocal
+    from helpers import bearer, make_client
+
+    c = make_client(admin)
+    r = admin.post(f"/api/platform/clients/{c.id}/communications",
+                   json={"kind": "outreach", "title": "Fresh", "source_ref": "a"}, headers=bearer())
+    assert _cp("Communications drafts")["state"] == "ok"
+    db = SessionLocal()
+    db.get(Communication, r.json()["id"]).created_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=8)
+    db.commit()
+    chk = _cp("Communications drafts")
+    assert chk["state"] == "warn" and "1 draft(s) waiting more than 7 days" in chk["detail"]
+    # once a person decides it, the warning clears
+    admin.post(f"/clients/{c.id}/communications/{r.json()['id']}/discard")
+    assert _cp("Communications drafts")["state"] == "ok"

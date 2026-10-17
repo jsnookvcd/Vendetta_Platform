@@ -33,7 +33,7 @@ MODULE_ROLES = ("none", "viewer", "analyst", "admin")
 
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
-             "vulnerability-management", "penetration-testing", "professional-services", "sabine"]
+             "vulnerability-management", "penetration-testing", "professional-services", "sabine", "mdr"]
 
 # profile key -> (label, description, platform role, {module: (role, config)})
 PROFILES = {
@@ -45,7 +45,7 @@ PROFILES = {
     ),
     "incident-responder": (
         "Incident responder",
-        "Works cases end to end: IR hub, managed services with response actions and approval, dark web, vuln and pentest findings.",
+        "Works cases end to end: IR hub, MDR investigations, managed services with response actions and approval, dark web, vuln and pentest findings.",
         "analyst",
         {
             "incident-response": ("analyst", {}),
@@ -55,11 +55,12 @@ PROFILES = {
             "penetration-testing": ("analyst", {}),
             "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
+            "mdr": ("analyst", {}),
         },
     ),
     "soc-analyst": (
         "SOC analyst",
-        "Triage and standard response in managed services (no approval of destructive actions), dark web and vulnerability findings, read of the IR hub.",
+        "Triage and standard response in managed services (no approval of destructive actions), MDR investigations, dark web and vulnerability findings, and the IR hub.",
         "analyst",
         {
             "incident-response": ("analyst", {}),
@@ -69,6 +70,7 @@ PROFILES = {
             "penetration-testing": ("none", {}),
             "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
+            "mdr": ("analyst", {}),
         },
     ),
     "offensive-security": (
@@ -83,6 +85,7 @@ PROFILES = {
             "penetration-testing": ("analyst", {}),
             "professional-services": ("none", {}),
             "sabine": ("none", {}),
+            "mdr": ("none", {}),
         },
     ),
     "vciso-advisory": (

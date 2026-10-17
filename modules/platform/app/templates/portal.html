@@ -1,0 +1,46 @@
+{% extends "portal_base.html" %}{% block title %}Your security{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ TIER_NAMES.get(client.tier or 'core', client.tier) }}</div><div class="l">Service tier</div></div>
+  <div class="tile"><div class="n">{{ commitments.critical_ack_minutes }}<span class="sub"> min</span></div><div class="l">Critical alert acknowledged within</div></div>
+  <div class="tile"><div class="n">{{ commitments.critical_contain_minutes }}<span class="sub"> min</span></div><div class="l">Critical threat contained within</div></div>
+</div>
+
+<div class="section-head"><h2>Your services</h2></div>
+{% if tiles %}
+<div class="svc-tiles">
+  {% for t in tiles %}<a href="{{ t.url }}" rel="noopener">{{ t.name }}<span>Open the {{ t.name }} portal</span></a>{% endfor %}
+</div>
+{% else %}
+<div class="panel pad" style="margin-bottom:18px"><div class="empty"><p>Your service portals will appear here as they are switched on.</p></div></div>
+{% endif %}
+
+<div class="section-head"><h2>Security Journey</h2><span class="count">the improvements we agreed with you</span></div>
+<div class="panel" style="margin-bottom:18px">
+  {% if items %}
+  <ul class="jlist">
+  {% for i in items %}
+    <li>
+      <div class="jtop"><span class="pill js-{{ i.status }}">{{ STATUS_NAMES.get(i.status, i.status) }}</span><b>{{ i.title }}</b><span class="chip">{{ i.area }}</span>
+        {% if i.due_on %}<span class="faint" style="font-size:12px">target {{ i.due_on.strftime('%b %d, %Y') }}</span>{% endif %}</div>
+      {% if i.detail and not exec_view %}<p class="jdetail">{{ i.detail }}</p>{% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% else %}<div class="empty"><p>Your journey items will appear here once agreed with your Vendetta team.</p></div>{% endif %}
+</div>
+
+<div class="section-head"><h2>From your Vendetta team</h2></div>
+<div class="panel"><div class="table-wrap">
+  {% if comms %}
+  <table>
+    <thead><tr><th>Title</th><th>Type</th><th>Date</th></tr></thead>
+    <tbody>{% for m in comms %}<tr>
+      <td><a href="/portal/communications/{{ m.id }}"><b>{{ m.title }}</b></a></td>
+      <td class="faint">{{ COMM_KIND_NAMES.get(m.kind, m.kind) }}</td>
+      <td class="faint nowrap">{{ (m.decided_at or m.created_at).strftime('%b %d, %Y') }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<div class="empty"><p>Posture reviews and notes from your team will appear here.</p></div>{% endif %}
+</div></div>
+{% endblock %}
