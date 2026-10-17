@@ -77,6 +77,39 @@ and answers on the Ask page from the facts SABINE gathered, and is told it may n
 invent any. It never chooses an action. Without a key, the same documents come
 from templates.
 
+## Ask executes
+
+The Ask page takes requests as well as questions. `app/intent.py` turns a
+sentence into a skill call in two steps. First, which skill: a deterministic
+parser matches the sentence against each chat-capable skill's title, key and
+synonyms ("escalate", "re-sync", "close as false positive", "nudge", "isolate",
+"write a brief"). When `ANTHROPIC_API_KEY` is set the model is asked first for a
+structured intent as strict JSON, validated against the catalog; it only names
+the skill and copies the argument strings, and any failure or anything off the
+catalog falls back to the parser. Second, which arguments, always by the same
+deterministic resolver against the latest perception snapshot: a client by name
+or alias (case-insensitive, prefix), a finding by id, by host or by "the
+<severity> on <client>" (narrowed by a module when one is named; "the latest"
+picks the newest), an IR case by number or by client, a module by key or common
+name, a person by first name from the staff roster.
+
+A resolved intent with confidence at or above 0.7 and no ambiguity becomes a
+proposal through the normal reasoner path, with facts `{source: "ask", by,
+utterance}` and the same key the rules would use, so the usual dedupe applies.
+The ledger attributes the proposal to `ask:<user>`. Then the autonomy policy
+decides: an `auto` skill runs at once and she reports the result ("Done.
+Re-synced dark-web-monitoring: roster 2, updated 2."); a `propose` skill waits
+with approve and reject inline on the Ask page, through the same decide route as
+the Proposals page; an `off` skill is refused ("That action is switched off; an
+admin can enable it on the Autonomy page."). A high-risk skill never runs from
+chat whatever the policy row says: chat can only propose it, for a person with
+the grant to approve ("I can do that, but host isolation needs a responder's
+approval, and I never do that one myself. It is waiting on the Proposals
+page."). When more than one finding, case or client fits she asks back with the
+candidates. A person named in the sentence ("and tell Dan") gets the outcome as
+a claimed item on the queue. A sentence that matches no skill is answered as
+before.
+
 ## Voice
 
 To Vendetta's own people SABINE is a she: warm, confident, quick, with a dry wit,

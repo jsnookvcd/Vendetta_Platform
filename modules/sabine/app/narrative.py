@@ -52,14 +52,14 @@ def enabled() -> bool:
     return bool((settings.anthropic_api_key or "").strip())
 
 
-def _complete(prompt: str, max_tokens: int = 900, audience: str = "internal") -> str | None:
+def _complete(prompt: str, max_tokens: int = 900, audience: str = "internal", system_text: str | None = None) -> str | None:
     if not enabled():
         return None
     try:
         import anthropic
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        msg = client.messages.create(model=settings.llm_model, max_tokens=max_tokens, system=system(audience),
+        msg = client.messages.create(model=settings.llm_model, max_tokens=max_tokens, system=system_text or system(audience),
                                      messages=[{"role": "user", "content": prompt}])
         return "".join(getattr(b, "text", "") for b in msg.content).strip() or None
     except Exception as e:  # noqa: BLE001
@@ -143,6 +143,81 @@ def answer(question: str, picture: dict) -> tuple[str, str]:
     return (lead + f"{picture.get('open_items', 0)} open items, {picture.get('pending_proposals', 0)} proposals waiting on one of you, "
             f"{len(picture.get('clients', []))} clients, {len(picture.get('modules', {}))} modules in reach."
             + (" Set ANTHROPIC_API_KEY and I will do better than a count." if settings.persona == "sabine" else "")), "rules"
+
+
+_EXTRACT = ("You extract structured intents from short requests to an operations assistant. Answer with one JSON "
+            "object and nothing else. Never invent a value that is not in the sentence.")
+
+
+def extract(prompt: str) -> str | None:
+    """A structured-extraction call with a neutral system prompt. The persona is
+    not involved; the result is validated by the caller and discarded on any doubt."""
+    return _complete(prompt, max_tokens=300, system_text=_EXTRACT)
+
+
+# ---------------------------------------------------------------- Ask SABINE executes
+def _what_was_done(skill, proposal, result: dict) -> str:
+    f, r = proposal.facts or {}, result or {}
+    if skill.key == "escalate_finding":
+        case = r.get("case") or "a case"
+        return f"Escalated {f.get('finding_id')} on {f.get('client') or 'the client'} into {case}" + (" (linked)" if r.get("linked") else "")
+    if skill.key == "roster_sync":
+        return f"Re-synced {f.get('module')}" + (f": {r.get('detail')}" if r.get("detail") else "")
+    if skill.key == "client_brief":
+        return f"Brief for {f.get('client')} is under Briefs"
+    if skill.key == "daily_summary":
+        return "The daily summary is under Briefs"
+    if skill.key == "stale_case_nudge":
+        return f"Nudged {f.get('case')}; it is on the queue for {f.get('lead') or 'the lead'}"
+    if skill.key == "link_related_findings":
+        return f"Noted {len(f.get('finding_ids') or [])} related findings for {f.get('client')} on the queue"
+    if skill.key == "copilot_false_positive":
+        return f"{f.get('finding_id')} is on the queue to confirm and close as a false positive"
+    return f"{proposal.title}: {r.get('detail', 'done')}"
+
+
+def ask_reply(kind: str, skill=None, proposal=None, result: dict | None = None, person: dict | None = None) -> str:
+    """SABINE's line after a sentence became a skill call."""
+    plain = settings.persona != "sabine"
+    title = (skill.title if skill else "that").lower()
+    if kind == "done":
+        line = f"Done. {_what_was_done(skill, proposal, result or {})}"
+        if person:
+            line += f" and nudged {person['name'].split()[0]}"
+        return line + "."
+    if kind == "failed":
+        d = (result or {}).get("detail", "no detail")
+        return (f"{title.capitalize()} failed: {d}." if plain else f"I tried. {title.capitalize()} failed: {d}. Have a look before I try again.")
+    if kind == "pending":
+        return (f"{title.capitalize()} needs a person's approval. It is waiting on the Proposals page." if plain
+                else f"I can do that, but {title} needs a person's approval. It is waiting below and on the Proposals page.")
+    if kind == "high":
+        what = "host isolation" if skill and skill.key == "host_action" else title
+        return (f"{what.capitalize()} needs a responder's approval; SABINE never does it. It is waiting on the Proposals page." if plain
+                else f"I can do that, but {what} needs a responder's approval, and I never do that one myself. It is waiting on the Proposals page.")
+    if kind == "off":
+        return f"That action is switched off; an admin can enable it on the Autonomy page."
+    if kind == "already_pending":
+        return ("That is already waiting on the Proposals page." if plain
+                else "Already on it. That one is waiting on the Proposals page; it needs a person, and I am not one.")
+    if kind == "already_done":
+        at = proposal.executed_at.strftime("%H:%M") if proposal and proposal.executed_at else "earlier"
+        return (f"That was done at {at}." if plain else f"I did that at {at} already. Give it a day before asking me twice.")
+    return "Noted."
+
+
+def ask_clarify(intent) -> str:
+    """A clarifying question listing the candidates."""
+    plain = settings.persona != "sabine"
+    parts = []
+    for a in intent.ambiguities:
+        q = a.get("question", "Which?")
+        cands = a.get("candidates") or []
+        if cands:
+            q += " " + "; ".join(c["label"] for c in cands[:8]) + "."
+        parts.append(q)
+    lead = "" if plain else f"I can {intent.skill.title.lower()} once I know which. "
+    return lead + " ".join(parts)
 
 
 def cycle_line(stats: dict, summary: dict) -> str:

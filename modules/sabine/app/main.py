@@ -21,7 +21,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, ledger, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
+from . import auth, boot, brain, intent, ledger, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
 from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
@@ -241,7 +241,7 @@ def proposal_page(pid: str, request: Request, user: str = auth.RequireUser, db: 
 
 
 @app.post("/proposals/{pid}/decide")
-def proposal_decide(pid: str, request: Request, approve: bool = Form(False), note: str = Form(""),
+def proposal_decide(pid: str, request: Request, approve: bool = Form(False), note: str = Form(""), next: str = Form(""),
                     user: str = auth.RequireUser, db: Session = Depends(get_db)):
     p = db.get(Proposal, pid)
     if not p:
@@ -250,7 +250,8 @@ def proposal_decide(pid: str, request: Request, approve: bool = Form(False), not
         raise HTTPException(403, "a high-risk proposal needs an admin")
     res = brain.decide(db, p, user, bool(approve), note)
     _audit(db, user, "proposal.decide", f"{p.id} {'approve' if approve else 'reject'}: {res.get('detail')}")
-    return _back(f"/proposals/{pid}", bool(res.get("ok")), res.get("detail", ""))
+    back = next if next.startswith("/") and not next.startswith("//") else f"/proposals/{pid}"
+    return _back(back, bool(res.get("ok")), res.get("detail", ""))
 
 
 @app.get("/policy", response_class=HTMLResponse)
@@ -326,9 +327,26 @@ def ask_page(request: Request, user: str = auth.RequireUser):
 
 @app.post("/ask", response_class=HTMLResponse)
 def ask(request: Request, question: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    text_, source = narrative.answer(question.strip()[:1000], brain.picture(db))
-    ledger.append(db, "observation", user, f"asked: {question.strip()[:200]}", {"source": source})
-    return render(request, "ask.html", user=user, question=question, answer=text_, source=source, tagline=_tagline(user))
+    """A question is answered from the picture. A request becomes a skill call:
+    resolved by intent.parse, raised as a proposal attributed to ask:<user>, and
+    carried out, held for a person, or refused by the autonomy policy."""
+    q = question.strip()[:1000]
+    it = intent.parse(db, q, user)
+    outcome, prop = None, None
+    if it.skill is not None and it.ambiguities:
+        text_, source = intent.clarify(it), "ask"
+        ledger.append(db, "observation", user, f"asked: {q[:200]}", {"source": source, "intent": it.as_dict() | {"args": intent._plain_args(it.args)}})
+    elif it.actionable:
+        outcome = intent.act(db, it, user)
+        prop = outcome.get("proposal")
+        text_, source = outcome["reply"], "ask"
+        ledger.append(db, "observation", user, f"asked: {q[:200]}", {"source": source, "skill": it.skill.key, "outcome": outcome["kind"]})
+    else:
+        text_, source = narrative.answer(q, brain.picture(db))
+        ledger.append(db, "observation", user, f"asked: {q[:200]}", {"source": source})
+    can_decide = prop is not None and prop.status == "pending" and (_is_admin(request) or prop.risk != "high")
+    return render(request, "ask.html", user=user, question=question, answer=text_, source=source, tagline=_tagline(user),
+                  outcome=outcome["kind"] if outcome else "", prop=prop, can_decide=can_decide)
 
 
 # ---------------------------------------------------------------- the board (kiosk)

@@ -3,12 +3,20 @@
 <div class="panel pad" style="margin-bottom:14px">
   <p style="margin:0 0 10px">{{ tagline }}</p>
   <form method="post" action="/ask">
-    <label class="field">Question<input name="question" value="{{ question }}" placeholder="Which clients have critical findings with no case open?" required autofocus></label>
+    <label class="field">Question or request<input name="question" value="{{ question }}" placeholder="Which clients have critical findings with no case open? Or: escalate the critical on Riverbend." required autofocus></label>
     <div class="row" style="margin-top:10px; gap:8px"><button class="btn btn-primary">Ask</button><button id="talk" class="btn btn-ghost" type="button" title="Push to talk">Talk</button></div>
   </form>
-  <p class="faint" style="font-size:12px; margin:8px 0 0">SABINE answers from what it can see across every module right now. {% if not narrative_on %}No language model is configured; set ANTHROPIC_API_KEY for a written answer.{% endif %}</p>
+  <p class="faint" style="font-size:12px; margin:8px 0 0">SABINE answers from what she can see across every module right now. Ask her to do something and it goes through the same autonomy policy as her own proposals: automatic skills run now, the rest wait for a person, and anything on a host always waits for a responder. {% if not narrative_on %}No language model is configured; set ANTHROPIC_API_KEY for a written answer.{% endif %}</p>
 </div>
 {% if answer %}<div class="panel pad"><pre style="white-space:pre-wrap; font-family:inherit; margin:0; line-height:1.5">{{ answer }}</pre>
-  <div class="row" style="margin-top:10px; gap:10px; align-items:center"><button id="play" class="btn btn-sm" type="button" data-text="{{ answer }}">Hear it</button><span class="faint" style="font-size:12px">source: {{ source }} · voice: {{ tts_provider }}</span></div></div>{% endif %}
+  {% if prop and prop.status == 'pending' %}
+  <div class="row" style="margin-top:12px; gap:8px; align-items:center; flex-wrap:wrap">
+    <a class="alink" href="/proposals/{{ prop.id }}"><b>{{ prop.title }}</b></a> <span class="chip">{{ prop.risk }} risk</span> <span class="chip">{{ (prop.confidence*100)|int }}%</span>
+    {% if can_decide %}<form method="post" action="/proposals/{{ prop.id }}/decide" class="inline row" style="gap:6px"><input type="hidden" name="next" value="/ask">
+      <button class="btn btn-sm btn-primary" name="approve" value="true">Approve{{ ' and hand off' if prop.risk == 'high' else ' and do it' }}</button>
+      <button class="btn btn-sm btn-ghost" name="approve" value="false">Reject</button></form>
+    {% else %}<span class="faint" style="font-size:12px">needs an admin to approve</span>{% endif %}
+  </div>{% elif prop %}<p class="faint" style="font-size:12px; margin:10px 0 0"><a class="alink" href="/proposals/{{ prop.id }}">{{ prop.title }}</a>: {{ prop.status }}{% if prop.result and prop.result.get('detail') %}, {{ prop.result.get('detail') }}{% endif %}</p>{% endif %}
+  <div class="row" style="margin-top:10px; gap:10px; align-items:center"><button id="play" class="btn btn-sm" type="button" data-text="{{ answer }}">Hear it</button><span class="faint" style="font-size:12px">source: {{ source }}{% if outcome %} · {{ outcome }}{% endif %} · voice: {{ tts_provider }}</span></div></div>{% endif %}
 <script src="/static/ask.js"></script>
 {% endblock %}
