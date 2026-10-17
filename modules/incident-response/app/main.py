@@ -754,7 +754,7 @@ def api_module(user: str = Depends(auth.api_user)):
         "roles": ["admin", "analyst", "viewer", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
         "card_statuses": board.TASK_STATUSES,
         "readiness": readiness_mod.block(),
-        "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/module"],
+        "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/oncall/page", "/api/module"],
     }
 
 
@@ -799,6 +799,38 @@ async def api_declare(request: Request, user: str = Depends(auth.api_user), db: 
     db.refresh(c)
     case = _declare(db, c, payload.get("description", ""), f"api:{user}", payload.get("severity", "high"))
     return {"case_id": case.number, "id": case.id}
+
+
+@app.post("/api/oncall/page")
+async def api_oncall_page(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Page the on-call responder through the same SNS and Teams delivery a new
+    case uses. SABINE calls this when a critical detection sits unacknowledged
+    past the client's commitment. Body: {title, body, link, severity,
+    platform_client_id, client, source_module, source_ref}. Returns
+    {"sent": {...}}, empty when no channel is configured. Audit-logged."""
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "JSON object required")
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "title required")
+    sev = str(payload.get("severity") or "").strip().lower()
+    head = f"[{sev.upper()}] " if sev and not title.startswith("[") else ""
+    lines = [str(payload.get("body") or "").strip()]
+    meta = [("Client", payload.get("client")), ("Source", payload.get("source_module")), ("Ref", payload.get("source_ref"))]
+    lines += [f"{k}: {v}" for k, v in meta if v]
+    link = str(payload.get("link") or "").strip()
+    if link and not link.startswith(("https://", "http://")):
+        link = ""
+    sent = notify.page(head + title, "\n".join(x for x in lines if x) + "\n", link)
+    _audit(db, user, "oncall.page",
+           f"{payload.get('source_module') or ''}:{payload.get('source_ref') or ''} "
+           f"client={payload.get('platform_client_id') or payload.get('client') or ''} "
+           f"sent={','.join(sorted(sent)) or 'none'}: {title}"[:4000])
+    return {"sent": sent}
 
 
 @app.get("/healthz")
