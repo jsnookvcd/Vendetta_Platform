@@ -1,0 +1,50 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:20px">{{ client.name }}</h1>
+  <span class="faint" style="font-size:12px">{% if client.portal_enabled %}portal enabled{% else %}portal off{% endif %}{% if platform_public_url and client.platform_client_id %} · <a href="{{ platform_public_url.rstrip('/') }}/clients/{{ client.platform_client_id }}" class="faint">platform page</a>{% endif %}</span></div>
+
+<div class="tiles" style="margin-top:12px">
+  {% for s in ['critical','high','medium','low'] %}<div class="tile {{ 'alert' if s=='critical' and by_sev[s] }}"><div class="n">{{ by_sev[s] }}</div><div class="l">Open {{ s }}</div></div>{% endfor %}
+  <div class="tile"><div class="n">{{ fmt(m.mttd_minutes.median) }}</div><div class="l">MTTD, 30 days</div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mtta_minutes.median) }}</div><div class="l">MTTA</div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mttr_minutes.median) }}</div><div class="l">MTTR</div></div>
+</div>
+
+<div class="detail-grid">
+<div>
+  <div class="section-head"><h2>Investigations</h2><span class="count">{{ invs|length }}</span></div>
+  <div class="panel"><div class="table-wrap">
+  {% if invs %}
+  <table><thead><tr><th>Investigation</th><th>Severity</th><th>Status</th><th>Verdict</th><th>Opened</th></tr></thead><tbody>
+  {% for i in invs %}<tr>
+    <td><a href="/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a>{% if i.published %} <span class="chip ok">client</span>{% endif %}</td>
+    <td>{{ sev(i.severity) }}</td><td>{{ istatus(i.status) }}</td><td>{{ verdict(i.verdict) }}</td>
+    <td class="nowrap faint">{{ ts(i.opened_at) }}</td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty"><p>No investigations for this client yet.</p></div>{% endif %}
+  </div></div>
+</div>
+<div>
+  <div class="section-head"><h2>Active suppressions</h2><span class="count">{{ sups|length }}</span></div>
+  <div class="panel pad">
+    {% for s in sups %}<div style="font-size:12.5px; margin-bottom:8px">{% if s.tool %}<span class="toolchip">{{ TOOL_NAMES.get(s.tool, s.tool) }}</span> {% endif %}{% if s.host %}<span class="mono">{{ s.host }}</span> {% endif %}{% if s.title_contains %}"{{ s.title_contains }}"{% endif %}<div class="faint">{{ s.reason }} · until {{ s.expires_at.strftime('%b %d') }} · {{ s.hits }} hits</div></div>
+    {% else %}<p class="faint" style="margin:0">None.</p>{% endfor %}
+    <a class="faint" href="/suppressions" style="font-size:12px">manage &rarr;</a>
+  </div>
+  <div class="section-head" style="margin-top:14px"><h2>Rule overrides</h2><span class="count">{{ overrides|length }}</span></div>
+  <div class="panel pad">
+    {% for o in overrides %}<div style="font-size:12.5px"><a class="mono" href="/rules/{{ o.rule_key }}">{{ o.rule_key }}</a> <span class="faint">{{ 'disabled' if o.disabled else 'severity ' + o.severity }}</span></div>
+    {% else %}<p class="faint" style="margin:0">None. Every rule applies as written.</p>{% endfor %}
+  </div>
+  {% if not (ident and ident.is_viewer) %}
+  <div class="section-head" style="margin-top:14px"><h2>Client portal</h2></div>
+  <form method="post" action="/clients/{{ client.id }}/portal" class="panel pad">
+    <label class="field chk"><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> Portal enabled</label>
+    <p class="hint">Domains: {{ client.portal_domains or 'none set on the platform' }}</p>
+    <div style="margin-top:8px"><button class="btn btn-sm">Save</button></div>
+  </form>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

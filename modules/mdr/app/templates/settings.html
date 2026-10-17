@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<div class="section-head"><h2>Configuration</h2></div>
+<div class="panel pad" style="margin-bottom:14px">
+  <dl class="kv">
+    <dt>Sign-in</dt><dd>{{ 'Microsoft 365 SSO enabled' if sso_enabled else 'local admin login' }} &nbsp;<a href="/settings/sso" class="faint">configure</a></dd>
+    <dt>Control plane</dt><dd>{{ platform_url }}</dd>
+    <dt>Engagement hub</dt><dd>{{ hub }}</dd>
+    <dt>Signal source</dt><dd>{{ ms_url }}</dd>
+    <dt>Alert links</dt><dd>{{ ms_public }}</dd>
+    <dt>Detection</dt><dd>every {{ interval }}s · last {{ detect_state.last_detail }}</dd>
+    <dt>Noise suppression</dt><dd>{{ noise_days }} days by default</dd>
+  </dl>
+</div>
+
+<div class="section-head"><h2>API</h2></div>
+<div class="panel pad">
+  <p class="muted" style="margin:0 0 10px">The control plane, the IR hub and SABINE read MDR over its service API. Authenticate with the bearer token below.</p>
+  <pre class="body" style="max-height:none">GET  /api/module
+GET  /api/findings?status=active&amp;platform_client_id=
+POST /api/findings/{id}/escalate
+GET  /api/suppressions?platform_client_id=
+POST /api/suppressions
+GET  /api/metrics?days=30&amp;platform_client_id=
+GET  /api/coverage
+GET  /api/rules
+POST /api/detect/run
+POST /api/provision/sync
+Authorization: Bearer {{ api_token }}</pre>
+</div>
+{% endblock %}

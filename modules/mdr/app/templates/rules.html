@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block title %}Detection rules{% endblock %}
+{% block body %}
+<p class="page-intro">Rules run over every managed-services signal. Each is data: an admin edits it here, every edit becomes a new version, and a rule can be disabled or re-rated for one client with an override.</p>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Rule</th><th>Severity</th><th>Match</th><th>Correlation</th><th>ATT&amp;CK</th><th>Response</th><th>Fired 30d</th><th>Ver</th></tr></thead><tbody>
+{% for r in rules %}<tr class="{{ 'faded' if not r.enabled }}">
+  <td><a href="/rules/{{ r.key }}">{{ r.name }}</a><div class="faint mono" style="font-size:11px">{{ r.key }}{% if not r.enabled %} · disabled{% endif %}{% if overrides.get(r.key) %} · {{ overrides[r.key] }} override(s){% endif %}</div></td>
+  <td>{{ sev(r.severity) }}</td>
+  <td style="font-size:12px">{% for t in r.match.get('tools', []) %}<span class="toolchip">{{ TOOL_NAMES.get(t, t) }}</span> {% endfor %}{% if not r.match.get('tools') %}<span class="faint">any tool</span>{% endif %}
+    {% if r.match.get('types') %}<div class="faint">types {{ r.match.types|join(', ') }}</div>{% endif %}
+    {% if r.match.get('title_any') %}<div class="faint trunc-line">{{ r.match.title_any|join(' | ') }}</div>{% endif %}
+    {% if r.match.get('min_severity', 'low') != 'low' %}<div class="faint">min {{ r.match.min_severity }}</div>{% endif %}</td>
+  <td class="nowrap faint" style="font-size:12px">{% if r.correlation.get('threshold', 1) > 1 %}{{ r.correlation.threshold }} in {{ r.correlation.window_minutes }}m by {{ r.correlation.group_by }}{% else %}single signal, by {{ r.correlation.get('group_by', 'host') }}{% endif %}</td>
+  <td>{{ mitre(r.mitre) }}</td>
+  <td class="nowrap faint" style="font-size:12px">{{ RESPONSE_NAMES.get(r.response, r.response) }}</td>
+  <td class="num">{{ fired.get(r.key, 0) }}</td>
+  <td class="num faint">v{{ r.version }}</td>
+</tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}{% block title %}{{ r.name }}{% endblock %}
+{% block body %}
+<div class="title-row"><a href="/rules" class="faint" style="font-size:12px">&larr; Rules</a></div>
+<div class="title-row"><h1 style="font-size:19px">{{ r.name }}</h1>{{ sev(r.severity) }}<span class="chip">v{{ r.version }}</span>{% if not r.enabled %}<span class="chip bad">disabled</span>{% endif %}</div>
+<p class="faint" style="margin:2px 0 14px"><span class="mono">{{ r.key }}</span> · last changed by {{ r.updated_by }} {{ ts(r.updated_at) }}</p>
+
+<div class="detail-grid">
+<div>
+  <form method="post" action="/rules/{{ r.key }}" class="panel pad">
+    <fieldset {{ 'disabled' if not can_edit }} style="border:0; padding:0; margin:0">
+    <div class="fieldgrid">
+      <label class="field">Name<input name="name" value="{{ r.name }}"></label>
+      <label class="field">Severity<select name="severity">{% for s in SEVERITIES %}<option value="{{ s }}" {{ 'selected' if r.severity==s }}>{{ s }}</option>{% endfor %}</select></label>
+    </div>
+    <label class="field" style="margin-top:8px">Description<textarea name="description">{{ r.description }}</textarea></label>
+    <div class="section-head" style="margin-top:14px"><h2>Match</h2></div>
+    <div class="fieldgrid">
+      <label class="field">Tools (comma separated, blank for any)<input name="tools" value="{{ r.match.get('tools', [])|join(', ') }}" placeholder="{{ tools|join(', ') }}"></label>
+      <label class="field">Signal types (blank for any)<input name="types" value="{{ r.match.get('types', [])|join(', ') }}" placeholder="{{ types|join(', ') }}"></label>
+      <label class="field">Minimum severity<select name="min_severity">{% for s in SEVERITIES %}<option value="{{ s }}" {{ 'selected' if r.match.get('min_severity','low')==s }}>{{ s }}</option>{% endfor %}</select></label>
+    </div>
+    <label class="field" style="margin-top:8px">Title contains any of (one per line, case-insensitive)<textarea name="title_any" style="min-height:120px">{{ r.match.get('title_any', [])|join('\n') }}</textarea></label>
+    <div class="section-head" style="margin-top:14px"><h2>Correlation</h2></div>
+    <div class="fieldgrid">
+      <label class="field">Group by<select name="group_by">{% for g in group_by %}<option value="{{ g }}" {{ 'selected' if r.correlation.get('group_by')==g }}>{{ g }}</option>{% endfor %}</select></label>
+      <label class="field">Window (minutes)<input type="number" name="window_minutes" min="1" max="10080" value="{{ r.correlation.get('window_minutes', 60) }}"></label>
+      <label class="field">Threshold (signals)<input type="number" name="threshold" min="1" max="1000" value="{{ r.correlation.get('threshold', 1) }}"></label>
+    </div>
+    <div class="section-head" style="margin-top:14px"><h2>Mapping and response</h2></div>
+    <div class="fieldgrid">
+      <label class="field">ATT&amp;CK techniques<input name="mitre" value="{{ r.mitre|join(', ') }}" placeholder="T1059.001, T1003"></label>
+      <label class="field">Recommended response<select name="response">{% for x in responses %}<option value="{{ x }}" {{ 'selected' if r.response==x }}>{{ RESPONSE_NAMES[x] }}</option>{% endfor %}</select></label>
+    </div>
+    <label class="field chk" style="margin-top:10px"><input type="checkbox" name="enabled" value="true" {{ 'checked' if r.enabled }}> Enabled</label>
+    <label class="field" style="margin-top:8px">Why this change<input name="note" placeholder="recorded with the version"></label>
+    <div style="margin-top:10px"><button class="btn btn-primary">Save as v{{ r.version + 1 }}</button></div>
+    </fieldset>
+    {% if not can_edit %}<p class="hint" style="margin-top:8px">Rule edits need the admin grant.</p>{% endif %}
+  </form>
+
+  <div class="section-head" style="margin-top:16px"><h2>Version history</h2><span class="count">{{ versions|length }}</span></div>
+  <div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Version</th><th>Change</th><th>By</th><th>When</th></tr></thead><tbody>
+  {% for v in versions %}<tr>
+    <td class="num">v{{ v.version }}</td>
+    <td><span class="chip">{{ v.kind }}</span> {{ v.note }}
+      <details><summary class="faint" style="font-size:11px; cursor:pointer">snapshot</summary><pre class="body">{{ v.snapshot|tojson(indent=2) }}</pre></details></td>
+    <td class="nowrap faint">{{ v.changed_by }}</td>
+    <td class="nowrap faint">{{ ts(v.changed_at) }}</td>
+  </tr>{% endfor %}
+  </tbody></table></div></div>
+</div>
+
+<div>
+  <div class="section-head"><h2>Per-client overrides</h2><span class="count">{{ overrides|length }}</span></div>
+  <div class="panel pad">
+    {% if overrides %}
+    <table class="compact"><tbody>
+    {% for o in overrides %}<tr>
+      <td>{{ o.client.name }}<div class="faint" style="font-size:11px">{{ 'disabled' if o.disabled else 'severity ' + o.severity }}{% if o.note %} · {{ o.note }}{% endif %} · {{ o.updated_by }}</div></td>
+      <td class="nowrap">{% if can_edit %}<form method="post" action="/rules/{{ r.key }}/overrides/{{ o.id }}/delete" class="inline"><button class="btn btn-xs btn-ghost">remove</button></form>{% endif %}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="faint" style="margin:0 0 8px">No overrides. The rule applies to every client as written.</p>{% endif %}
+    {% if can_edit %}
+    <form method="post" action="/rules/{{ r.key }}/overrides" style="margin-top:10px">
+      <label class="field">Client<select name="client_id">{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+      <label class="field chk" style="margin-top:8px"><input type="checkbox" name="disabled" value="true"> Disable for this client</label>
+      <label class="field" style="margin-top:8px">or set severity<select name="severity"><option value="">keep {{ r.severity }}</option>{% for s in SEVERITIES %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></label>
+      <label class="field" style="margin-top:8px">Note<input name="note" placeholder="why this client differs"></label>
+      <div style="margin-top:8px"><button class="btn btn-sm">Save override</button></div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

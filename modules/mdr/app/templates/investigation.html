@@ -1,0 +1,146 @@
+{% extends "base.html" %}{% block title %}{{ inv.number }}{% endblock %}
+{% block body %}
+{% set ro = ident and ident.is_viewer %}
+<div class="title-row"><a href="/investigations" class="faint" style="font-size:12px">&larr; Investigations</a></div>
+<div class="title-row"><h1 style="font-size:19px"><span class="mono faint">{{ inv.number }}</span> {{ inv.title }}</h1></div>
+<div class="row" style="gap:8px; margin:6px 0 14px; align-items:center">
+  {{ sev(inv.severity) }} {{ istatus(inv.status) }} {{ verdict(inv.verdict) }}
+  {% if inv.escalated_case %}<span class="chip">IR case {{ inv.escalated_case }}</span>{% endif %}
+  {% if inv.published %}<span class="chip ok">shared with client</span>{% endif %}
+  <span class="faint" style="font-size:12px">{{ inv.client.name }}{% if inv.host %} · <span class="mono">{{ inv.host }}</span>{% endif %} · rule <a href="/rules/{{ inv.rule_key }}" class="mono">{{ inv.rule_key }}</a> v{{ inv.rule_version }}</span>
+</div>
+
+<div class="detail-grid">
+<div>
+  <div class="panel pad" style="margin-bottom:14px">
+    <dl class="kv">
+      <dt>ATT&amp;CK</dt><dd>{% if inv.mitre %}{% for t in inv.mitre %}<span class="tchip">{{ t }}</span> <span class="faint" style="font-size:12px">{{ technique_name(t) }}</span>{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}<span class="faint">correlation rule, no single technique</span>{% endif %}</dd>
+      <dt>First signal</dt><dd>{{ ts(inv.first_signal_at) }} UTC</dd>
+      <dt>Opened</dt><dd>{{ ts(inv.opened_at) }} UTC <span class="faint">(detect {{ fmt(((inv.opened_at - inv.first_signal_at).total_seconds())/60) }})</span></dd>
+      <dt>Acknowledged</dt><dd>{% if inv.acknowledged_at %}{{ ts(inv.acknowledged_at) }} by {{ inv.acknowledged_by }}{% else %}<span class="bad-txt">not yet</span>{% endif %}</dd>
+      <dt>Contained</dt><dd>{{ ts(inv.contained_at) or 'no' }}</dd>
+      <dt>Closed</dt><dd>{{ ts(inv.closed_at) or 'open' }}</dd>
+      <dt>Recommended</dt><dd>{{ RESPONSE_NAMES.get(inv.response, inv.response) }}{% if inv.response_prepared_at %} <span class="faint">prepared {{ ts(inv.response_prepared_at) }} by {{ inv.response_prepared_by }}</span>{% endif %}</dd>
+      {% if rule %}<dt>Rule</dt><dd class="faint" style="font-size:12.5px">{{ rule.description }}</dd>{% endif %}
+    </dl>
+  </div>
+
+  <div class="section-head"><h2>Signals</h2><span class="count">{{ inv.links|length }}</span></div>
+  <div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Occurred</th><th>Tool</th><th>Signal</th><th>Host</th><th>Severity</th><th>Copilot</th></tr></thead><tbody>
+  {% for s in inv.signals() %}<tr>
+    <td class="nowrap faint">{{ ts(s.occurred_at) }}</td>
+    <td class="nowrap"><span class="toolchip">{{ TOOL_NAMES.get(s.tool, s.tool) }}</span></td>
+    <td>{{ s.title }}<div class="faint mono" style="font-size:11px">{{ s.type }} · alert {{ s.id }}</div></td>
+    <td class="nowrap mono">{{ s.host }}</td>
+    <td>{{ sev(s.severity) }}</td>
+    <td class="nowrap faint" style="font-size:12px">{% if s.copilot %}{{ s.copilot.verdict|replace('_',' ') }} {{ (s.copilot.confidence * 100)|round|int }}%{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody></table></div></div>
+
+  <div class="section-head" style="margin-top:16px"><h2>Timeline</h2>
+    {% if chain.ok %}<span class="coc-badge coc-ok">SIGNED CHAIN INTACT · {{ chain.length }}</span>{% else %}<span class="coc-badge coc-broken">CHAIN BROKEN AT {{ chain.broken_at }}</span>{% endif %}
+    <span class="grow"></span>
+    <a class="faint" href="/investigations/{{ inv.id }}/evidence/verify" target="_blank" rel="noopener">verify</a>
+    <a class="btn btn-sm btn-ghost" href="/investigations/{{ inv.id }}/evidence/export.zip">Evidence export</a>
+  </div>
+  <div class="panel"><ol class="timeline">
+  {% for e in entries %}<li class="tl-{{ e.kind }}">
+    <div class="tl-head"><span class="tl-kind">{{ e.kind|replace('_',' ') }}</span><span class="faint">{{ ts(e.at) }} · {{ e.actor }}</span>{% if e.client_visible %}<span class="chip">client sees</span>{% endif %}</div>
+    <div class="tl-body">{{ e.detail }}</div>
+    {% if e.kind == 'containment_prepared' and e.payload.link %}<div><a href="{{ e.payload.link }}" target="_blank" rel="noopener">Open managed-services alert &rarr;</a></div>{% endif %}
+  </li>{% endfor %}
+  </ol></div>
+  {% if not ro %}
+  <form method="post" action="/investigations/{{ inv.id }}/note" class="panel pad" style="margin-top:10px">
+    <label class="field">Analyst note<textarea name="text" placeholder="What you checked, what you found"></textarea></label>
+    <div style="margin-top:8px"><button class="btn btn-sm">Add note</button></div>
+  </form>
+  {% endif %}
+
+  {% if others %}
+  <div class="section-head" style="margin-top:16px"><h2>Other open investigations for {{ inv.client.name }}</h2></div>
+  <div class="panel"><div class="table-wrap"><table><tbody>
+  {% for o in others %}<tr><td><a href="/investigations/{{ o.id }}"><span class="mono faint">{{ o.number }}</span> {{ o.title }}</a></td><td>{{ sev(o.severity) }}</td><td>{{ istatus(o.status) }}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+  {% endif %}
+</div>
+
+<div>
+  {% if ro %}
+  <div class="panel pad"><p class="faint" style="margin:0">Read-only access. Ask a platform admin for analyst access to act on investigations.</p></div>
+  {% else %}
+  <div class="panel pad action-stack">
+    {% if not inv.acknowledged_at %}<form method="post" action="/investigations/{{ inv.id }}/ack"><button class="btn btn-primary wide">Acknowledge</button></form>{% endif %}
+    <form method="post" action="/investigations/{{ inv.id }}/verdict" class="row" style="gap:6px">
+      <label class="field" style="flex:1">Verdict<select name="verdict">{% for v in verdicts %}<option value="{{ v }}" {{ 'selected' if inv.verdict==v }}>{{ VERDICT_NAMES[v] }}</option>{% endfor %}</select></label>
+      <button class="btn btn-sm">Set</button>
+    </form>
+  </div>
+
+  {% if inv.status != 'closed' %}
+  <div class="section-head" style="margin-top:14px"><h2>Containment</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/investigations/{{ inv.id }}/prepare-containment">
+      <label class="field">Recommended action<select name="action">{% for r in responses %}<option value="{{ r }}" {{ 'selected' if inv.response==r }}>{{ RESPONSE_NAMES[r] }}</option>{% endfor %}</select></label>
+      <label class="field" style="margin-top:8px">Note for the responder<input name="note" value="{{ inv.response_note }}"></label>
+      <div style="margin-top:8px"><button class="btn btn-sm">Prepare containment</button></div>
+    </form>
+    {% if alert_link %}<p style="margin:10px 0 0"><a class="btn btn-sm btn-ghost" href="{{ alert_link }}" target="_blank" rel="noopener">Open alert {{ alert_ref[:10] }} in managed services &rarr;</a></p>{% endif %}
+    <p class="hint" style="margin-top:8px">MDR never acts on a host. The responder carries out the action in managed services under its approval rules, then marks it contained here.</p>
+    <form method="post" action="/investigations/{{ inv.id }}/contain" style="margin-top:10px">
+      <input name="note" placeholder="how it was contained (optional)" style="width:100%">
+      <div style="margin-top:6px"><button class="btn btn-sm">Mark contained</button></div>
+    </form>
+  </div>
+
+  <div class="section-head" style="margin-top:14px"><h2>Escalate</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/investigations/{{ inv.id }}/escalate">
+      <input name="note" placeholder="why this needs IR (optional)" style="width:100%">
+      <div style="margin-top:8px"><button class="btn btn-sm" {{ 'disabled' if not hub_configured }}>{{ 'Attach to ' + inv.escalated_case if inv.escalated_case else 'Open IR case' }}</button></div>
+    </form>
+    <p class="hint" style="margin-top:6px">{% if hub_configured %}Opens or links a hub case on {{ workstream }}.{% else %}PLATFORM_HUB_URL is not set; escalation is off.{% endif %}</p>
+  </div>
+
+  <div class="section-head" style="margin-top:14px"><h2>This was noise</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/investigations/{{ inv.id }}/noise">
+      <label class="field">Reason <span class="req">*</span><input name="reason" required placeholder="e.g. approved admin script, nightly backup window"></label>
+      <div class="row" style="gap:6px; margin-top:8px">
+        <label class="field" style="flex:1">Tool<input name="tool" value="{{ latest.tool if latest else '' }}"></label>
+        <label class="field" style="flex:1">Host<input name="host" value="{{ inv.host or (latest.host if latest else '') }}"></label>
+      </div>
+      <label class="field" style="margin-top:8px">Title contains<input name="title_contains" value="{{ latest.title if latest else '' }}"></label>
+      <label class="field" style="margin-top:8px">Days<input type="number" name="days" min="1" max="90" value="{{ noise_days }}"></label>
+      <div style="margin-top:8px"><button class="btn btn-sm">Close as false positive and suppress</button></div>
+    </form>
+    <p class="hint" style="margin-top:6px">Suppresses matching signals for {{ inv.client.name }} only. Expired suppressions come up on the monthly review list.</p>
+  </div>
+
+  <div class="section-head" style="margin-top:14px"><h2>Close</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/investigations/{{ inv.id }}/close">
+      <label class="field">Verdict<select name="verdict"><option value="">keep {{ VERDICT_NAMES[inv.verdict] }}</option>{% for v in verdicts if v != 'pending' %}<option value="{{ v }}">{{ VERDICT_NAMES[v] }}</option>{% endfor %}</select></label>
+      <input name="note" placeholder="closing note (optional)" style="width:100%; margin-top:8px">
+      <div style="margin-top:8px"><button class="btn btn-sm">Close investigation</button></div>
+    </form>
+  </div>
+  {% else %}
+  <div class="panel pad" style="margin-top:14px">
+    <form method="post" action="/investigations/{{ inv.id }}/reopen"><input name="note" placeholder="why (optional)" style="width:100%"><div style="margin-top:8px"><button class="btn btn-sm">Reopen</button></div></form>
+  </div>
+  {% endif %}
+
+  <div class="section-head" style="margin-top:14px"><h2>Client portal</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/investigations/{{ inv.id }}/publish">
+      <label class="field">What Vendetta found and did (the client reads this)<textarea name="client_summary">{{ inv.client_summary }}</textarea></label>
+      <label class="field chk" style="margin-top:8px"><input type="checkbox" name="published" value="true" {{ 'checked' if inv.published }}> Share with the client</label>
+      <div style="margin-top:8px"><button class="btn btn-sm">Save</button></div>
+    </form>
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

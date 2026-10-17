@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block title %}Detection and response{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 16px">What Vendetta's SOC investigated for {{ client.name }}, the verdict on each, and how fast the team moved. Raw alerts stay with the analysts; you see the investigations that came out of them.</p>
+
+<div class="tiles">
+  <div class="tile {{ 'alert' if counts.by_sev.critical }}"><div class="n">{{ counts.open }}</div><div class="l">Open investigations</div></div>
+  <div class="tile"><div class="n">{{ counts.closed_90d }}</div><div class="l">Closed, last 90 days</div></div>
+  <div class="tile"><div class="n">{{ counts.true_positive_90d }}</div><div class="l">Confirmed threats, 90 days</div></div>
+  <div class="tile"><div class="n">{{ counts.contained_90d }}</div><div class="l">Contained, 90 days</div></div>
+</div>
+
+<div class="section-head"><h2>Response times</h2><span class="count">last 90 days, median (p90)</span></div>
+<div class="tiles">
+  <div class="tile"><div class="n">{{ fmt(m.mttd_minutes.median) }}</div><div class="l">Time to detect <span class="faint">({{ fmt(m.mttd_minutes.p90) }})</span></div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mtta_minutes.median) }}</div><div class="l">Time to acknowledge <span class="faint">({{ fmt(m.mtta_minutes.p90) }})</span></div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mttr_minutes.median) }}</div><div class="l">Time to contain or resolve <span class="faint">({{ fmt(m.mttr_minutes.p90) }})</span></div></div>
+</div>
+
+{% if not exec_view %}
+<div class="section-head"><h2>Open investigations</h2><span class="count">{{ open_rows|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+{% if open_rows %}
+<table><thead><tr><th>Investigation</th><th>Severity</th><th>Status</th><th>Verdict</th><th>Opened</th></tr></thead><tbody>
+{% for i in open_rows %}<tr>
+  <td><a href="/portal/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a></td>
+  <td>{{ sev(i.severity) }}</td><td>{{ istatus(i.status) }}</td><td>{{ verdict(i.verdict) }}</td>
+  <td class="nowrap faint">{{ ts(i.opened_at) }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>Nothing open right now.</p></div>{% endif %}
+</div></div>
+
+<div class="section-head" style="margin-top:18px"><h2>Recently closed</h2><span class="count">{{ recent|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+{% if recent %}
+<table><thead><tr><th>Investigation</th><th>Verdict</th><th>What Vendetta did</th><th>Closed</th></tr></thead><tbody>
+{% for i in recent %}<tr>
+  <td><a href="/portal/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a></td>
+  <td>{{ verdict(i.verdict) }}</td>
+  <td style="font-size:12.5px">{{ i.client_summary }}</td>
+  <td class="nowrap faint">{{ ts(i.closed_at) }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No closed investigations in the last 90 days.</p></div>{% endif %}
+</div></div>
+{% else %}
+<div class="panel pad"><p class="faint" style="margin:0">Your security team sees each investigation in detail. This view shows the posture and the response times.</p></div>
+{% endif %}
+{% endblock %}

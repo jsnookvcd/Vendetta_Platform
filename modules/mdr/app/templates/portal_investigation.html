@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% block title %}{{ inv.number }}{% endblock %}
+{% block body %}
+<div class="title-row"><a href="/portal" class="faint" style="font-size:12px">&larr; Investigations</a></div>
+<div class="title-row"><h1 style="font-size:19px"><span class="mono faint">{{ inv.number }}</span> {{ inv.title }}</h1></div>
+<div class="row" style="gap:8px; margin:6px 0 14px; align-items:center">{{ sev(inv.severity) }} {{ istatus(inv.status) }} {{ verdict(inv.verdict) }}</div>
+
+<div class="detail-grid">
+<div>
+  <div class="section-head"><h2>What Vendetta found and did</h2></div>
+  <div class="panel pad" style="margin-bottom:14px"><p style="margin:0; white-space:pre-wrap">{{ inv.client_summary }}</p></div>
+
+  <div class="section-head"><h2>Timeline</h2></div>
+  <div class="panel"><ol class="timeline">
+  {% for e in entries %}<li class="tl-{{ e.kind }}">
+    <div class="tl-head"><span class="tl-kind">{{ e.kind|replace('_',' ') }}</span><span class="faint">{{ ts(e.at) }} UTC</span></div>
+    <div class="tl-body">{{ e.detail }}</div>
+  </li>{% endfor %}
+  </ol></div>
+</div>
+<div>
+  <div class="panel pad">
+    <dl class="kv kv-tight">
+      <dt>First signal</dt><dd>{{ ts(inv.first_signal_at) }}</dd>
+      <dt>Opened</dt><dd>{{ ts(inv.opened_at) }}</dd>
+      <dt>Acknowledged</dt><dd>{{ ts(inv.acknowledged_at) or 'pending' }}</dd>
+      <dt>Contained</dt><dd>{{ ts(inv.contained_at) or 'no' }}</dd>
+      <dt>Closed</dt><dd>{{ ts(inv.closed_at) or 'open' }}</dd>
+      {% if inv.host %}<dt>Asset</dt><dd class="mono">{{ inv.host }}</dd>{% endif %}
+      {% if inv.mitre %}<dt>ATT&amp;CK</dt><dd>{% for t in inv.mitre %}<span class="tchip" title="{{ technique_name(t) }}">{{ t }}</span> {% endfor %}</dd>{% endif %}
+    </dl>
+  </div>
+  <div class="panel pad" style="margin-top:12px">
+    <a class="btn btn-sm btn-ghost" href="/portal/investigations/{{ inv.id }}/evidence/export.zip">Download signed timeline</a>
+    <p class="hint" style="margin-top:8px">A sealed package with a standalone verifier. Internal analyst notes are sealed: their content is withheld while the signed chain still verifies.</p>
+  </div>
+</div>
+</div>
+{% endblock %}

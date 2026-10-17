@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<div class="row" style="gap:12px; align-items:flex-end; margin-bottom:16px; flex-wrap:wrap">
+  {% if not (ident and ident.is_viewer) %}
+  <form method="post" action="/clients" class="row" style="gap:8px; align-items:flex-end">
+    <label class="field">Client name<input name="name" required></label>
+    <button class="btn">Add client</button>
+  </form>
+  {% endif %}
+  <span class="grow"></span>
+  {% if platform_configured %}
+  {% if not (ident and ident.is_viewer) %}<form method="post" action="/clients/pull"><button class="btn btn-ghost">Pull from platform</button></form>{% endif %}
+  {% else %}<span class="faint" style="font-size:12px">Set PLATFORM_URL to pull the roster from the control plane.</span>{% endif %}
+</div>
+<div class="panel"><div class="table-wrap">
+{% if clients %}
+<table>
+  <thead><tr><th>Client</th><th>Open investigations</th><th>MTTD</th><th>MTTA</th><th>MTTR</th><th>Portal</th></tr></thead>
+  <tbody>
+  {% for c in clients %}{% set b = by_pid.get(c.platform_client_id) %}<tr>
+    <td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td>
+    <td class="num">{{ counts.get(c.id, 0) }}</td>
+    <td class="nowrap faint">{{ fmt(b.mttd_minutes.median) if b else 'n/a' }}</td>
+    <td class="nowrap faint">{{ fmt(b.mtta_minutes.median) if b else 'n/a' }}</td>
+    <td class="nowrap faint">{{ fmt(b.mttr_minutes.median) if b else 'n/a' }}</td>
+    <td class="nowrap faint">{{ 'enabled' if c.portal_enabled else 'off' }}</td>
+  </tr>{% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty"><h3>No clients</h3><p>Pull the roster from the control plane. Signals for clients this module does not know are stored but never open investigations.</p></div>{% endif %}
+</div></div>
+<p class="faint" style="font-size:12px; margin-top:8px">Medians over the last 30 days.</p>
+{% endblock %}

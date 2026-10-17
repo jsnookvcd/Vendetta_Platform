@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}Suppressions{% endblock %}
+{% block body %}
+<p class="page-intro">A suppression sets aside one client's signals that match it, so a known-benign pattern stops opening investigations. Each one expires; expired suppressions stay on the review list below for the monthly tuning review.</p>
+
+{% for kind, label, rows, extra in [('active', 'Active', active, ''), ('expiring', 'Expiring within 7 days', expiring, ''), ('expired', 'Expired, for monthly review', expired, ' in the last 90 days')] %}
+<div class="section-head" style="margin-top:{{ '0' if loop.first else '18px' }}"><h2>{{ label }}</h2><span class="count">{{ rows|length }}{{ extra }}</span></div>
+<div class="panel"><div class="table-wrap">
+{% if rows %}
+<table><thead><tr><th>Client</th><th>Matches</th><th>Reason</th><th>Hits</th><th>{{ 'Expired' if kind=='expired' else 'Expires' }}</th><th>Created</th><th></th></tr></thead><tbody>
+{% for s in rows %}<tr>
+  <td class="nowrap">{{ s.client.name if s.client else s.platform_client_id }}</td>
+  <td style="font-size:12px">{% if s.tool %}<span class="toolchip">{{ TOOL_NAMES.get(s.tool, s.tool) }}</span> {% endif %}{% if s.host %}<span class="mono">{{ s.host }}</span> {% endif %}{% if s.title_contains %}<div class="faint">title has "{{ s.title_contains }}"</div>{% endif %}</td>
+  <td style="font-size:12.5px">{{ s.reason }}{% if s.source_investigation_id %} <a class="faint" href="/investigations/{{ s.source_investigation_id }}">investigation</a>{% endif %}</td>
+  <td class="num">{{ s.hits }}</td>
+  <td class="nowrap faint">{{ s.expires_at.strftime('%b %d, %Y') }}</td>
+  <td class="nowrap faint" style="font-size:12px">{{ s.created_by }}<div>{{ ts(s.created_at) }}</div></td>
+  <td class="nowrap">{% if not (ident and ident.is_viewer) %}
+    {% if kind == 'expired' %}
+      {% if s.reviewed_at %}<span class="faint" style="font-size:11px">reviewed by {{ s.reviewed_by }}</span>{% else %}
+      <form method="post" action="/suppressions/{{ s.id }}/review" class="inline"><button class="btn btn-xs">Reviewed</button></form>{% endif %}
+      <form method="post" action="/suppressions/{{ s.id }}/review" class="inline"><input type="hidden" name="renew_days" value="30"><button class="btn btn-xs btn-ghost">Renew 30d</button></form>
+    {% else %}
+      <form method="post" action="/suppressions/{{ s.id }}/expire" class="inline"><button class="btn btn-xs btn-ghost">End now</button></form>
+      {% if kind == 'expiring' %}<form method="post" action="/suppressions/{{ s.id }}/review" class="inline"><input type="hidden" name="renew_days" value="30"><button class="btn btn-xs">Renew 30d</button></form>{% endif %}
+    {% endif %}{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>None.</p></div>{% endif %}
+</div></div>
+{% endfor %}
+
+{% if not (ident and ident.is_viewer) %}
+<div class="section-head" style="margin-top:18px"><h2>Add a suppression</h2></div>
+<form method="post" action="/suppressions" class="panel pad">
+  <div class="fieldgrid">
+    <label class="field">Client<select name="client_id">{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <label class="field">Tool<select name="tool"><option value="">any</option>{% for t in tools %}<option value="{{ t }}">{{ TOOL_NAMES[t] }}</option>{% endfor %}</select></label>
+    <label class="field">Host<input name="host" placeholder="exact hostname"></label>
+    <label class="field">Title contains<input name="title_contains"></label>
+    <label class="field">Days (1 to 90)<input type="number" name="days" min="1" max="90" value="{{ noise_days }}"></label>
+  </div>
+  <label class="field" style="margin-top:8px">Reason <span class="req">*</span><input name="reason" required></label>
+  <div style="margin-top:10px"><button class="btn btn-primary">Add suppression</button></div>
+</form>
+{% endif %}
+{% endblock %}

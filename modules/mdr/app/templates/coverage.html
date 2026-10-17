@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}ATT&amp;CK coverage{% endblock %}
+{% block body %}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ cov.enabled_rules }}<span class="sub">/{{ cov.rules }}</span></div><div class="l">Rules enabled</div></div>
+  <div class="tile"><div class="n">{{ cov.tactics_covered }}<span class="sub">/{{ cov.tactics|length }}</span></div><div class="l">Tactics with an enabled rule</div></div>
+  <div class="tile"><div class="n">{{ cov.techniques_covered }}</div><div class="l">Techniques covered</div></div>
+  <div class="tile"><div class="n">{{ cov.correlation_rules|length }}</div><div class="l">Correlation rules</div></div>
+</div>
+<p class="page-intro">Each column is an ATT&amp;CK tactic. Techniques listed under it are the ones the rule set detects, with the rules that map to them. An empty column is a gap in what the signal sources and rules can see.</p>
+<div class="attack-grid">
+{% for t in cov.tactics %}
+  <div class="tactic {{ 'covered' if t.covered else 'gap' }}">
+    <div class="tactic-head"><div class="tname">{{ t.name }}</div><div class="faint mono" style="font-size:10.5px">{{ t.id }} · {{ t.enabled_rules }} rule{{ '' if t.enabled_rules == 1 else 's' }}</div></div>
+    {% for tech in t.techniques %}
+    <div class="tech {{ 'off' if not tech.enabled }}">
+      <div><span class="mono">{{ tech.id }}</span> {{ tech.name }}</div>
+      <div class="faint" style="font-size:10.5px">{% for k in tech.rules %}<a href="/rules/{{ k }}" class="faint">{{ k }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</div>
+    </div>
+    {% else %}<div class="tech empty-tech">no coverage</div>{% endfor %}
+  </div>
+{% endfor %}
+</div>
+{% if cov.correlation_rules %}<p class="faint" style="font-size:12px; margin-top:12px">Correlation rules with no single technique: {% for k in cov.correlation_rules %}<a href="/rules/{{ k }}" class="mono">{{ k }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+{% if cov.unmapped %}<p class="faint" style="font-size:12px">Techniques not in the local ATT&amp;CK table: {% for u in cov.unmapped %}<span class="mono">{{ u.id }}</span> ({{ u.rules|join(', ') }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+{% endblock %}

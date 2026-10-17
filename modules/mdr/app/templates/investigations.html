@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}Investigations{% endblock %}
+{% block body %}
+<form method="get" action="/investigations" class="row" style="margin-bottom:14px">
+  <label class="field">Status<select name="status">
+    <option value="open" {{ 'selected' if status=='open' }}>Open</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status==s }}>{{ STATUS_NAMES[s] }}</option>{% endfor %}
+    <option value="all" {{ 'selected' if status=='all' }}>All</option>
+  </select></label>
+  <label class="field">Severity<select name="severity"><option value="">Any</option>
+    {% for s in SEVERITIES|reverse %}<option value="{{ s }}" {{ 'selected' if severity==s }}>{{ s }}</option>{% endfor %}</select></label>
+  <label class="field">Client<select name="client_id"><option value="">Any</option>
+    {% for c in clients %}<option value="{{ c.id }}" {{ 'selected' if client_id==c.id }}>{{ c.name }}</option>{% endfor %}</select></label>
+  <button class="btn">Filter</button>
+</form>
+<div class="panel"><div class="table-wrap">
+{% if rows %}
+<table><thead><tr><th>Investigation</th><th>Severity</th><th>Status</th><th>Verdict</th><th>Client</th><th>Rule</th><th>Signals</th><th>Opened</th><th>Ack</th></tr></thead><tbody>
+{% for i in rows %}<tr>
+  <td><a href="/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a>{% if i.escalated_case %} <span class="chip">IR {{ i.escalated_case }}</span>{% endif %}{% if i.published %} <span class="chip ok">client</span>{% endif %}</td>
+  <td>{{ sev(i.severity) }}</td>
+  <td class="nowrap">{{ istatus(i.status) }}</td>
+  <td class="nowrap">{{ verdict(i.verdict) }}</td>
+  <td class="nowrap">{{ i.client.name }}</td>
+  <td class="nowrap faint mono">{{ i.rule_key }}</td>
+  <td class="num">{{ i.links|length }}</td>
+  <td class="nowrap faint">{{ ts(i.opened_at) }}</td>
+  <td class="nowrap faint">{{ 'yes' if i.acknowledged_at else '' }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>Nothing matches</h3><p>No investigations for this filter.</p></div>{% endif %}
+</div></div>
+{% endblock %}

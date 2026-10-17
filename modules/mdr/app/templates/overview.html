@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% block title %}Overview{% endblock %}
+{% block body %}
+<div class="tiles">
+  {% for s in ['critical','high','medium','low'] %}
+  <a class="tile tile-link {{ 'alert' if s=='critical' and by_sev[s] }}" href="/investigations?status=open&severity={{ s }}"><div class="n">{{ by_sev[s] }}</div><div class="l">Open {{ s }}</div></a>
+  {% endfor %}
+  <div class="tile {{ 'alert' if unack }}"><div class="n">{{ unack|length }}</div><div class="l">Unacknowledged critical</div></div>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="n">{{ fmt(m.mttd_minutes.median) }}</div><div class="l">MTTD median, 30 days <span class="faint">(p90 {{ fmt(m.mttd_minutes.p90) }})</span></div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mtta_minutes.median) }}</div><div class="l">MTTA median <span class="faint">(p90 {{ fmt(m.mtta_minutes.p90) }})</span></div></div>
+  <div class="tile"><div class="n">{{ fmt(m.mttr_minutes.median) }}</div><div class="l">MTTR median <span class="faint">(p90 {{ fmt(m.mttr_minutes.p90) }})</span></div></div>
+  <div class="tile"><div class="n">{{ m.investigations }}</div><div class="l">Investigations, 30 days</div></div>
+</div>
+
+{% if unack %}
+<div class="section-head"><h2>Critical, not yet acknowledged</h2><span class="count">{{ unack|length }}</span></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Investigation</th><th>Client</th><th>Host</th><th>Opened</th><th></th></tr></thead><tbody>
+{% for i in unack %}<tr class="row-crit">
+  <td><a href="/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a></td>
+  <td class="nowrap">{{ i.client.name }}</td>
+  <td class="nowrap mono">{{ i.host }}</td>
+  <td class="nowrap faint">{{ ts(i.opened_at) }}</td>
+  <td class="nowrap">{% if not (ident and ident.is_viewer) %}<form method="post" action="/investigations/{{ i.id }}/ack" class="inline"><button class="btn btn-sm btn-primary">Acknowledge</button></form>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
+
+<div class="section-head" style="margin-top:18px"><h2>Open investigations</h2><span class="count">by severity</span><span class="grow"></span><a class="faint" href="/investigations">all &rarr;</a></div>
+<div class="panel"><div class="table-wrap">
+{% if recent %}
+<table><thead><tr><th>Investigation</th><th>Severity</th><th>Status</th><th>Client</th><th>Signals</th><th>ATT&amp;CK</th><th>Opened</th></tr></thead><tbody>
+{% for i in recent %}<tr>
+  <td><a href="/investigations/{{ i.id }}"><span class="mono faint">{{ i.number }}</span> {{ i.title }}</a></td>
+  <td>{{ sev(i.severity) }}</td>
+  <td class="nowrap">{{ istatus(i.status) }}</td>
+  <td class="nowrap">{{ i.client.name }}</td>
+  <td class="num">{{ i.links|length }}</td>
+  <td>{{ mitre(i.mitre) }}</td>
+  <td class="nowrap faint">{{ ts(i.opened_at) }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No open investigations</h3><p>Rules fire on managed-services signals; nothing currently needs an analyst.</p></div>{% endif %}
+</div></div>
+
+<div class="detail-grid" style="margin-top:18px">
+  <div>
+    <div class="section-head"><h2>Last 7 days</h2></div>
+    <div class="panel pad"><dl class="kv">
+      <dt>Signals pulled</dt><dd>{{ stats.signals_7d }}</dd>
+      <dt>Suppressed</dt><dd>{{ stats.suppressed_7d }} <span class="faint">across {{ stats.active_suppressions }} active suppressions</span></dd>
+      <dt>Opened</dt><dd>{{ stats.opened_7d }}</dd>
+      <dt>Closed</dt><dd>{{ stats.closed_7d }} <span class="faint">({{ stats.fp_7d }} false positive)</span></dd>
+    </dl></div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Detection</h2></div>
+    <div class="panel pad">
+      <dl class="kv kv-tight">
+        <dt>Source</dt><dd>{{ 'managed-services' if detect_state.configured else 'not configured' }}</dd>
+        <dt>Last run</dt><dd>{{ detect_state.last_at[:16].replace('T',' ') if detect_state.last_at else 'never' }}</dd>
+        <dt>Result</dt><dd class="{{ 'ok-txt' if detect_state.last_ok else ('bad-txt' if detect_state.last_ok == False else 'faint') }}">{{ detect_state.last_detail }}</dd>
+        <dt>Every</dt><dd>{{ detect_state.interval_seconds }}s</dd>
+      </dl>
+      {% if not (ident and ident.is_viewer) %}<form method="post" action="/detect/run" style="margin-top:10px"><button class="btn btn-sm">Run detection now</button></form>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
