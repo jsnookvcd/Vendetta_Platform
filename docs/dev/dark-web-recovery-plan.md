@@ -121,10 +121,24 @@ Tests: CollectorRun written on success and on exception; heartbeat and Tor statu
    - Order crawling by group activity so live groups are crawled first.
    - Cap a run by wall-clock time (for example 45 minutes) as well as by count.
    - Provide a migration that disables the 451 stale mirrors already in production rather than deleting them.
-5. **Freshness rule.** A feed whose newest published item is older than 7 days is "stale" on the Connectors page and in readiness, even when its last HTTP call succeeded.
-6. **Victim alternatives.** Note in the module README that a second victim source is worth adding for resilience (for example a commercial feed or direct profiled crawls of the most active groups). Do not build it in this plan.
+5. **Aggregator hit, then direct capture.** The aggregator tells us where to look; the direct capture is the record.
+   - When a feed item (kind `victim`) produces a hit for a client, queue a capture instead of fetching inline inside `ingest`. Today `pipeline.ingest` calls `evidence.preserve` synchronously, which blocks the feed job on Tor.
+   - A `captures` table holds hit_id, target URL, status (pending, captured, unavailable), attempts, next_attempt_at, evidence_id and last error.
+   - The target is the original leak post URL when the feed gives one (`post_url` or `claim_url`), otherwise the group's current onion index from its enabled Sources, best-known first.
+   - The worker drains the queue every few minutes over Tor. It retries up to 4 times over 24 hours with backoff and tries the group's other mirrors before giving up.
+   - It preserves the page through the existing evidence path with its SHA-256 and signed chain, linked to the hit and the client. If the index page is captured but the victim's name is not found in its text, record that as `captured_index_no_match`.
+   - The hit page shows capture status, a link to the evidence and a "Capture now" button. The Connectors page shows queue depth and the success rate.
+6. **Priority groups.** Rank which groups get direct, profiled crawls instead of index snapshots.
+   - Compute the top 25 groups from the ransomware.live PRO data by victims in the last 90 days, weighted up for sectors and countries that match active clients' industries.
+   - An admin can pin or exclude groups on a Priority Groups page, and the computed list refreshes daily.
+   - Crawl priority groups first and every run; crawl the rest by activity within the time budget.
+   - Parsers need live HTML, which only the host can fetch over Tor, so ship the tooling rather than guessed selectors. The Priority Groups page lists each group with its profile state (none, draft, working, broken).
+   - A profile editor previews selectors against the most recent captured index page of that group (a stored `page` item), showing the victims they would extract before the profile is saved.
+   - A profile that extracted entries before and now extracts none is marked broken and raised on the Connectors page.
+7. **Freshness rule.** A feed whose newest published item is older than 7 days is "stale" on the Connectors page and in readiness, even when its last HTTP call succeeded.
+8. **Victim alternatives.** Note in the module README that a second victim source is worth adding for resilience (for example a commercial feed or direct profiled crawls of the most active groups). Do not build it in this plan.
 
-Tests: scheduler regression; ransomware.live client against fixtures for success, 401/403, 429 with Retry-After and schema drift; ransomwatch never scheduled; seeding from group fixtures; disable rules; wall-clock cap (monkeypatch time).
+Tests: scheduler regression; ransomware.live client against fixtures for success, 401/403, 429 with Retry-After and schema drift; ransomwatch never scheduled; seeding from group fixtures; disable rules; wall-clock cap (monkeypatch time); capture queue lifecycle (pending to captured, retries across mirrors, unavailable after the last attempt, index captured without the victim name); ingest no longer fetches inline; priority ranking with industry weighting, pins and exclusions; profile preview against a stored page; broken-profile detection.
 
 ## Phase 3. Live Tor search
 
