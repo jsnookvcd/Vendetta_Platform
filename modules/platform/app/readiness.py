@@ -115,6 +115,25 @@ def _module_checks(module, probe: dict) -> list[dict]:
             checks.append(_chk("SABINE reach", "warn", "MODULE_DIRECTORY reaches fewer than two modules"))
         else:
             checks.append(_chk("SABINE reach", "ok", f"{n} modules, narrative: {integ.get('narrative')}"))
+    elif integ.get("kind") == "bridge":
+        sl = integ.get("slack") or {}
+        if not sl.get("bot_token_set"):
+            checks.append(_chk("Slack connected", "fail", "SLACK_BOT_TOKEN not set"))
+        elif sl.get("auth_detail") not in ("ok", None, ""):
+            checks.append(_chk("Slack connected", "fail", f"Slack rejected the bot token: {sl.get('auth_detail')}"))
+        elif sl.get("transport") == "none":
+            checks.append(_chk("Slack connected", "fail", "neither SLACK_APP_TOKEN nor SLACK_SIGNING_SECRET set"))
+        elif sl.get("transport") == "socket" and not (sl.get("socket") or {}).get("connected"):
+            checks.append(_chk("Slack connected", "warn", f"Socket Mode not connected: {(sl.get('socket') or {}).get('detail')}"))
+        else:
+            checks.append(_chk("Slack connected", "ok", f"{sl.get('transport')} mode, workspace {sl.get('workspace') or '?'}"))
+        feeds = integ.get("feeds") or {}
+        if feeds.get("last_ok") is False:
+            checks.append(_chk("Slack feeds", "warn", f"last run failed: {feeds.get('last_detail')}"))
+        elif not (feeds.get("ir_channel") or feeds.get("sabine_channel")):
+            checks.append(_chk("Slack feeds", "warn", "no announcement channel set (SLACK_IR_CHANNEL, SLACK_SABINE_CHANNEL)"))
+        else:
+            checks.append(_chk("Slack feeds", "ok"))
     elif integ.get("kind"):
         checks.append(_chk("Integrations", "ok", integ.get("kind").replace("-", " ")))
     return checks

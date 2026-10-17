@@ -1,0 +1,32 @@
+name: slack
+display_name: Slack Responder
+role: bridge
+status: in-progress
+enablement: MODULE_ENABLED
+manifest: /api/module
+port: 8900
+description: >-
+  Lean, tactical incident response from Slack. The responder declares cases,
+  opens war rooms, logs to the case timeline, changes status and severity,
+  assigns the lead, works the card board and pages on-call, all through the IR
+  hub's service API on behalf of the person in Slack, whose access comes from the
+  platform staff roster. It posts new cases and SABINE proposals to channels with
+  buttons, and answers questions through SABINE. It keeps no case data; every
+  entry lands on the IR hub's signed chain as "<email> via slack". Host actions
+  stay in managed services under the two-person rule.
+reach: MODULE_DIRECTORY        # incident-response, sabine, platform
+acts_through:
+  incident-response: [GET /api/ir-cases, GET /api/ir-cases/{ref}, POST /api/ir-cases/declare,
+                      POST /api/ir-cases/{ref}/updates, POST /api/ir-cases/{ref}/status,
+                      POST /api/ir-cases/{ref}/details, POST /api/ir-cases/{ref}/tasks,
+                      POST /api/ir-cases/{ref}/tasks/{tid}/move, POST /api/oncall/page]
+  sabine: [GET /api/proposals, POST /api/proposals/{id}/decide, POST /api/ask]
+  platform: [GET /api/platform/staff, GET /api/platform/clients]
+identity:
+  header: X-Vendetta-On-Behalf-Of
+  roster: incident-response grant (viewer reads, analyst or admin changes); sabine grant to ask or decide
+slack:
+  transport: [socket, http]     # socket when SLACK_APP_TOKEN is set
+  http_endpoints: [/slack/commands, /slack/interactions, /slack/events]
+  manifest: modules/slack/slack-app-manifest.yaml
+endpoints: [/api/module, /api/war-rooms, /api/provision/sync]

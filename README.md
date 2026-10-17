@@ -15,6 +15,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
 - sabine: SABINE, the agentic brain. One operator queue across every module, proposals with rationale at a per-action autonomy level (per client where an admin sets it), action only through module APIs as itself, a signed ledger of everything it did, briefs and a daily summary. She also runs the client relationship and the business: pages on-call when a critical sits past the client's commitment, maintains each client's Security Journey, drafts monthly posture reviews and proactive outreach for a person to approve, learns from every human decision, proposes MDR suppressions for repeated noise, and watches Harvest burn and capacity and HubSpot renewals and new wins. Built and tested. See modules/sabine.
 - mdr: managed detection and response. Detection rules over managed-services signals (EDR, identity, cloud, backup), readable and editable by the operator and mapped to MITRE ATT&CK, with per-client overrides and expiring suppressions. Investigations with verdicts, a signed timeline, escalation to the IR hub and a containment hand-off to managed services; MTTD, MTTA and MTTR published per client; client portal. Built and tested (port 8800). See modules/mdr.
+- slack: the Slack responder. Lean, tactical incident response from Slack on top of the IR hub and SABINE: declare (case, on-call page, private war room with the case card pinned), sitrep, notes, status, severity, lead, cards, paging, and :memo: on any message to put it on the signed case timeline. New cases and SABINE proposals post to channels with Approve and Reject. Access is the platform staff roster; every entry reads "<email> via slack". Holds no case data; Socket Mode, no inbound endpoint. Built and tested (port 8900). See modules/slack.
 - network-operations: managed network and infrastructure operations: device and service health, change and maintenance tracking. Planned.
 
 modules/registry.yaml lists them with status and the environment flag that enables each.
@@ -61,6 +62,7 @@ modules/
   evidence-export/       shared court-admissible export + standalone verifier (built and tested)
   ai-triage/             shared evidence-grounded triage copilot (built and tested)
   mdr/                   detection and investigation over managed-services signals (built)
+  slack/                 the Slack responder over the IR hub and SABINE (built)
   network-operations/
   registry.yaml          module catalog with status and enablement
 infra/

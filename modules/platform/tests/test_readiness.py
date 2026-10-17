@@ -141,3 +141,24 @@ def test_stale_communication_drafts_warn(admin):
     # once a person decides it, the warning clears
     admin.post(f"/clients/{c.id}/communications/{r.json()['id']}/discard")
     assert _cp("Communications drafts")["state"] == "ok"
+
+
+def _bridge_probe(**slack):
+    base = {"bot_token_set": True, "auth_detail": "ok", "transport": "socket", "workspace": "T1",
+            "socket": {"connected": True, "detail": "connected"}}
+    base.update(slack)
+    return {"reachable": True, "enabled": True, "readiness": {
+        "sso": {"configured": False, "verified": False, "source": "not applicable"},
+        "keys": {"signing_applicable": False, "encryption_dedicated": True},
+        "posture": {"secret_placeholder": False, "admin_login_possible": True, "api_token_dedicated": True},
+        "integrations": {"kind": "bridge", "slack": base, "feeds": {"ir_channel": True, "last_ok": True}}}}
+
+
+def test_slack_bridge_is_graded_on_its_connection(monkeypatch):
+    monkeypatch.setattr(settings, "secret_key", "a-real-secret")
+    ok = readiness.assess([_mod("slack")], {"slack": _bridge_probe()})["modules"][0]
+    assert any(c["label"] == "Slack connected" and c["state"] == "ok" for c in ok["checks"])
+    bad = readiness.assess([_mod("slack")], {"slack": _bridge_probe(bot_token_set=False)})["modules"][0]
+    assert any(c["label"] == "Slack connected" and c["state"] == "fail" for c in bad["checks"]) and not bad["ready"]
+    down = readiness.assess([_mod("slack")], {"slack": _bridge_probe(socket={"connected": False, "detail": "dns"})})["modules"][0]
+    assert any(c["label"] == "Slack connected" and c["state"] == "warn" for c in down["checks"])

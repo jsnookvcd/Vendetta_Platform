@@ -87,6 +87,11 @@ variable "modules" {
       port   = 8800
       deploy = true
     }
+    slack = {
+      subdir = "modules/slack"
+      port   = 8900
+      deploy = true
+    }
   }
 }
 
@@ -103,6 +108,7 @@ variable "listener_priorities" {
     sabine                   = 155
     professional-services    = 157
     mdr                      = 160
+    slack                    = 165
     network-operations       = 170
   }
 }
@@ -164,6 +170,7 @@ variable "module_hosts" {
     sabine                   = "sabine"
     professional-services    = "osp"
     mdr                      = "mdr"
+    slack                    = "slack"
   }
 }
 

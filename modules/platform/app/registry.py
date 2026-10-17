@@ -19,6 +19,8 @@ DEFAULT_MODULES = [
     ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
     ("sabine", "SABINE", "agent", "in-progress", False, 55),
     ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 57),
+    # Port 8900, host slack.<domain>; a bridge over the IR hub and SABINE, no client data.
+    ("slack", "Slack Responder", "bridge", "in-progress", False, 58),
     # Port 8800, host mdr.<domain>; serves the finding model (type investigation).
     ("mdr", "Managed Detection and Response", "managed-security", "in-progress", True, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
@@ -94,6 +96,13 @@ PROBE = {
         "manifest": "/api/module",
         "items": "/api/findings?status=active",
         "label": "open investigations",
+        "severity_key": "severity",
+    },
+    # The Slack responder's live count is its open war rooms.
+    "slack": {
+        "manifest": "/api/module",
+        "items": "/api/war-rooms",
+        "label": "war rooms",
         "severity_key": "severity",
     },
     # Engagements carry no severity; the count is what the overview shows.

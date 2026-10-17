@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% block title %}Overview{% endblock %}
+{% block topbar %}<form method="post" action="/feed/run"><button class="btn" type="submit">Run the feed now</button></form>{% endblock %}
+{% block body %}
+{% set s = block.integrations.slack %}
+{% set f = block.integrations.feeds %}
+{% if problems %}<div class="flash bad">{% for p in problems %}<div>{{ p }}</div>{% endfor %}</div>{% endif %}
+<div class="grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px">
+  <div class="card"><h3>Slack</h3>
+    <p>Bot token: {{ 'set' if s.bot_token_set else 'missing' }}</p>
+    <p>Workspace: {{ s.workspace or 'unknown' }} ({{ s.auth_detail }})</p>
+    <p>Transport: {{ s.transport }}{% if s.transport == 'socket' %}, {{ 'connected' if s.socket.connected else 'not connected' }}{% endif %}</p>
+    <p class="faint">{{ s.socket.detail }}</p>
+  </div>
+  <div class="card"><h3>Platform</h3>
+    <p>Acts through: {{ block.integrations.reach | join(', ') or 'nothing wired' }}</p>
+    <p>Staff roster: {% if block.platform.last_ok %}{{ block.platform.staff.count }} with IR access{% elif block.platform.last_ok is none %}not checked yet{% else %}unavailable ({{ block.platform.last_detail }}){% endif %}</p>
+  </div>
+  <div class="card"><h3>Feeds</h3>
+    <p>New cases channel: {{ 'set' if f.ir_channel else 'off' }}</p>
+    <p>SABINE proposals channel: {{ 'set' if f.sabine_channel else 'off' }}</p>
+    <p class="faint">Last run: {{ f.last_at or 'never' }} {{ f.last_detail }}</p>
+  </div>
+</div>
+
+<h2 style="margin-top:22px">War rooms</h2>
+<table class="tbl"><thead><tr><th>Case</th><th>Client</th><th>Channel</th><th>Opened by</th><th>When</th></tr></thead><tbody>
+{% for r in rooms %}<tr><td>{{ r.case_number }}</td><td>{{ r.client }}</td><td>#{{ r.channel_name or r.channel_id }}</td><td>{{ r.created_by }}</td><td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+{% else %}<tr><td colspan="5" class="faint">None yet. <code>{{ command }} declare</code> opens one.</td></tr>{% endfor %}
+</tbody></table>
+
+<h2 style="margin-top:22px">Activity</h2>
+<table class="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+{% for l in logs %}<tr class="{{ '' if l.ok else 'faint' }}"><td>{{ l.at.strftime('%m-%d %H:%M:%S') }}</td><td>{{ l.actor or l.slack_user }}</td><td>{{ l.action }}</td><td>{{ l.detail[:200] }}</td></tr>
+{% else %}<tr><td colspan="4" class="faint">Nothing yet.</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}

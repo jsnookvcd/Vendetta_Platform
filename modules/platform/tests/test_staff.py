@@ -159,3 +159,22 @@ def test_mdr_grants_by_profile(admin):
     admin.post(f"/staff/{p.id}/grant/mdr", data={"role": "viewer"})
     p = SessionLocal().get(Staff, p.id)
     assert {g.module_key: g.role for g in p.grants}["mdr"] == "viewer"
+
+
+def test_staff_change_reaches_the_slack_bridge(admin, monkeypatch):
+    """The Slack responder has no grant of its own; it acts on incident-response and
+    sabine grants, so a change to either must reach it so it drops its cached roster."""
+    db = SessionLocal()
+    for key in ("incident-response", "slack"):
+        m = db.get(Module, key); m.base_url, m.api_token = f"http://{key}:8000", "t"
+    db.commit()
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req.url.host)
+        return httpx.Response(200, json={"ok": True})
+    real = directory.push_sync
+    monkeypatch.setattr(directory, "push_sync",
+                        lambda db, keys=None, wait=False, transport=None: real(db, keys, True, httpx.MockTransport(handler)))
+    _onboard(admin, profile="incident-responder")
+    assert {"incident-response", "slack"} <= set(seen)

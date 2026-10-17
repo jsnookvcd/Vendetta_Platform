@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+{% if user %}
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Slack Responder<span>Vendetta</span></div></div>
+    <nav class="nav"><a href="/" class="active">Overview</a></nav>
+    <div class="foot"><div class="who">{{ user }}</div><a href="/logout" class="faint">Sign out</a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar"><h1>{% block heading %}{{ self.title() }}{% endblock %}</h1><span class="spacer"></span>{% block topbar %}{% endblock %}</header>
+    <div class="content">{% block body %}{% endblock %}</div>
+  </div>
+</div>
+{% else %}
+{% block anon %}{% endblock %}
+{% endif %}
+</body>
+</html>

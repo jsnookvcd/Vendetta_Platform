@@ -76,6 +76,20 @@ modules:
       professional services; proposals with rationale at a per-action autonomy
       level; acts only through module APIs as "api:sabine"; never touches a host;
       signed ledger. Port 8600.
+  - name: slack
+    display_name: Slack Responder
+    role: bridge
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    notes: >-
+      Lean, tactical incident response from Slack on top of the IR hub and SABINE.
+      Declare (opens the case, pages on-call, spins up a private war room with the
+      case card pinned), sitrep, note, status, severity, lead, cards, page, and
+      :memo: on any message to log it to the signed case timeline. New cases and
+      SABINE proposals post to chosen channels with Approve and Reject. Identity is
+      the platform staff roster; entries read "<email> via slack". Holds no case
+      data. Socket Mode by default, no inbound endpoint. Port 8900.
   - name: professional-services
     display_name: Office of Special Projects
     service_lines: [vciso, advisory, professional-services]

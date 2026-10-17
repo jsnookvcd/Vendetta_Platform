@@ -1,0 +1,58 @@
+# Slack app manifest for the Vendetta Slack responder.
+# api.slack.com/apps > Create New App > From an app manifest > paste this file.
+# Socket Mode is on: the responder connects out to Slack and nothing is exposed
+# through the ALB. To use HTTP mode instead, set socket_mode_enabled to false and
+# fill in the three URLs with https://<slack host>/slack/commands, /slack/interactions
+# and /slack/events.
+display_information:
+  name: SABINE
+  description: Vendetta incident response in Slack. Declare, war rooms, timeline, on-call.
+  background_color: "#0a0d13"
+features:
+  bot_user:
+    display_name: SABINE
+    always_online: true
+  slash_commands:
+    - command: /ir
+      description: Work an incident without leaving Slack
+      usage_hint: "declare | cases | sitrep | note <text> | status contained | task <title> | page <msg> | ask <question>"
+      should_escape: true
+  shortcuts:
+    - name: Declare an incident
+      type: global
+      callback_id: declare
+      description: Open a case in the IR hub and spin up a war room
+    - name: Log to IR case
+      type: message
+      callback_id: log_to_case
+      description: Put this message on the case timeline
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:join
+      - channels:manage
+      - channels:read
+      - chat:write
+      - chat:write.public
+      - commands
+      - groups:history
+      - groups:read
+      - groups:write
+      - im:write
+      - pins:write
+      - reactions:read
+      - reactions:write
+      - users:read
+      - users:read.email
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - reaction_added
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

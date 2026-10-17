@@ -261,7 +261,11 @@ locals {
   client_modules = [for k in keys(local.deployed) : k if k != "platform"]
   # Modules that serve findings or clients, as the control plane's directory lists
   # them (SABINE is an agent over the platform, not a module the platform pushes to).
+  # The Slack responder is listed so the control plane can probe it and tell it when
+  # a person changes; it holds no clients.
   directory_modules = [for k in local.client_modules : k if k != "sabine"]
+  # What the Slack responder acts through, each with that module's own token.
+  slack_reach = [for k in ["incident-response", "sabine", "platform"] : k if contains(keys(local.deployed), k)]
 
   # Service addresses on the shared docker network ("vendetta"): each module's web
   # container is reachable by its module key on port 8000 from any other container.
@@ -405,6 +409,24 @@ resource "aws_ssm_parameter" "sabine_directory" {
       token      = random_password.api_token[k].result
       public_url = local.public_url[k]
     } if k != "sabine"
+  })
+}
+
+# The Slack responder's reach: the IR hub, SABINE and the control plane, each with
+# its own token. The Slack tokens themselves (SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
+# SLACK_SIGNING_SECRET) and the channel ids are added by an operator in SSM under
+# <prefix>/slack/ once the Slack app exists; see modules/slack/README.md.
+resource "aws_ssm_parameter" "slack_directory" {
+  count = contains(keys(local.deployed), "slack") ? 1 : 0
+  name  = "${var.ssm_prefix}/slack/MODULE_DIRECTORY"
+  type  = "SecureString"
+  tier  = "Advanced"
+  value = jsonencode({
+    for k in local.slack_reach : k => {
+      base_url   = local.service_url[k]
+      token      = random_password.api_token[k].result
+      public_url = local.public_url[k]
+    }
   })
 }
 

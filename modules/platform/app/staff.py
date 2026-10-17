@@ -177,5 +177,12 @@ def lookup(db: Session, email: str) -> Staff | None:
     return db.execute(select(Staff).where(Staff.email == normalize_email(email))).scalar_one_or_none()
 
 
+# Bridges act for a person through other modules' grants rather than a grant of
+# their own: the Slack responder checks the incident-response and sabine grants.
+# A change to either grant reaches the bridge too, so it drops its cached roster.
+BRIDGES = {"slack": {"incident-response", "sabine"}}
+
+
 def modules_affected(person: Staff) -> set[str]:
-    return {g.module_key for g in person.grants}
+    keys = {g.module_key for g in person.grants}
+    return keys | {b for b, via in BRIDGES.items() if keys & via}

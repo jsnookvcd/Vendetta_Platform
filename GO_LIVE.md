@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP), 8800 (MDR) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP), 8800 (MDR), 8900 (Slack) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -265,6 +265,28 @@ Put `/vendetta/sabine/HARVEST_ACCOUNT_ID`, `/vendetta/sabine/HARVEST_TOKEN` and
 `/vendetta/sabine/HUBSPOT_TOKEN` in SSM (SecureString) and run
 `infra/redeploy.sh sabine`. Without them the Business tab says not configured and
 nothing else changes.
+
+### Incident response in Slack
+
+The Slack responder lets responders declare, open a war room, log to the case
+timeline, change status, severity and lead, work cards and page on-call from
+Slack. Everything lands in the IR hub under the person's name ("dan@vendettacd.io
+via slack"); access comes from the Staff page (an incident-response grant to work
+cases, a sabine grant to ask SABINE or decide her proposals). It runs in Socket
+Mode, so nothing new is exposed through the ALB.
+
+1. api.slack.com/apps, Create New App, From an app manifest, paste
+   `modules/slack/slack-app-manifest.yaml`. Install it to the workspace.
+2. Basic Information, App-Level Tokens: create one with `connections:write`.
+3. Put `/vendetta/slack/SLACK_BOT_TOKEN` (`xoxb-`), `/vendetta/slack/SLACK_APP_TOKEN`
+   (`xapp-`) and `/vendetta/slack/SLACK_SIGNING_SECRET` in SSM as SecureString. Add
+   `/vendetta/slack/SLACK_IR_CHANNEL` and `/vendetta/slack/SLACK_SABINE_CHANNEL`
+   (channel ids) and invite the bot to both. Optionally
+   `/vendetta/slack/WARROOM_INVITE` with the people every war room should include.
+4. `infra/redeploy.sh slack`. The go-live screen shows "Slack connected" once
+   Socket Mode is up.
+5. In Slack, `/ir help`, then `/ir declare` on a test client. Confirm the case in
+   the IR hub, the war room, and a :memo: reaction landing on the timeline.
 
 ## 7. Add an EDR, still read-only
 

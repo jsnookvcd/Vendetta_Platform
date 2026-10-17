@@ -46,6 +46,9 @@ jobs:
           - module: mdr
             role: mdr
             db: mdr_test
+          - module: slack
+            role: slack
+            db: slack_test
 
     services:
       postgres:
@@ -100,7 +103,7 @@ jobs:
       fail-fast: false
       matrix:
         module: [platform, incident-response, managed-services, dark-web-monitoring,
-                 vulnerability-management, penetration-testing, sabine, professional-services, mdr]
+                 vulnerability-management, penetration-testing, sabine, professional-services, mdr, slack]
     steps:
       - uses: actions/checkout@v4
       - name: Build the module image the host builds
