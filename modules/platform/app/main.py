@@ -600,14 +600,21 @@ def provision_clients(module: str = "", user: str = Depends(auth.api_user), db: 
 
 
 @app.get("/api/platform/modules")
-def platform_modules(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
-    """The directory of finding-serving modules the hub pulls from. Returns each
-    enabled, connected module that serves the shared finding model, with its base
-    URL and bearer token, so finding sources are configured once here (on the
-    Connections page) rather than duplicated in the hub's own config."""
-    from .registry import FINDING_MODULES
+def platform_modules(module: str = "", user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The module directory, scoped to the caller. The caller names itself in
+    `module` and receives only the modules it is allowed to reach, with base URL
+    and bearer token: the incident-response hub gets the finding-serving modules
+    it pulls from (registry.DIRECTORY_CONSUMERS), so finding sources are configured
+    once here (on the Connections page) rather than duplicated in the hub's own
+    config. Any other caller is refused; SABINE has its own MODULE_DIRECTORY."""
+    from .registry import DIRECTORY_CONSUMERS
 
-    rows = db.execute(select(Module).where(Module.key.in_(FINDING_MODULES))).scalars().all()
+    if not module:
+        raise HTTPException(400, "name the consuming module: ?module=incident-response")
+    allowed = DIRECTORY_CONSUMERS.get(module)
+    if allowed is None:
+        raise HTTPException(403, f"the module directory is not served to {module}")
+    rows = db.execute(select(Module).where(Module.key.in_(allowed))).scalars().all()
     out = []
     for m in rows:
         if not m.base_url or m.status == "planned":

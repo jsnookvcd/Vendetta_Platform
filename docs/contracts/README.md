@@ -27,10 +27,13 @@ only; name is the fallback match when the platform id is absent.
 Authentication is `Authorization: Bearer <that module's API_TOKEN>`. A caller may
 name itself with `X-Vendetta-Actor: <name>` (SABINE does), and the module's audit
 log then attributes the call to `api:<name>`. The control
-plane hands the hub each finding module's token through `GET /api/platform/modules`.
+plane hands the hub each finding module's token through
+`GET /api/platform/modules?module=incident-response`; the directory is scoped to
+its caller, so the hub receives the finding modules only and any other caller is
+refused. SABINE's reach is its own MODULE_DIRECTORY.
 
 Staff: `GET /api/platform/staff?module=<key>` returns `{governs, staff: [{email,
-name, title, role, config}]}`. `role` is `admin` or `analyst` for that module;
+name, title, role, config}]}`. `role` is `viewer`, `analyst` or `admin` for that module;
 `config` carries module capabilities (managed services: `can_act`,
 `can_approve`). `governs` is true once anyone has been onboarded, after which a
 module admits internal sign-ins only from the list.

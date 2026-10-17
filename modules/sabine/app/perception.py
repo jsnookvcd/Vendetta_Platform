@@ -50,10 +50,11 @@ def observe(db: Session) -> dict:
     seen: dict[str, bool] = {}
     d = reach.directory()
     if "platform" in d:
+        # The module directory is not read here: it is scoped to the hub, and
+        # SABINE's own reach is MODULE_DIRECTORY.
         for name, path, params in (("clients", "/api/platform/clients", None),
                                    ("staff", "/api/platform/staff", None),
-                                   ("readiness", "/api/platform/readiness", None),
-                                   ("modules", "/api/platform/modules", None)):
+                                   ("readiness", "/api/platform/readiness", None)):
             res = reach.get("platform", path, params=params, timeout=30.0)
             _snap(db, f"platform:{name}", res)
             seen[f"platform:{name}"] = res["ok"]

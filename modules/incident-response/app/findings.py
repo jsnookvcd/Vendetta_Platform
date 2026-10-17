@@ -42,14 +42,18 @@ def _pull_one(source: dict, transport: httpx.BaseTransport | None = None) -> dic
 def discover_sources(transport: httpx.BaseTransport | None = None) -> list[dict]:
     """When FINDINGS_SOURCES is not set, ask the control plane for the finding-serving
     modules (base URL and token), so sources are configured once on the platform's
-    Connections page. Returns [] if the platform is not configured or unreachable."""
+    Connections page. The hub asks as itself (module=incident-response) and the
+    control plane answers with the modules it may read from and nothing else.
+    Returns [] if the platform is not configured or unreachable."""
     if not settings.platform_url:
         return []
     headers = {"Authorization": f"Bearer {settings.platform_token}"} if settings.platform_token else {}
     url = f"{settings.platform_url.rstrip('/')}/api/platform/modules"
     try:
         with httpx.Client(timeout=6.0, transport=transport, headers=headers) as http:
-            r = http.get(url)
+            # The directory is scoped to its caller: the hub names itself and gets
+            # only the finding modules it reads from.
+            r = http.get(url, params={"module": "incident-response"})
         if r.status_code != 200:
             log.warning("findings: platform module directory HTTP %s", r.status_code)
             return []

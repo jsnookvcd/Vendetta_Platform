@@ -87,6 +87,7 @@ def test_discovers_sources_from_platform_when_unset(client, monkeypatch):
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/api/platform/modules":
             assert req.headers["authorization"] == "Bearer ptok"
+            assert req.url.params["module"] == "incident-response"  # the hub asks as itself
             return httpx.Response(200, json={"modules": [
                 {"name": "vulnerability-management", "base_url": "https://vuln.local", "token": "vtok",
                  "findings_path": "/api/findings"},

@@ -31,6 +31,14 @@ DEFAULT_MODULES = [
 FINDING_MODULES = {"dark-web-monitoring", "managed-services", "vulnerability-management",
                    "penetration-testing"}
 
+# Who may read the module directory (GET /api/platform/modules?module=<caller>) and
+# which modules, with their tokens, each caller receives. The incident-response
+# hub gets the modules it pulls findings from and nothing else: it is the
+# escalation target itself, so there is no further module it escalates to, and it
+# never reads the Office of Special Projects. SABINE is deliberately absent: its
+# reach is the deployment-rendered MODULE_DIRECTORY in its own SSM parameter.
+DIRECTORY_CONSUMERS = {"incident-response": FINDING_MODULES}
+
 # key: (display_name, kind, owner_module)
 DEFAULT_TOOLS = [
     ("superops", "psa-rmm", "managed-services"),
