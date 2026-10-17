@@ -50,6 +50,14 @@ aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL   --type SecureString --
 aws ssm put-parameter --name /darkweb/COOKIE_SECURE       --type String --value 'false'
 ```
 
+RANSOMWARE_LIVE_API_KEY is required for the live victim feed. Request the free PRO key at https://my.ransomware.live. Without it the ransomware.live connector shows "not configured: needs a free PRO key from my.ransomware.live", onion seeding is skipped and the module never calls the public v2 tier. On the shared platform host (infra/redeploy.sh, SSM_PREFIX=/vendetta) the parameter is `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY`:
+
+```
+aws ssm put-parameter --name /vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
+```
+
+Optional tuning, all with working defaults: ONION_CRAWL_BUDGET_MINUTES (45, the wall-clock cap on one onion sweep), ONION_SEED_GROUP_LIMIT (40 group detail calls per daily seed), ONION_INACTIVE_DAYS (180), ONION_MAX_CONSECUTIVE_FAILURES (10), CAPTURE_INTERVAL (5 minutes) and PRIORITY_GROUP_COUNT (25).
+
 SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.
 
 ## 3. Bring up the stack
@@ -98,13 +106,15 @@ sudo docker compose exec worker python -m app.diagnose
 ```
 The same health is on the console's Connectors page and in the dashboard banner.
 
-3. Clearnet feeds populated the dashboard. The worker runs the feeds on boot; after a minute the dashboard shows victim posts and the onion source count is in the hundreds.
+3. The victim feed populated the dashboard. With the PRO key set, the worker runs the ransomware.live feed on boot and seeds onion sources from ransomware.live PRO group locations; after a minute the dashboard shows victim posts dated within the last few days and the Sources page lists the seeded mirrors. On a host upgraded from an earlier release, the worker's first start disables the mirrors seeded from the ransomwatch archive (reason "ransomwatch archive" on the Sources page) and marks the ransomwatch feed archived; no rows are deleted. ransomwatch is never scheduled. To import its history once, an admin presses Backfill on its row on the Connectors page.
 
 4. One onion source actually crawls:
 ```
 sudo docker compose logs worker | grep -i "onion crawl\|page changed\|profiled crawl"
 ```
-A few failures are normal (leak sites go up and down). You want at least some successes.
+A few failures are normal (leak sites go up and down). You want at least some successes. Sources that fail 10 times in a row, or whose group has had no feed activity for 180 days, are disabled by the daily seed with the reason shown on the Sources page; Enable turns one back on.
+
+5. Captures and priority groups. When a hit lands, its direct capture appears on the hit page as pending and the worker tries it within five minutes; the Connectors page shows the capture queue depth and success rate. The Priority Groups page fills after the first daily ranking (30 minutes after the worker starts). Write leak-site profiles there for the groups that matter to your clients; the editor previews selectors against the newest stored index page.
 
 ## 5. Open the console
 

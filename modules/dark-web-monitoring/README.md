@@ -9,7 +9,7 @@ Internal tool. Client deliverables attribute findings to the Vendetta Platform; 
 ## What it does
 
 Collection
-- Ransomware leak sites: direct Tor crawl of every group mirror listed by ransomware.live and ransomwatch, plus the ransomware.live victim feed for dates and coverage of groups we do not crawl. Without a profile a mirror is diffed at the index level; a new victim name is a change and is matched against every watch term. With a profile (a YAML file in app/profiles naming the group's CSS selectors) the crawler reads each victim entry and follows the victim's own post over Tor, storing a structured post item with title, description and date. Write profiles for the groups whose client base overlaps yours; the rest run profile-free with no config. ransomwatch stopped updating in mid-2025; its posts.json still loads about 16,000 historical victims on first run, which is what makes backfill useful on day one. ransomware.live is the live feed; its public v2 endpoint is one request per minute, so register for the free PRO key at my.ransomware.live and set RANSOMWARE_LIVE_API_KEY.
+- Ransomware leak sites: the ransomware.live PRO victim feed, plus a direct Tor crawl of each tracked group's leak-site mirrors. The feed needs the free PRO key from my.ransomware.live in RANSOMWARE_LIVE_API_KEY; without it the connector reports "not configured" and never calls the public v2 tier. Onion sources are seeded daily from ransomware.live PRO group locations, which carry availability. A source is disabled, with the reason recorded, when its group has had no feed activity for 180 days or after 10 failed crawls in a row, and a person can re-enable it on the Sources page. The crawl visits priority groups first on every run and the rest by recent group activity, and stops at ONION_CRAWL_BUDGET_MINUTES (45) of wall-clock time as well as at its count cap. Without a profile a mirror is diffed at the index level and a new victim name is matched as a change. With a profile the crawler reads each victim entry and follows the victim's own post over Tor. ransomwatch stopped updating in mid-2025: it is never scheduled, its source is marked archived, and an admin can import its roughly 16,000 historical victims once with Backfill on the Connectors page, which is what makes client backfill useful on day one.
 - Forums and markets: a forum source crawls board sections, thread lists and messages using a profile of kind forum. For boards your team already has an account on, store a session cookie on the source and it is sent read-only with every request. Nothing logs in, posts, replies, registers or purchases. This is read-only collection.
 - Initial access brokers: brokers sell network access without naming the victim, advertising a profile instead (sector, country, revenue, host count, access type). The tool matches each client's business profile against forum and leak-site text and raises an IAB candidate for an analyst to confirm. Industry must match and at least one of country, state, revenue band or size band must corroborate, and the post must carry an access-for-sale signal, so sector chatter alone does not fire.
 - Have I Been Pwned: breached accounts by domain (Core plan), infostealer logs by email domain and infostealer logs showing logins to the client's own sites (Pro plan). Requires a verified domain per client.
@@ -36,7 +36,7 @@ Credential handling
 - When a specific matter needs the full record, the research console or the Preserve action re-fetches the source and writes the raw bytes to the Object Lock bucket with a hash and manifest, access-controlled and audit-logged.
 
 Evidence
-- Every hit on a victim post, page or paste triggers an automatic capture: raw bytes, SHA-256, timestamp, headers and a JSON manifest to S3.
+- Aggregator hit, then direct capture. The aggregator tells us where to look; the direct capture is the record. A hit on a victim, page or paste item queues a capture instead of fetching inline, so a feed job never waits on Tor. The worker drains the queue every CAPTURE_INTERVAL minutes (5) over Tor. The target is the original leak post when the feed gives one (post_url or claim_url), otherwise the group's current onion index from its enabled sources, best known first. A post URL is also tried on the group's other mirrors and then on its index pages. A capture is retried up to 4 times over 24 hours (waits of 1, 5 and 18 hours) and then marked unavailable. A captured page is preserved through the evidence path (raw bytes, SHA-256, timestamp, headers and a JSON manifest to S3) for the hit's client and item. An index page captured without the victim's name in its text is recorded as captured_index_no_match. The hit page shows the capture status, links the evidence and has a Capture now button for admins and analysts; the Connectors page shows queue depth and the 7 day success rate.
 - Bucket has versioning and Object Lock with a default retention, so captures cannot be modified or deleted during the retention window. Governance mode by default; switch to Compliance for production.
 - Verify endpoint re-hashes stored bytes against the recorded hash.
 - Audit log of every analyst action.
@@ -70,7 +70,11 @@ Total: roughly 17 per month
 
 A one-year Compute Savings Plan on the instance brings it to about 11 per month. t4g.micro drops the instance to about 6 per month and works for a small client count if Postgres shared_buffers is lowered to 64MB in docker-compose.yml.
 
-HIBP is the only paid data source. ransomware.live, ransomwatch, crt.sh and psbdmp are free.
+HIBP is the only paid data source. The ransomware.live PRO key, the ransomwatch archive, crt.sh and psbdmp are free.
+
+## Victim-source resilience
+
+Live victim data comes from one aggregator, ransomware.live, so its outage, a key revocation or a schema change stops new victim items. The Connectors page flags the feed stale after 7 days without a newly published victim, and the direct crawl of priority groups keeps producing page and post items while it is down. A second victim source is worth adding for resilience, for example a commercial ransomware victim feed or profiled direct crawls of the most active groups written from the Priority Groups page. This plan does not build one.
 
 HIBP tiers as of October 2026, paid annually:
 Core 1, one verified domain: 4.39 per month
@@ -93,7 +97,9 @@ Fill in the business profile (industry, country, state, revenue band, employee o
 
 IR matter: add the client with kind ir and the case number. Add the same terms and the profile, then click Backfill. The hits page shows any prior leak-site listing, breach record, infostealer log or access-for-sale ad in the last year. Preserve evidence on anything relevant before the group's mirror goes down.
 
-Writing a parser profile: capture the real page first with the research console, copy the markup, and copy app/profiles/_example_leak.yaml or _example_forum.yaml to a new file named for the group or board. Set the source's Profile field to that file name. Selectors are plain CSS and multiple comma-separated selectors are tried in order, so a profile tolerates small layout changes. A source with no profile still works; the profile only adds per-post or per-thread structure.
+Priority groups: the Priority Groups page (/priority-groups) ranks the groups that get direct, profiled crawls. The computed list is the top 25 groups by ransomware.live victims published in the last 90 days, with victims whose sector matches an active client's industry counting double and those matching a client's country counting half again. The worker refreshes it daily. Admins can pin a group (always priority) or exclude one (never priority), and pins survive every refresh. Each group shows its profile state: none, draft (saved, not yet used successfully), working (the last crawl extracted entries) or broken (it extracted entries before and extracts none now). A broken profile is raised on the Connectors page and the dashboard.
+
+Writing a leak-site profile: open the group's Profile from the Priority Groups page. The editor previews CSS selectors against the newest stored index page for the group (the crawl keeps the raw HTML of each changed index page) and lists the victims they would extract, with no network request. Save stores the profile in the database and points the group's onion sources at it. Selectors are plain CSS and multiple comma-separated selectors are tried in order, so a profile tolerates small layout changes. YAML profiles in app/profiles still load as a fallback when no database profile has the source's profile name; forum profiles are YAML only. A source with no profile still works; the profile only adds per-post structure.
 
 Verify the client's domain in HIBP (DNS TXT record or email) so the breached-domain and stealer-log queries return data.
 
@@ -135,7 +141,12 @@ app/
   profiles.py      profile loader
   alerts.py        SNS, Teams, Jira (Jira off unless configured)
   evidence.py      S3 captures with hashes
-  pipeline.py      ingest -> redact -> dedupe -> match + IAB -> alert -> preserve
+  pipeline.py      ingest -> redact -> dedupe -> match + IAB -> alert -> queue capture
+  ransomware_live.py  PRO API client (verified paths, auth header, fair use) with fixtures in tests/fixtures
+  onion_sources.py seeding from PRO group locations, disable rules, crawl order, ransomwatch migration
+  captures.py      direct capture queue drained by the worker over Tor
+  priority.py      priority group ranking, pins and exclusions
+  profile_store.py database parser profiles, preview extraction, broken-profile detection
   db.py            models
 infra/terraform/   EC2, S3 Object Lock, SNS, IAM, SSM, DLM
 scripts/           deploy, render_env, backup, password hash, telegram login
@@ -148,7 +159,7 @@ tests/
 cp .env.example .env   # set ADMIN_PASSWORD_HASH and SECRET_KEY
 docker compose up --build
 ```
-Console at http://localhost:8000. The worker seeds onion sources from ransomwatch on first start and runs the clearnet feeds immediately; the first Tor sweep starts after ONION_CRAWL_INTERVAL.
+Console at http://localhost:8000. With RANSOMWARE_LIVE_API_KEY set, the worker seeds onion sources from ransomware.live PRO group locations on first start and runs the victim feed immediately; the first Tor sweep starts after ONION_CRAWL_INTERVAL. At start it also runs a one-time migration that disables onion mirrors seeded from the ransomwatch archive (meta.seeded_from "ransomwatch"), recording the reason and never deleting a row.
 
 ## Roadmap
 
