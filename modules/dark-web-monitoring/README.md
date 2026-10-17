@@ -14,8 +14,8 @@ Collection
 - Initial access brokers: brokers sell network access without naming the victim, advertising a profile instead (sector, country, revenue, host count, access type). The tool matches each client's business profile against forum and leak-site text and raises an IAB candidate for an analyst to confirm. Industry must match and at least one of country, state, revenue band or size band must corroborate, and the post must carry an access-for-sale signal, so sector chatter alone does not fire.
 - Have I Been Pwned: breached accounts by domain (Core plan), infostealer logs by email domain and infostealer logs showing logins to the client's own sites (Pro plan). Requires a verified domain per client.
 - Certificate Transparency: new certificates for client domains and subdomains, plus a lookalike sweep (homoglyphs, prefixes like secure- and login-, TLD swaps, inserted hyphens) for phishing infrastructure.
-- Paste sites: psbdmp index of Pastebin dumps searched per watch term.
-- Telegram: public channels, optional, via Telethon.
+- Paste sites: a paste index searched per watch term. Off by default (PASTES_ENABLED=false) because psbdmp.ws, the only free index wired in, could not be verified as working; see "Optional connectors" below.
+- Telegram: public channels, optional, via Telethon (in requirements.txt). Needs TELEGRAM_* settings and a one-time login; see DEPLOY.md.
 - Research console: fetch any URL (onion or clearnet) through the collector's Tor circuit and preserve the response.
 
 Matching
@@ -23,7 +23,8 @@ Matching
 - Victim and post items naming a client, and infostealer hits, are forced to at least high.
 - A domain or email-domain term matching inside credential-bearing content is flagged as a credential exposure rather than a plain mention.
 - Client business profile (industry, country, state, revenue band, employee/host band) drives IAB matching.
-- Backfill button re-matches a new client's terms and profile against everything already collected. On a new IR engagement this answers "were they listed last month, and was access to them ever advertised" in seconds.
+- Starter watch terms: a client provisioned from the control plane gets its portal domains as domain and email_domain terms and its name as a brand term, plus a variant with legal suffixes stripped. These are marked auto on the client page.
+- Backfill re-matches a client's terms against items collected in the last 365 days. It is queued automatically whenever terms are added (by provisioning, on the client page or through the terms API) and runs in the worker within a minute; the Backfill button queues a full pass including the business profile. The client page shows the last result. On a new IR engagement this answers "were they listed last month, and was access to them ever advertised" without manual setup.
 
 Alerting
 - SNS topic (email, SMS) for everything at or above the threshold.
@@ -56,7 +57,14 @@ Hardening
 
 ## Platform roster
 
-When PLATFORM_URL is set, the module pulls its client roster from the Vendetta Platform control plane ("Pull from platform" on the Clients page); clients are activated there. The pull sets only the platform-owned fields (name, portal domains) and never touches watch terms, the IAB business profile or case_ref, so onboarding and tuning survive. Escalations carry the shared platform_client_id so the IR hub lines the client up across modules.
+When PLATFORM_URL is set, the module pulls its client roster from the Vendetta Platform control plane ("Pull from platform" on the Clients page); clients are activated there. The pull sets the platform-owned fields (name, portal domains) and leaves the IAB business profile and case_ref alone, so onboarding and tuning survive.
+
+Each pull also adds starter watch terms for every client it creates or updates, when missing (app/watchterms.py):
+
+- each portal domain as a domain term and an email_domain term;
+- the client name as a brand term, and a second brand term with common legal suffixes stripped (Inc, LLC, L.L.C., Corp, Corporation, Co, Ltd, Credit Union, Federal Credit Union, FCU, Bank, N.A.), so "Riverbend Credit Union" also yields "Riverbend".
+
+A brand term shorter than 4 characters or made only of generic words (First, National, Community, Bank, Credit, Union, Group and similar; the list is STOPWORDS in app/watchterms.py) is skipped because it would match unrelated victims. Starter terms are marked auto in the Source column of the client's watch terms. The pull never deletes a term and never alters one that already exists with the same text and kind, whoever added it. When an analyst removes an auto term the removal is recorded (auto_term_tombstones) and later pulls do not add it back; the client page lists those removals. New starter terms queue a 365 day backfill for that client. Escalations carry the shared platform_client_id so the IR hub lines the client up across modules.
 
 ## Monthly cost, us-east-1, on-demand
 
@@ -70,7 +78,7 @@ Total: roughly 17 per month
 
 A one-year Compute Savings Plan on the instance brings it to about 11 per month. t4g.micro drops the instance to about 6 per month and works for a small client count if Postgres shared_buffers is lowered to 64MB in docker-compose.yml.
 
-HIBP is the only paid data source. ransomware.live, ransomwatch, crt.sh and psbdmp are free.
+HIBP is the only paid data source. ransomware.live, ransomwatch and crt.sh are free. psbdmp is off by default (see Optional connectors).
 
 HIBP tiers as of October 2026, paid annually:
 Core 1, one verified domain: 4.39 per month
@@ -87,15 +95,39 @@ The full runbook is in DEPLOY.md. In short: create a read-only deploy key for th
 
 ## Onboarding a client
 
-Managed services: add the client, kind managed, contract ref. Add the primary domain (kind domain, high), email domain, brand name, and the names of the CEO, CFO and controller (kind person, medium). For a bank or credit union add routing-number-adjacent terms sparingly; they generate noise.
+Managed services: a client provisioned from the control plane arrives with starter terms (domains and brand, marked auto). Review them, remove any that are too broad, and add the names of the CEO, CFO and controller (kind person, medium) and any other brands. A client added by hand on this console has no starter terms: add the primary domain (kind domain, high), email domain and brand name yourself. Readiness warns while any active client has no enabled watch terms. For a bank or credit union add routing-number-adjacent terms sparingly; they generate noise.
 
 Fill in the business profile (industry, country, state, revenue band, employee or host band). This is what IAB matching uses. For a credit union, industry "credit union" plus state and a revenue band is enough to catch most broker ads that would describe it.
 
-IR matter: add the client with kind ir and the case number. Add the same terms and the profile, then click Backfill. The hits page shows any prior leak-site listing, breach record, infostealer log or access-for-sale ad in the last year. Preserve evidence on anything relevant before the group's mirror goes down.
+IR matter: add the client with kind ir and the case number. Add the same terms and the profile; adding terms queues a backfill automatically, and Backfill queues a full pass that also matches the business profile. The hits page shows any prior leak-site listing, breach record, infostealer log or access-for-sale ad in the last year. Preserve evidence on anything relevant before the group's mirror goes down.
 
 Writing a parser profile: capture the real page first with the research console, copy the markup, and copy app/profiles/_example_leak.yaml or _example_forum.yaml to a new file named for the group or board. Set the source's Profile field to that file name. Selectors are plain CSS and multiple comma-separated selectors are tried in order, so a profile tolerates small layout changes. A source with no profile still works; the profile only adds per-post or per-thread structure.
 
 Verify the client's domain in HIBP (DNS TXT record or email) so the breached-domain and stealer-log queries return data.
+
+## Optional connectors
+
+Each optional connector stays off until it has what it needs, and the Connectors page, readiness and `python -m app.diagnose` show the reason.
+
+- HIBP: "needs HIBP_API_KEY" until the key is set in SSM (/darkweb/HIBP_API_KEY). It also needs at least one domain or email_domain watch term.
+- Telegram: "needs TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_CHANNELS" while any is unset, then "missing Telegram session file at <path>" until scripts/telegram_login.py has been run once. The session path is TELEGRAM_SESSION_PATH (default /data/telegram.session on the shared volume). DEPLOY.md has the login steps.
+- Pastes: "PASTES_ENABLED is false" by default. On Oct 17, 2026 psbdmp.ws could not be reached from the build environment and no current documentation for its v3 API was found; the latest public reference describes it at psbdmp.cc with registration required. Probe it from the host with `python -m app.diagnose` and set PASTES_ENABLED=true only when the psbdmp search returns HTTP 200 with JSON. A replacement index is a class implementing PasteSource (search and fetch) in app/collectors/pastes.py, registered in SOURCES and selected with PASTE_SOURCE.
+- Forums: "no forum profiles configured" until a profile of kind forum exists in app/profiles and an enabled forum Source references it. No live forum profiles ship in code.
+
+## Forum profiles and authenticated cookies
+
+Forum collection is read only. The crawler fetches board pages and threads and stores their text. It never logs in, registers, posts, replies, sends messages, votes or purchases, and a profile must not point it at a URL that does any of those things (logout, post, buy, vote or profile edit links).
+
+Writing a forum profile:
+
+1. Open a board page and a thread page through the research console (/research) so the fetch goes over Tor from the server, and copy the markup.
+2. Copy app/profiles/_example_forum.yaml to a new file named for the board, for example app/profiles/xss_board.yaml. Files whose names start with an underscore are examples and are ignored.
+3. Keep `kind: forum` and fill in the selectors: thread_selector for each thread row on a board page, thread_link_selector and thread_title_selector within a row, post_selector for each message on a thread page, and author_selector, body_selector and date_selector within a message. Comma-separated selectors are tried in order.
+4. List the board sections to start from under `sections`, relative to the source URL. Set page_param and max_pages for pagination and keep max_threads_per_run modest (25 is the default) so a sweep stays polite.
+5. Commit the file and redeploy; profiles load at start.
+6. On the Sources page add a source of kind forum with the board's base URL and the profile's file name (without .yaml) in the Profile field. The Connectors page then shows the forum connector as configured.
+
+Storing an authenticated cookie on a Source: for a board the delivery team already has an account on, sign in from a dedicated research browser (Tor Browser for onion boards), copy the Cookie request header for the board's domain from the browser's developer tools, and paste it into the Session cookie field when adding the source, or into the cookie form on an existing source. It is stored in the source's meta and sent with every request to that source. The Sources page shows only whether a cookie is set, and audit entries record set or cleared without the value. Use an account created for research, never a personal one. When the board expires the session the crawl starts returning login pages; paste a fresh cookie. Clearing the field removes it.
 
 ## Operations
 
@@ -129,6 +161,8 @@ app/
   collectors/      leak_feeds, onion_crawl, forum_crawl, hibp, ct_logs, pastes, telegram
   profiles/        per-site YAML selector profiles (leak and forum), with examples
   matcher.py       watch term matching
+  watchterms.py    starter watch terms for provisioned clients, auto term tombstones
+  backfill.py      queued re-matching of collected items when terms are added
   iab.py           initial access broker matching against client profiles
   redact.py        credential masking at ingest
   report.py        per-client exposure report aggregation
