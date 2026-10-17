@@ -182,3 +182,45 @@ def test_portal_domain_must_be_unique_across_clients(admin):
     r = admin.post(f"/clients/{b.id}/edit", data={"portal_domains": "bravo.example", "active": "true"},
                    follow_redirects=False)
     assert "msg=" in r.headers["location"]
+
+
+def test_mdr_registered_with_portal_probe_and_upgrade(fresh_db):
+    from app import registry
+    from app.registry import FINDING_MODULES, PROBE, seed_registry
+
+    db = SessionLocal()
+    m = db.get(Module, "mdr")
+    assert m.display_name == "Managed Detection and Response" and m.has_portal and m.status == "in-progress"
+    assert "mdr" in FINDING_MODULES and "mdr" in registry.DIRECTORY_CONSUMERS["incident-response"]
+    assert PROBE["mdr"]["manifest"] == "/api/module"
+    assert PROBE["mdr"]["items"] == "/api/findings?status=active" and PROBE["mdr"]["severity_key"] == "severity"
+    # a control plane that first booted when mdr was only planned is brought up to date
+    m.status, m.has_portal = "planned", False
+    db.commit()
+    seed_registry(SessionLocal())
+    m = SessionLocal().get(Module, "mdr")
+    assert m.status == "in-progress" and m.has_portal is True
+    # an operator's own status on a live module is kept
+    db = SessionLocal()
+    db.get(Module, "mdr").status = "production"
+    db.commit()
+    seed_registry(SessionLocal())
+    assert SessionLocal().get(Module, "mdr").status == "production"
+
+
+def test_mdr_probe_reads_active_investigations(fresh_db):
+    db = SessionLocal()
+    m = db.get(Module, "mdr")
+    m.base_url, m.api_token = "http://mdr:8000", "t"
+    db.commit()
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(str(req.url))
+        if req.url.path == "/api/module":
+            return httpx.Response(200, json={"module": "mdr", "enabled": True})
+        return httpx.Response(200, json=[{"severity": "critical"}, {"severity": "medium"}])
+
+    res = aggregate.probe_module(m, transport=httpx.MockTransport(handler), force=True)
+    assert res["open"] == 2 and res["critical"] == 1 and res["label"] == "open investigations"
+    assert "http://mdr:8000/api/findings?status=active" in seen
