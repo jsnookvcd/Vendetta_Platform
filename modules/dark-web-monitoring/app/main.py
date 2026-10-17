@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import boot
 from . import auth, connectors, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
 from . import health, work_requests
+from . import backfill as backfill_mod, watchterms
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, RunRequest, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -333,7 +334,9 @@ def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: 
     ).scalars().all()
     ev = db.execute(select(Evidence).where(Evidence.client_id == cid).order_by(desc(Evidence.captured_at)).limit(50)).scalars().all()
     trend = _hit_trend(db, cid, days=21)
-    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend)
+    coverage = {**backfill_mod.client_state(db, cid), "tombstones": watchterms.tombstones(db, cid)}
+    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend,
+                  coverage=coverage)
 
 
 def _hit_trend(db: Session, cid: str, days: int = 21) -> list[int]:
@@ -366,17 +369,25 @@ def update_portal(cid: str, portal_enabled: bool = Form(False), portal_domains: 
 
 @app.post("/clients/{cid}/terms")
 def add_term(cid: str, term: str = Form(...), kind: str = Form("keyword"), severity: str = Form("medium"), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    added = []
     for t in [x.strip() for x in term.splitlines() if x.strip()]:
-        db.add(WatchTerm(client_id=cid, term=t, kind=kind, severity=severity))
+        wt = WatchTerm(client_id=cid, term=t, kind=kind, severity=severity, source=watchterms.ANALYST)
+        db.add(wt)
+        added.append(wt)
     db.commit()
     _audit(db, user, "term.add", f"{cid}: {kind} {term[:200]}")
+    if added:
+        backfill_mod.queue(db, cid, [t.id for t in added], requested_by=user, reason="terms added")
     return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
 @app.post("/clients/{cid}/terms/{tid}/delete")
 def del_term(cid: str, tid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     t = db.get(WatchTerm, tid)
-    if t:
+    if t and t.client_id == cid:
+        watchterms.record_deletion(db, t, user)
         db.delete(t)
         db.commit()
         _audit(db, user, "term.delete", f"{cid}: {t.term}")
@@ -423,16 +434,15 @@ def client_report_pdf(cid: str, request: Request, days: int = 30, user: str = au
 
 @app.post("/clients/{cid}/backfill")
 def backfill(cid: str, days: int = Form(90), user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    """Re-run matching for this client's terms against items already collected.
-    Use when onboarding an IR client: did their name show up on a leak site last month?"""
-    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
-    items = db.execute(select(Item).where(Item.collected_at >= since)).scalars().all()
-    n = 0
-    for it in items:
-        new = [h for h in match_item(db, it) if h.client_id == cid]
-        new += [h for h in iab.match_iab(db, it) if h.client_id == cid]
-        n += len(new)
-    _audit(db, user, "client.backfill", f"{cid}: {n} hits over {days}d")
+    """Re-run matching for this client's terms and IAB profile against items already
+    collected. Use when onboarding an IR client: did their name show up on a leak site
+    last month? Queued for the worker (app/backfill.py); the client page shows the
+    result once it has run."""
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    days = max(1, min(int(days), 3650))
+    backfill_mod.queue(db, cid, None, requested_by=user, reason="manual", days=days, include_iab=True)
+    _audit(db, user, "client.backfill", f"{cid}: queued over {days}d")
     return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
@@ -695,9 +705,15 @@ def api_victims(days: int = 7, group: str = "", user: str = Depends(auth.api_use
 def api_add_terms(cid: str, payload: dict, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     if not db.get(Client, cid):
         raise HTTPException(404)
+    added = []
     for t in payload.get("terms", []):
-        db.add(WatchTerm(client_id=cid, term=t["term"], kind=t.get("kind", "keyword"), severity=t.get("severity", "medium")))
+        wt = WatchTerm(client_id=cid, term=t["term"], kind=t.get("kind", "keyword"),
+                       severity=t.get("severity", "medium"), source=watchterms.ANALYST)
+        db.add(wt)
+        added.append(wt)
     db.commit()
+    if added:
+        backfill_mod.queue(db, cid, [t.id for t in added], requested_by=user, reason="terms added by API")
     return {"ok": True}
 
 

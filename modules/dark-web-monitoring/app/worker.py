@@ -154,6 +154,7 @@ def retention() -> None:
     try:
         n = health.prune_runs(db)
         m = work_requests.prune(db, RunRequest, health.RUN_RETENTION_DAYS)
+        m += _retention_phase4(db)
         log.info("retention: pruned %d collector runs and %d requests", n, m)
     finally:
         db.close()
@@ -177,6 +178,7 @@ def _recover() -> None:
             r.error = "worker restarted before this run finished"
         db.commit()
         work_requests.fail_interrupted(db, RunRequest)
+        _recover_phase4(db)
     finally:
         db.close()
 
@@ -197,6 +199,7 @@ def build_scheduler(now: dt.datetime | None = None) -> BlockingScheduler:
     sched.add_job(poll_requests, "interval", minutes=REQUEST_POLL_MINUTES, id="run_requests", next_run_time=soon)
     sched.add_job(retention, "interval", hours=24, id="retention", next_run_time=now + dt.timedelta(hours=1))
     sched.add_job(_seed, "interval", hours=24, id="seed", next_run_time=now + dt.timedelta(hours=24))
+    _add_phase4_jobs(sched, now)
     return sched
 
 
@@ -217,6 +220,38 @@ def main() -> None:
     sched = build_scheduler()
     log.info("scheduler started")
     sched.start()
+
+
+# ---------------------------------------------------------------- Phase 4: backfill requests
+# New watch terms queue a BackfillRequest (app/backfill.py); the worker drains them
+# every minute so the web container never re-matches history on a request thread.
+def poll_backfills() -> int:
+    if not settings.module_enabled:
+        return 0
+    from . import backfill
+
+    db = SessionLocal()
+    try:
+        return backfill.drain(db)
+    finally:
+        db.close()
+
+
+def _add_phase4_jobs(sched: BlockingScheduler, now: dt.datetime) -> None:
+    sched.add_job(poll_backfills, "interval", minutes=REQUEST_POLL_MINUTES, id="backfill_requests",
+                  next_run_time=now + dt.timedelta(seconds=START_DELAY_SECONDS * 3))
+
+
+def _recover_phase4(db) -> None:
+    from .db import BackfillRequest
+
+    work_requests.fail_interrupted(db, BackfillRequest)
+
+
+def _retention_phase4(db) -> int:
+    from .db import BackfillRequest
+
+    return work_requests.prune(db, BackfillRequest, health.RUN_RETENTION_DAYS)
 
 
 if __name__ == "__main__":
