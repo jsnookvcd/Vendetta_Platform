@@ -47,17 +47,47 @@ def core() -> dict:
 
 
 def integrations() -> dict:
-    """Collection sources configured for monitoring (paste sites, markets, feeds)."""
+    """Collection health for the control plane. `kind` and `configured` (the count
+    of Source rows) are the original keys and stay. `tor`, the worker heartbeat age
+    and per-connector state let the readiness screen show this module red when Tor
+    or the worker is down and warn when a connector is failing or stale."""
+    out: dict = {"kind": "collection-sources", "configured": 0, "tor": {"ok": False, "checked_at": None,
+                 "error": "no Tor check recorded"}, "worker_heartbeat_age_seconds": None, "connectors": {}}
     try:
+        from . import connectors
         from .db import SessionLocal, Source
         db = SessionLocal()
         try:
-            n = db.query(Source).count()
+            out["configured"] = db.query(Source).count()
+            summary = connectors.health_summary(db)
         finally:
             db.close()
-    except Exception:  # noqa: BLE001
-        n = 0
-    return {"kind": "collection-sources", "configured": n}
+    except Exception as e:  # noqa: BLE001
+        out["error"] = f"health unavailable: {type(e).__name__}"
+        return out
+    tor = summary["tor"]
+    if tor:
+        out["tor"] = {"ok": bool(tor.get("is_tor")), "reachable": bool(tor.get("reachable")),
+                      "checked_at": tor.get("checked_at"), "error": tor.get("error", "")}
+    out["worker_heartbeat_age_seconds"] = summary["heartbeat_age_seconds"]
+    out["heartbeat_stale_after_seconds"] = health_stale_after()
+    out["connectors"] = {
+        r["key"]: {
+            "configured": r["configured"],
+            "reason": r["reason"],
+            "last_ok": r["last_ok"].isoformat() if r["last_ok"] else None,
+            "last_run_ok": r["last_run_ok"],
+            "stale": r["stale"],
+            "error": r["error"],
+        }
+        for r in summary["connectors"]
+    }
+    return out
+
+
+def health_stale_after() -> int:
+    from .health import HEARTBEAT_STALE_SECONDS
+    return HEARTBEAT_STALE_SECONDS
 
 
 def block() -> dict:
