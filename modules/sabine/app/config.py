@@ -111,6 +111,46 @@ class Settings(BaseSettings):
     copilot_fp_confidence: float = 0.9
     copilot_tp_confidence: float = 0.85
 
+    # Concierge: response commitments, the Security Journey and client communications.
+    # A critical MDR investigation or managed-services critical left unacknowledged past
+    # the client's commitments.critical_ack_minutes pages the IR on-call path; this is the
+    # fallback when the platform gives the client no commitments.
+    critical_ack_minutes: int = 15
+    critical_contain_minutes: int = 240
+    page_repeat_minutes: int = 60          # never page twice for one detection inside this
+    # An outreach draft is raised when an open critical investigation has used this share
+    # of the containment commitment.
+    commitment_risk_pct: int = 75
+    # The posture review is drafted once a month per active client, from this day on.
+    posture_review_day: int = 1
+    # A finding pattern seen this many times at once for one client becomes a journey item.
+    journey_recurring_min: int = 3
+    # The same high or critical finding pattern active at this many clients is a campaign.
+    campaign_min_clients: int = 2
+    # An OSP deliverable unaccepted this long gets a client outreach draft (the internal
+    # nudge to the lead comes first, at acceptance_nudge_days).
+    outreach_acceptance_days: int = 14
+    # Decision memory: people rejecting or closing as false positive the same MDR pattern
+    # for one client this many times makes SABINE propose a suppression for that many days.
+    suppression_suggest_after: int = 3
+    suppression_days: int = 30
+    memory_reject_step: float = 0.1
+    memory_approve_step: float = 0.05
+
+    # Running the business: Harvest (time, budgets, capacity) and HubSpot (deals). Each
+    # is optional; without credentials the source is skipped and readiness says so.
+    harvest_account_id: str = ""
+    harvest_token: str = ""
+    harvest_url: str = "https://api.harvestapp.com/v2"
+    hubspot_token: str = ""
+    hubspot_url: str = "https://api.hubapi.com"
+    hubspot_renewal_pipeline: str = ""     # a pipeline id holding renewals; dealtype=renewal always counts
+    budget_burn_pct: int = 80
+    capacity_pct: int = 110
+    renewal_days: int = 60
+    won_lookback_days: int = 30
+    won_onboard_days: int = 3              # a closed-won deal not on the platform after this many days
+
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.entra_tenant_id and self.entra_client_id and self.entra_client_secret)

@@ -2,131 +2,15 @@
 rules raise proposals at the policy's autonomy, auto actions go through module
 APIs with SABINE named as the actor, high-risk actions are only ever handed off,
 decisions execute, and everything lands in a chain that verifies."""
-import datetime as dt
-import json
-
 import httpx
 import pytest
 
-from app import auth, brain, ledger, perception, policy, reach
-from app.config import settings
+from app import auth, brain, ledger, policy, reach
 from app.db import Brief, Proposal, SessionLocal, WorkItem
 
-NOW = dt.datetime.now(dt.timezone.utc)
-OLD = (NOW - dt.timedelta(hours=2)).isoformat()
-FRESH = (NOW - dt.timedelta(minutes=5)).isoformat()
-
-DIRECTORY = {
-    "platform": {"base_url": "http://platform:8000", "token": "ptok", "public_url": "https://platform.example"},
-    "incident-response": {"base_url": "http://incident-response:8000", "token": "irtok", "public_url": "https://ir.example"},
-    "managed-services": {"base_url": "http://managed-services:8000", "token": "mstok", "public_url": "https://msp.example"},
-    "dark-web-monitoring": {"base_url": "http://dark-web-monitoring:8000", "token": "dwtok", "public_url": "https://darkweb.example"},
-    "vulnerability-management": {"base_url": "http://vulnerability-management:8000", "token": "vtok", "public_url": "https://vuln.example"},
-    "professional-services": {"base_url": "http://professional-services:8000", "token": "osptok", "public_url": "https://osp.example"},
-}
-
-
-def _finding(mod, fid, sev, title, pid="plat-rb", client="Riverbend Credit Union", created=OLD, **extra):
-    return {"id": fid, "module": mod, "subject": {"client_id": "x", "platform_client_id": pid, "client": client, "case_ref": ""},
-            "type": extra.pop("type", "finding"), "severity": sev, "status": "new", "title": title,
-            "matched": extra.pop("matched", ""), "evidence": [], "workstream": "Scoping and Containment",
-            "created_at": created, **extra}
-
-
-class World:
-    """A mock of the platform and modules, mutable so tests can change the picture."""
-
-    def __init__(self):
-        self.calls = []
-        self.clients = [{"id": "plat-rb", "name": "Riverbend Credit Union"}, {"id": "plat-hp", "name": "Harbor Point"}]
-        self.staff = {"governs": True, "staff": [
-            {"email": "dan@vendettacd.io", "name": "Dan", "active": True, "platform_role": "admin",
-             "modules": {"incident-response": {"role": "admin"}, "managed-services": {"role": "admin"}}},
-            {"email": "idle@vendettacd.io", "name": "Idle", "active": True, "platform_role": "analyst",
-             "modules": {"incident-response": {"role": "none"}}},
-        ]}
-        self.readiness = {"ready": False, "control_plane": {"checks": []}, "modules": [
-            {"key": "dark-web-monitoring", "display_name": "Dark Web Monitoring", "checks": [
-                {"label": "Roster from platform", "state": "fail", "detail": "last pull failed: platform rejected the token"}]},
-        ]}
-        self.findings = {
-            "dark-web-monitoring": [_finding("dark-web-monitoring", "dw1", "critical", "rb combolist leak", matched="jdoe@riverbendcu.org")],
-            "managed-services": [_finding("managed-services", "al1", "critical", "Ransomware behavior on WS01", type="threat", matched="WS01"),
-                                 _finding("managed-services", "al2", "high", "jdoe@riverbendcu.org credential stuffing", matched="jdoe@riverbendcu.org", created=FRESH),
-                                 # the module's triage copilot has spoken on these two; no human has decided yet
-                                 _finding("managed-services", "al3", "critical", "Scheduled task created by admin tool", matched="SRV02",
-                                          copilot={"verdict": "false_positive", "confidence": 0.95, "model": "rules-v1", "requires_approval": True,
-                                                   "rationale": "a human previously dispositioned this asset/signature as false positive.",
-                                                   "created_at": OLD, "decision": None}),
-                                 _finding("managed-services", "al4", "high", "Credential dumping on FS01", matched="FS01",
-                                          copilot={"verdict": "true_positive", "confidence": 0.9, "model": "rules-v1", "requires_approval": False,
-                                                   "rationale": "high severity; carries a CVE identifier.", "created_at": OLD, "decision": None})],
-            "vulnerability-management": [_finding("vulnerability-management", "v1", "high", "OpenSSL < 3.0.14", pid="plat-hp", client="Harbor Point",
-                                                  native_status="remediating", created=(NOW - dt.timedelta(days=45)).isoformat())],
-        }
-        self.cases = [{"id": "c1", "number": "VCD-IR-2026-790", "title": "BEC at Harbor Point", "severity": "high",
-                       "client": {"id": "h", "name": "Harbor Point", "platform_client_id": "plat-hp"}, "lead": "Dan",
-                       "opened_at": (NOW - dt.timedelta(days=10)).isoformat(), "last_update_at": (NOW - dt.timedelta(days=8)).isoformat(),
-                       "board": {"open": 3}, "workstreams": []}]
-        # Office of Special Projects: one vCISO retainer with a deliverable the client has
-        # not accepted for 12 days and one past its planned end; one fresh delivery.
-        self.engagements = [
-            {"id": "e1", "module": "professional-services", "name": "vCISO Retainer", "kind": "vciso", "status": "active",
-             "lead": "Jordan", "progress": 50, "published": True, "ends_on": None, "created_at": OLD,
-             "subject": {"client_id": "x", "platform_client_id": "plat-rb", "client": "Riverbend Credit Union"},
-             "deliverables": [
-                 {"id": "d1", "title": "Information Security Policy v1", "kind": "policy", "status": "delivered",
-                  "delivered_at": (NOW - dt.timedelta(days=12)).isoformat(), "accepted_at": None},
-                 {"id": "d2", "title": "IR Playbook", "kind": "playbook", "status": "delivered",
-                  "delivered_at": (NOW - dt.timedelta(days=2)).isoformat(), "accepted_at": None},
-                 {"id": "d3", "title": "Kickoff", "kind": "session", "status": "accepted",
-                  "delivered_at": OLD, "accepted_at": OLD}]},
-            {"id": "e2", "module": "professional-services", "name": "Tabletop 2026", "kind": "tabletop", "status": "active",
-             "lead": "", "progress": 0, "published": False, "ends_on": (NOW - dt.timedelta(days=9)).isoformat(), "created_at": OLD,
-             "subject": {"client_id": "y", "platform_client_id": "plat-hp", "client": "Harbor Point"}, "deliverables": []},
-        ]
-        self.escalations = []
-
-    def handler(self, req: httpx.Request) -> httpx.Response:
-        self.calls.append((req.url.host, req.method, req.url.path, req.headers.get("authorization"), req.headers.get("x-vendetta-actor")))
-        host, path = req.url.host, req.url.path
-        if host == "platform":
-            if path == "/api/platform/clients":
-                return httpx.Response(200, json={"clients": self.clients})
-            if path == "/api/platform/staff":
-                return httpx.Response(200, json=self.staff)
-            if path == "/api/platform/readiness":
-                return httpx.Response(200, json=self.readiness)
-            if path == "/api/platform/modules":
-                return httpx.Response(200, json={"modules": []})
-        if path == "/api/module":
-            return httpx.Response(200, json={"module": host, "enabled": True})
-        if path == "/api/findings":
-            return httpx.Response(200, json=self.findings.get(host, []))
-        if path == "/api/ir-cases":
-            return httpx.Response(200, json=self.cases)
-        if path == "/api/engagements":
-            assert req.url.params["status"] == "open"
-            return httpx.Response(200, json=self.engagements)
-        if path.startswith("/api/findings/") and path.endswith("/escalate"):
-            fid = path.split("/")[3]
-            self.escalations.append((host, fid))
-            return httpx.Response(200, json={"escalated": True, "case": "VCD-IR-2026-801", "linked": False})
-        if path == "/api/provision/sync":
-            return httpx.Response(200, json={"ok": True, "roster": 2, "added": 0, "updated": 2, "deactivated": 0})
-        return httpx.Response(404, json={"detail": "no route"})
-
-
-@pytest.fixture()
-def world(fresh_db, monkeypatch):
-    w = World()
-    monkeypatch.setattr(settings, "module_directory", json.dumps(DIRECTORY))
-    monkeypatch.setattr(settings, "platform_url", "http://platform:8000")
-    monkeypatch.setattr(settings, "platform_token", "ptok")
-    monkeypatch.setattr(settings, "anthropic_api_key", "")
-    reach.set_transport(httpx.MockTransport(w.handler))
-    yield w
-    reach.set_transport(None)
+# The mocked world lives in conftest.py; re-exported here for the modules that
+# import it from test_brain. pytest also finds the fixture in conftest directly.
+from conftest import DIRECTORY, FRESH, NOW, OLD, World, _finding, world  # noqa: F401,F811
 
 
 def test_cycle_builds_queue_proposes_and_acts_by_policy(world):

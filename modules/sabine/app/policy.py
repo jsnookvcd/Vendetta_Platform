@@ -12,6 +12,11 @@ auto, and anything that touches a client host (isolate, contain, quarantine) is
 not an action SABINE can take at all. For those it raises a proposal whose
 execution is a deep link into the module, where a person with the right grant
 clicks, with the second-person control that module enforces.
+
+Per client: an admin may override the level of one skill for one client
+(ClientPolicy) and the thresholds the rules use for that client (ClientThreshold).
+autonomy() takes the client a proposal targets and falls back to the global level;
+the high-risk ceiling applies to overrides too.
 """
 from __future__ import annotations
 
@@ -39,16 +44,145 @@ def seed_policies(db: Session) -> None:
     db.commit()
 
 
-def autonomy(db: Session, action: str) -> str:
+def _pid(client) -> str:
+    if isinstance(client, dict):
+        return str(client.get("id") or client.get("platform_client_id") or "")
+    return str(client or "")
+
+
+def client_override(db: Session, action: str, client) -> str | None:
+    from .db import ClientPolicy
+
+    pid = _pid(client)
+    if not pid:
+        return None
+    row = db.execute(select(ClientPolicy).where(ClientPolicy.platform_client_id == pid,
+                                                ClientPolicy.action == action)).scalar_one_or_none()
+    return row.autonomy if row else None
+
+
+def autonomy(db: Session, action: str, client=None) -> str:
+    """The level for one skill, for one client when given (a platform client id or a
+    client dict): the client's override when an admin set one, else the global row,
+    else the skill's default. A high-risk skill is never automatic either way."""
     from .db import Policy
 
     s = skills.get(action)
-    row = db.get(Policy, action)
-    level = row.autonomy if row else s.default
+    level = client_override(db, action, client)
+    if level is None:
+        row = db.get(Policy, action)
+        level = row.autonomy if row else s.default
     # Hard ceiling: high-risk skills are never automatic.
     if s.risk == "high" and level == "auto":
         return "propose"
     return level
+
+
+def set_client_autonomy(db: Session, pid: str, action: str, level: str, actor: str, client_name: str = "") -> str:
+    from .db import ClientPolicy, utcnow
+
+    if not pid or action not in skills.REGISTRY or level not in AUTONOMY:
+        raise ValueError("bad client, action or level")
+    if skills.get(action).risk == "high" and level == "auto":
+        raise ValueError("a high-risk action cannot be automatic, for any client")
+    row = db.execute(select(ClientPolicy).where(ClientPolicy.platform_client_id == pid,
+                                                ClientPolicy.action == action)).scalar_one_or_none()
+    if row is None:
+        row = ClientPolicy(platform_client_id=pid, action=action)
+        db.add(row)
+    row.autonomy, row.client, row.updated_by, row.updated_at = level, client_name or row.client, actor, utcnow()
+    db.commit()
+    return level
+
+
+def remove_client_autonomy(db: Session, override_id: str):
+    from .db import ClientPolicy
+
+    row = db.get(ClientPolicy, override_id)
+    if row is None:
+        return None
+    gone = {"platform_client_id": row.platform_client_id, "client": row.client, "action": row.action, "autonomy": row.autonomy}
+    db.delete(row)
+    db.commit()
+    return gone
+
+
+def client_overrides(db: Session) -> list:
+    from .db import ClientPolicy
+
+    return db.execute(select(ClientPolicy).order_by(ClientPolicy.client, ClientPolicy.action)).scalars().all()
+
+
+THRESHOLDS = ("escalate_after_minutes", "stale_case_days", "critical_ack_minutes")
+
+
+def threshold(db: Session, client, name: str, default: int) -> int:
+    """A per-client threshold when an admin set one, else the default given."""
+    from .db import ClientThreshold
+
+    pid = _pid(client)
+    row = db.get(ClientThreshold, pid) if pid else None
+    v = getattr(row, name, None) if row else None
+    return int(v) if v is not None else default
+
+
+def critical_ack(db: Session, client) -> tuple[int, str]:
+    """(minutes, source) for acknowledging a critical: the client's override in
+    SABINE, then the client's commitments on the platform, then the setting."""
+    from .config import settings
+    from .db import ClientThreshold
+
+    pid = _pid(client)
+    row = db.get(ClientThreshold, pid) if pid else None
+    if row is not None and row.critical_ack_minutes is not None:
+        return int(row.critical_ack_minutes), "client override"
+    c = (client.get("commitments") or {}) if isinstance(client, dict) else {}
+    try:
+        if c.get("critical_ack_minutes") is not None:
+            return int(c["critical_ack_minutes"]), f"{client.get('tier') or 'client'} commitment"
+    except (TypeError, ValueError):
+        pass
+    return int(settings.critical_ack_minutes), "default"
+
+
+def set_thresholds(db: Session, pid: str, values: dict, actor: str, client_name: str = ""):
+    from .db import ClientThreshold, utcnow
+
+    if not pid:
+        raise ValueError("client required")
+    clean: dict = {}
+    for k in THRESHOLDS:
+        v = values.get(k)
+        if v in (None, ""):
+            clean[k] = None
+            continue
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"{k} must be a whole number") from None
+        if n < 1 or n > 100000:
+            raise ValueError(f"{k} is out of range")
+        clean[k] = n
+    row = db.get(ClientThreshold, pid)
+    if all(v is None for v in clean.values()):
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        return None
+    if row is None:
+        row = ClientThreshold(platform_client_id=pid)
+        db.add(row)
+    for k, v in clean.items():
+        setattr(row, k, v)
+    row.client, row.updated_by, row.updated_at = client_name or row.client, actor, utcnow()
+    db.commit()
+    return row
+
+
+def client_thresholds(db: Session) -> list:
+    from .db import ClientThreshold
+
+    return db.execute(select(ClientThreshold).order_by(ClientThreshold.client)).scalars().all()
 
 
 def set_autonomy(db: Session, action: str, level: str, actor: str) -> str:

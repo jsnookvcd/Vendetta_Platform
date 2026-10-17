@@ -121,12 +121,16 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict], actions:
     return "\n".join(lines), "rules"
 
 
-def daily_summary(stats: dict, proposals: list[dict], actions: list[dict], measure: str = "") -> tuple[str, str]:
+def daily_summary(stats: dict, proposals: list[dict], actions: list[dict], measure: str = "",
+                  comms: list[dict] | None = None, pages: list[dict] | None = None) -> tuple[str, str]:
+    comms, pages = comms or [], pages or []
     today = dt.date.today().isoformat()
-    facts = {"date": today, "stats": stats, "proposals": proposals[:40], "actions": actions[:40], "trusted_action": measure}
+    facts = {"date": today, "stats": stats, "proposals": proposals[:40], "actions": actions[:40], "trusted_action": measure,
+             "communications_waiting_for_approval": comms[:40], "pages_sent": pages[:40]}
     text = _complete("Write the morning stand-up summary of what SABINE observed, proposed and did in the last day, "
-                     "and what is waiting on a person. Keep it to one screen. End with the trusted-action numbers in one sentence. "
-                     f"Facts (JSON): {facts}")
+                     "and what is waiting on a person, including the client communications waiting for approval on the "
+                     "platform and every page sent to the on-call responder. Keep it to one screen. End with the "
+                     f"trusted-action numbers in one sentence. Facts (JSON): {facts}")
     if text:
         return f"# SABINE daily summary, {today}\n\n" + text, "llm"
     opener = _greeting(stats) if settings.persona == "sabine" else ""
@@ -142,9 +146,152 @@ def daily_summary(stats: dict, proposals: list[dict], actions: list[dict], measu
         lines += ["## Waiting on you", ""]
         for p in proposals[:20]:
             lines.append(f"{p.get('title')} ({p.get('risk')} risk, {int(100 * p.get('confidence', 0))}% confidence)")
+        lines.append("")
+    lines += ["## Communications waiting for approval", ""]
+    if comms:
+        lines.append(f"{len(comms)} client communication(s) are drafts on the platform waiting for the account lead:")
+        for c in comms[:20]:
+            lines.append(f"{c.get('client')}: {c.get('title')} ({(c.get('kind') or '').replace('_', ' ')})")
+    else:
+        lines.append("No client communications are waiting for approval.")
+    lines += ["", "## Pages sent", ""]
+    if pages:
+        lines.append(f"{len(pages)} page(s) to the on-call responder today:")
+        for pg in pages[:20]:
+            lines.append(f"{pg.get('title')} (" + (", ".join(pg.get("sent") or []) or "no channel configured") + ")")
+    else:
+        lines.append("No pages to the on-call responder today.")
+    lines.append("")
     if measure:
         lines += ["", "## How I am doing", "", measure]
     return "\n".join(lines), "rules"
+
+
+SIGN_OFF = "Your Vendetta team"
+
+
+def _month_label(month: str) -> str:
+    try:
+        return dt.datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y")
+    except ValueError:
+        return month
+
+
+def posture_review(client: dict, month: str, findings: list[dict], cases: list[dict], journey: list[dict],
+                   actions: list[dict]) -> tuple[str, str]:
+    """The monthly posture review, client-facing. Returns (markdown, source). The
+    caller redacts the result; the model, when used, writes in the formal client
+    voice from these facts only."""
+    name, label = client.get("name", "the client"), _month_label(month)
+    by_sev: dict[str, int] = {}
+    by_mod: dict[str, int] = {}
+    for f in findings:
+        by_sev[f.get("severity", "low")] = by_sev.get(f.get("severity", "low"), 0) + 1
+        by_mod[f["_module"]] = by_mod.get(f["_module"], 0) + 1
+    mdr = [f for f in findings if f["_module"] == "mdr"]
+    visible = [j for j in journey if j.get("status") in ("planned", "in_progress", "done")]
+    done = [j for j in visible if j.get("status") == "done" and (j.get("updated_at") or "")[:7] == month]
+    doing = [j for j in visible if j.get("status") == "in_progress"]
+    planned = [j for j in visible if j.get("status") == "planned"]
+    commit = client.get("commitments") or {}
+    facts = {
+        "client": name, "month": label, "tier": client.get("tier"), "commitments": commit,
+        "severity_counts": by_sev, "findings_by_service": by_mod,
+        "investigations": [{"number": f.get("number"), "title": f.get("title"), "severity": f.get("severity"),
+                            "status": f.get("native_status") or f.get("status"), "verdict": f.get("verdict")} for f in mdr[:20]],
+        "open_cases": [{"number": c.get("number"), "title": c.get("title"), "severity": c.get("severity")} for c in cases],
+        "journey": {"done_this_month": [j.get("title") for j in done], "in_progress": [j.get("title") for j in doing],
+                    "planned": [j.get("title") for j in planned]},
+        "what_sabine_did": [{"date": a.get("at"), "action": a.get("what"), "why": a.get("why")} for a in actions[:30]],
+    }
+    text = _complete(
+        "Write the monthly security posture review for the client's leadership from these facts. Sections: Summary (two "
+        "sentences on where they stand), Detection and response, Open findings, Your security journey (done this month, in "
+        "progress, planned), What SABINE did on your account (each entry one line, exactly as given; if empty say nothing "
+        "was needed), and Next month. Never name a person. Never recommend an action on a host. "
+        f"Facts (JSON): {facts}", audience="client", max_tokens=1400)
+    head = [f"# {name}: security posture review, {label}", "", "_Prepared by SABINE for review by your Vendetta team_", ""]
+    if text:
+        return "\n".join(head) + "\n" + text + "\n\n" + SIGN_OFF, "llm"
+    lines = head + ["## Summary", ""]
+    if not findings and not cases:
+        lines.append(f"Nothing is active for {name} across Vendetta's monitoring, response and testing services. "
+                     "This was a quiet month, and we kept watching throughout.")
+    else:
+        sev = ", ".join(f"{n} {s}" for s, n in sorted(by_sev.items(), key=lambda kv: -perception_rank(kv[0])))
+        lines.append(f"{len(findings)} findings are active ({sev or 'none'}) and {len(cases)} incident case(s) are open. "
+                     "Each item below has an owner on your Vendetta team.")
+    lines += ["", "## Detection and response", ""]
+    if commit:
+        lines.append(f"Our commitment to you: acknowledge a critical detection within {commit.get('critical_ack_minutes')} minutes "
+                     f"and contain it within {commit.get('critical_contain_minutes')} minutes.")
+    if mdr:
+        for f in mdr[:10]:
+            lines.append(f"{f.get('number') or 'Investigation'}: {f.get('title')} ({f.get('severity')}, "
+                         f"{f.get('native_status') or f.get('status')}).")
+    else:
+        lines.append("No open investigations this month.")
+    for c in cases:
+        lines.append(f"{c.get('number')}: {c.get('title')} ({c.get('severity')}), handled by Vendetta incident response.")
+    lines += ["", "## Open findings", ""]
+    if by_mod:
+        for mod, n in sorted(by_mod.items(), key=lambda kv: -kv[1]):
+            label = "MDR" if mod == "mdr" else mod.replace('-', ' ').capitalize()
+            lines.append(f"{label}: {n} active.")
+    else:
+        lines.append("No open findings.")
+    lines += ["", "## Your security journey", ""]
+    if not visible:
+        lines.append("Your journey has no agreed items yet; your account lead will propose the first ones with you.")
+    for title_, rows in (("Done this month", done), ("In progress", doing), ("Planned", planned)):
+        if rows:
+            lines.append(f"{title_}: " + "; ".join(str(j.get("title")) for j in rows[:10]) + ".")
+    lines += ["", "## What SABINE did on your account", ""]
+    if actions:
+        for a in actions[:30]:
+            lines.append(f"{a.get('at')}: {a.get('what')}. {a.get('why')}".rstrip())
+    else:
+        lines.append("Nothing needed doing on your account this month beyond routine monitoring.")
+    lines += ["", "## Next month", "",
+              "We will keep the items above moving and walk through this review with you. Reply to this message with any "
+              "question and your account lead will pick it up.", "", SIGN_OFF]
+    return "\n".join(lines), "rules"
+
+
+def outreach(reason: str, client: dict, facts: dict) -> tuple[str, str, str]:
+    """(subject, markdown body, source) for a client email draft. Formal client
+    voice; the caller redacts both subject and body."""
+    name = client.get("name", "")
+    if reason == "campaign":
+        subject = "Activity we are tracking across several organizations"
+        body = (f"Hello,\n\nWe are tracking activity that is affecting several organizations we protect, and it has reached "
+                f"{name or 'your environment'}: \"{facts.get('pattern', '')}\". Your Vendetta team is already working it. "
+                "This pattern is a known campaign: we have seen how it behaves and how it is stopped.\n\n"
+                "You do not need to do anything today. We will tell you directly if that changes, and we will cover it in your "
+                f"next posture review.\n\n{SIGN_OFF}")
+    elif reason == "acceptance":
+        subject = f"Your review of {facts.get('deliverable') or 'a deliverable'}"
+        body = (f"Hello,\n\nWe delivered {facts.get('deliverable') or 'a deliverable'} for {facts.get('engagement') or 'your engagement'} "
+                f"{facts.get('age_days', 'several')} days ago, and it is waiting for your review in the client portal. When you have "
+                "a moment, please accept it there or tell us what should change, and we will turn it around.\n\n"
+                f"{SIGN_OFF}")
+    elif reason == "commitment":
+        subject = f"Update on investigation {facts.get('number') or ''}".strip()
+        body = (f"Hello,\n\nWe want you to hear this from us first. Investigation {facts.get('number') or ''} "
+                f"(\"{facts.get('title', '')}\") has been open {facts.get('age_minutes', 0)} minutes, and our containment commitment "
+                f"for a critical investigation is {facts.get('contain_minutes', 0)} minutes. "
+                + ("Your Vendetta team acknowledged it and is working it now. " if facts.get("acknowledged") else
+                   "Your Vendetta team is on it now. ")
+                + "We will send you the next update as soon as it is contained.\n\n" + SIGN_OFF)
+    else:
+        subject = "A note from your Vendetta team"
+        body = f"Hello,\n\n{facts.get('message') or 'We wanted to check in on where things stand.'}\n\n{SIGN_OFF}"
+    text = _complete(
+        "Rewrite this client email so it reads naturally, keeping every fact and adding none. Keep the greeting and the "
+        f"sign-off. Never name a person. Email:\n{body}", audience="client", max_tokens=600)
+    if text:
+        return subject, text, "llm"
+    return subject, body, "rules"
 
 
 def answer(question: str, picture: dict) -> tuple[str, str]:
@@ -187,6 +334,12 @@ def _what_was_done(skill, proposal, result: dict) -> str:
         return f"Noted {len(f.get('finding_ids') or [])} related findings for {f.get('client')} on the queue"
     if skill.key == "copilot_false_positive":
         return f"{f.get('finding_id')} is on the queue to confirm and close as a false positive"
+    if skill.key == "page_oncall":
+        return f"Paged the on-call responder for {f.get('finding_id')} on {f.get('client') or 'the client'}: {r.get('detail', '')}"
+    if skill.key == "posture_review":
+        return f"The posture review for {f.get('client')} is a draft on the platform, waiting for approval"
+    if skill.key == "client_outreach":
+        return f"The email to {f.get('client')} is a draft on the platform, waiting for approval"
     return f"{proposal.title}: {r.get('detail', 'done')}"
 
 

@@ -70,6 +70,48 @@ last ran (from the ledger) and its level: `off`, `propose` or `auto`. A high-ris
 skill can never be `auto`. Defaults: escalation and host actions propose;
 everything else (notes, nudges, re-syncs, briefs) is automatic.
 
+Below the catalog an admin sets per-client overrides: a level for one (client,
+skill) pair, and thresholds for one client (`escalate_after_minutes`,
+`stale_case_days`, `critical_ack_minutes`). The policy lookup takes the client a
+proposal targets and falls back to the global level; a high-risk skill is still
+never automatic. Every change is a ledger row.
+
+## Runs the business
+
+SABINE also reads `findings:mdr` (MDR investigations), MDR's closed history and
+suppressions, and each active client's Security Journey and communications on the
+platform. From those she:
+
+- pages the on-call responder (`page_oncall`, through `POST {ir}/api/oncall/page`)
+  when a critical MDR investigation or managed-services critical has no
+  acknowledgement past the client's `commitments.critical_ack_minutes`
+  (`CRITICAL_ACK_MINUTES`, default 15, when the client has none), at most once an
+  hour per detection;
+- proposes Security Journey items from evidence (`journey_suggest`: a recurring
+  pattern, overdue remediation, a pentest finding class, exposed credentials, no
+  detection service) and records progress when the evidence resolves
+  (`journey_progress`); a person accepts a proposal on the platform;
+- drafts the monthly posture review (`posture_review`) and client emails
+  (`client_outreach`: a cross-client campaign, a deliverable unaccepted past
+  `OUTREACH_ACCEPTANCE_DAYS`, a containment commitment at risk) as platform drafts,
+  redacted and in the formal client voice; a person approves before anything
+  reaches the client;
+- proposes an MDR suppression (`suggest_suppression`, medium, propose) when people
+  have called the same pattern noise for one client `SUPPRESSION_SUGGEST_AFTER`
+  times.
+
+Decision memory (`app/memory.py`) counts approvals and rejections per (skill,
+client, normalised title) and moves a new proposal's confidence by them, bounded,
+recording the adjustment in the proposal's facts.
+
+With `HARVEST_ACCOUNT_ID` and `HARVEST_TOKEN`, and `HUBSPOT_TOKEN`, the Business
+tab shows budget burn, capacity, renewals and new wins, and SABINE raises
+`engagement_budget_burn` (`BUDGET_BURN_PCT`, 80), `capacity_overload`
+(`CAPACITY_PCT`, 110), `renewal_upcoming` (`RENEWAL_DAYS`, 60) and
+`won_not_onboarded` as services work items. Without credentials the source is
+skipped and readiness reports it as not configured. The Concierge tab lists, per
+client, the journey items and communications she raised and their state.
+
 ## Narrative
 
 With `ANTHROPIC_API_KEY` set, a Claude model writes the briefs, the daily summary
@@ -119,7 +161,10 @@ the autonomous share, the fraction of proposals raised in the window that she
 closed without a person. `compute()` is a pure function over ledger rows;
 `get()` caches the answer for a minute and a cycle or a decision clears it. The
 numbers show as a block on the Overview, a tile on the board, a sentence at the
-end of the daily summary, and at `GET /api/metrics`.
+end of the daily summary, and at `GET /api/metrics`. A posture review or outreach
+draft is counted as drafted and left out of the automatic latency and the
+autonomous share, since a person still approves it on the platform. The daily
+summary also lists the communications waiting for approval and the pages sent.
 
 ## Why, for clients
 

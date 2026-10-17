@@ -14,19 +14,20 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import reach
+from . import business, reach
 from .config import settings
 from .db import Snapshot, WorkItem, utcnow
 
 log = logging.getLogger(__name__)
 
-FINDING_MODULES = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
+FINDING_MODULES = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing", "mdr"]
 # Where a person opens a finding in each module, by the finding id.
 FINDING_PATH = {
     "dark-web-monitoring": "/hits/{id}",
     "managed-services": "/alerts/{id}",
     "vulnerability-management": "/findings/{id}",
     "penetration-testing": "/findings/{id}",
+    "mdr": "/investigations/{id}",
 }
 SEV_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 # The Office of Special Projects serves engagements, not findings.
@@ -58,6 +59,13 @@ def observe(db: Session) -> dict:
             res = reach.get("platform", path, params=params, timeout=30.0)
             _snap(db, f"platform:{name}", res)
             seen[f"platform:{name}"] = res["ok"]
+        # The Security Journey and the communications of every active client.
+        db.flush()
+        for c in active_clients(db):
+            for name in ("journey", "communications"):
+                res = reach.get("platform", f"/api/platform/clients/{c['id']}/{name}", timeout=20.0)
+                _snap(db, f"{name}:{c['id']}", res)
+                seen[f"{name}:{c['id']}"] = res["ok"]
     for key in d:
         if key == "platform":
             continue
@@ -68,6 +76,15 @@ def observe(db: Session) -> dict:
             res = reach.get(key, "/api/findings", params={"status": "active"}, timeout=20.0)
             _snap(db, f"findings:{key}", res)
             seen[f"findings:{key}"] = res["ok"]
+        if key == "mdr":
+            # Closed investigations (verdicts people gave) and the suppressions in
+            # force, for decision memory and suggest_suppression.
+            res = reach.get(key, "/api/findings", params={"status": "all"}, timeout=30.0)
+            _snap(db, "history:mdr", res)
+            seen["history:mdr"] = res["ok"]
+            res = reach.get(key, "/api/suppressions", timeout=20.0)
+            _snap(db, "suppressions:mdr", res)
+            seen["suppressions:mdr"] = res["ok"]
         if key == "incident-response":
             res = reach.get(key, "/api/ir-cases", params={"status": "active"}, timeout=20.0)
             _snap(db, f"cases:{key}", res)
@@ -76,8 +93,38 @@ def observe(db: Session) -> dict:
             res = reach.get(key, "/api/engagements", params={"status": "open"}, timeout=20.0)
             _snap(db, f"engagements:{key}", res)
             seen[f"engagements:{key}"] = res["ok"]
+    seen.update(observe_business(db))
     db.commit()
     return seen
+
+
+def _source(fn) -> dict:
+    try:
+        return {"ok": True, "data": fn(), "detail": ""}
+    except business.SourceError as e:
+        return {"ok": False, "data": None, "detail": str(e)}
+
+
+def observe_business(db: Session) -> dict:
+    """Harvest and HubSpot, each only when its credentials are set."""
+    seen: dict[str, bool] = {}
+    h = business.harvest()
+    if h.configured:
+        for name, fn in (("projects", h.projects), ("capacity", h.capacity)):
+            res = _source(fn)
+            _snap(db, f"harvest:{name}", res)
+            seen[f"harvest:{name}"] = res["ok"]
+    hs = business.hubspot()
+    if hs.configured:
+        res = _source(lambda: hs.deals(settings.renewal_days, settings.won_lookback_days))
+        _snap(db, "hubspot:deals", res)
+        seen["hubspot:deals"] = res["ok"]
+    return seen
+
+
+def ok(db: Session, source: str) -> bool:
+    row = db.get(Snapshot, source)
+    return bool(row and row.ok)
 
 
 def snapshot(db: Session, source: str):
@@ -120,6 +167,53 @@ def engagements(db: Session) -> list[dict]:
 def clients(db: Session) -> list[dict]:
     p = snapshot(db, "platform:clients")
     return list((p or {}).get("clients") or []) if isinstance(p, dict) else []
+
+
+def active_clients(db: Session) -> list[dict]:
+    return [c for c in clients(db) if c.get("id") and c.get("active", True) is not False
+            and (c.get("status") or "active") not in ("inactive", "offboarded")]
+
+
+def client(db: Session, pid: str) -> dict | None:
+    return next((c for c in clients(db) if c.get("id") == pid), None)
+
+
+def journey(db: Session, pid: str) -> list[dict] | None:
+    """The client's Security Journey items, or None when it could not be read."""
+    p = snapshot(db, f"journey:{pid}")
+    return list(p.get("items") or []) if isinstance(p, dict) else None
+
+
+def communications(db: Session, pid: str) -> list[dict] | None:
+    p = snapshot(db, f"communications:{pid}")
+    return list(p.get("items") or []) if isinstance(p, dict) else None
+
+
+def mdr_history(db: Session) -> list[dict]:
+    rows = snapshot(db, "history:mdr")
+    return list(rows) if isinstance(rows, list) else []
+
+
+def suppressions(db: Session) -> list[dict]:
+    rows = snapshot(db, "suppressions:mdr")
+    if isinstance(rows, dict):
+        rows = rows.get("items") or rows.get("suppressions") or []
+    return list(rows) if isinstance(rows, list) else []
+
+
+def harvest_projects(db: Session) -> list[dict]:
+    rows = snapshot(db, "harvest:projects")
+    return list(rows) if isinstance(rows, list) else []
+
+
+def harvest_capacity(db: Session) -> list[dict]:
+    rows = snapshot(db, "harvest:capacity")
+    return list(rows) if isinstance(rows, list) else []
+
+
+def hubspot_deals(db: Session) -> dict:
+    p = snapshot(db, "hubspot:deals")
+    return p if isinstance(p, dict) else {"renewals": [], "won": []}
 
 
 def staff(db: Session) -> dict:

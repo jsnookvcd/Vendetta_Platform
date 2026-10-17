@@ -1,9 +1,10 @@
 """What SABINE reports to the control plane's go-live screen, in the same shape
 every module uses, plus its own: how many modules it can reach, when it last
-ran, and whether the chain verifies."""
+ran, whether the chain verifies, and which optional business sources (Harvest,
+HubSpot) are configured."""
 from __future__ import annotations
 
-from . import boot, brain, provision, reach, sso
+from . import boot, brain, business, provision, reach, sso
 from .config import settings
 
 MODULE = "sabine"
@@ -44,6 +45,8 @@ def integrations() -> dict:
         "last_cycle_ok": brain.LAST["ok"],
         "last_cycle_at": brain.LAST["at"].isoformat() if brain.LAST["at"] else None,
         "last_cycle_detail": brain.LAST["detail"],
+        # Optional business sources: "configured" or "not configured" (skipped).
+        "business": business.status(),
     }
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import re
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -21,7 +22,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, intent, ledger, metrics, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
+from . import auth, boot, brain, business, intent, ledger, metrics, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
 from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
@@ -262,7 +263,134 @@ def policy_page(request: Request, user: str = auth.RequireUser, db: Session = De
     rows = {r["key"]: r for r in policy.table(db)}
     groups = [(label, [rows[s.key] for s in ss]) for _, label, ss in skills.by_domain()]
     return render(request, "policy.html", user=user, groups=groups, is_admin=_is_admin(request),
-                  levels=policy.AUTONOMY)
+                  levels=policy.AUTONOMY, overrides=policy.client_overrides(db), thresholds=policy.client_thresholds(db),
+                  clients=sorted(perception.clients(db), key=lambda c: c.get("name", "")), catalog=list(skills.REGISTRY.values()),
+                  defaults={"escalate_after_minutes": settings.escalate_after_minutes, "stale_case_days": settings.stale_case_days,
+                            "critical_ack_minutes": settings.critical_ack_minutes})
+
+
+# ---------------------------------------------------------------- business and concierge
+def _business_view(db: Session) -> dict:
+    st = business.status()
+    snaps = perception.snapshots(db)
+
+    def src(name: str) -> dict:
+        s = snaps.get(name)
+        return {"ok": bool(s and s.ok), "detail": (s.detail if s else "not read yet"), "at": s.at if s else None}
+    projects = sorted(perception.harvest_projects(db), key=lambda p: -(p.get("pct") or 0)) if st["harvest"] == "configured" else []
+    people = sorted(perception.harvest_capacity(db), key=lambda u: -(u.get("pct") or 0)) if st["harvest"] == "configured" else []
+    deals = perception.hubspot_deals(db) if st["hubspot"] == "configured" else {"renewals": [], "won": []}
+    names = {" ".join(re.findall(r"[a-z0-9]+", c.get("name", "").lower())): c for c in perception.active_clients(db)}
+    won = []
+    for d in deals.get("won") or []:
+        key = " ".join(w for w in re.findall(r"[a-z0-9]+", (d.get("company") or "").lower()) if w not in ("inc", "llc", "ltd", "the", "co", "corp"))
+        won.append({**d, "onboarded": key in names})
+    items = db.execute(select(WorkItem).where(WorkItem.source == "sabine", WorkItem.kind.in_(("budget", "capacity", "renewal", "onboarding")),
+                                              WorkItem.state.in_(("open", "claimed")))).scalars().all()
+    return {"status": st, "sources": {k: src(k) for k in ("harvest:projects", "harvest:capacity", "hubspot:deals")},
+            "projects": projects, "people": people, "renewals": deals.get("renewals") or [], "won": won,
+            "work": items, "burn_pct": settings.budget_burn_pct, "capacity_pct": settings.capacity_pct,
+            "renewal_days": settings.renewal_days}
+
+
+def _concierge_view(db: Session) -> list[dict]:
+    """Per active client: the journey items and communications SABINE raised, with
+    their state on the platform, and her proposals that have not reached it."""
+    mine = ("journey_suggest", "journey_progress", "posture_review", "client_outreach")
+    open_props = db.execute(select(Proposal).where(Proposal.action.in_(mine), Proposal.status.in_(("pending", "failed")))
+                            .order_by(desc(Proposal.created_at))).scalars().all()
+    pub = reach.public_url("platform")
+    out = []
+    for c in sorted(perception.active_clients(db), key=lambda c: c.get("name", "")):
+        j, m = perception.journey(db, c["id"]), perception.communications(db, c["id"])
+        out.append({"client": c, "journey_read": j is not None, "comms_read": m is not None,
+                    "journey": [i for i in (j or []) if i.get("source") == "sabine"],
+                    "communications": [i for i in (m or []) if i.get("source") == "sabine"],
+                    "proposals": [p for p in open_props if (p.target or {}).get("platform_client_id") == c["id"]],
+                    "link": f"{pub}/clients/{c['id']}" if pub else ""})
+    return out
+
+
+@app.get("/business", response_class=HTMLResponse)
+def business_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    return render(request, "business.html", user=user, v=_business_view(db))
+
+
+@app.get("/concierge", response_class=HTMLResponse)
+def concierge_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    return render(request, "concierge.html", user=user, rows=_concierge_view(db))
+
+
+@app.get("/api/business")
+def api_business(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    v = _business_view(db)
+    return {"status": v["status"], "projects": v["projects"], "capacity": v["people"], "renewals": v["renewals"], "won": v["won"],
+            "thresholds": {"budget_burn_pct": v["burn_pct"], "capacity_pct": v["capacity_pct"], "renewal_days": v["renewal_days"]}}
+
+
+@app.get("/api/concierge")
+def api_concierge(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    return [{"platform_client_id": r["client"]["id"], "client": r["client"]["name"], "journey": r["journey"],
+             "communications": [{k: v for k, v in i.items() if k != "body_md"} for i in r["communications"]],
+             "waiting": [{"id": p.id, "action": p.action, "title": p.title, "status": p.status} for p in r["proposals"]]}
+            for r in _concierge_view(db)]
+
+
+def _client_name(db: Session, pid: str) -> str:
+    c = perception.client(db, pid)
+    return c["name"] if c else ""
+
+
+@app.post("/policy/client")
+def policy_client_set(platform_client_id: str = Form(...), action: str = Form(...), autonomy: str = Form(...),
+                      user: str = RequireAdmin, db: Session = Depends(get_db)):
+    """A per-client autonomy override. A high-risk skill can never be auto here either."""
+    name = _client_name(db, platform_client_id)
+    if not name:
+        return _back("/policy#clients", False, "Unknown client; run a cycle so SABINE sees the platform's clients.")
+    try:
+        policy.set_client_autonomy(db, platform_client_id, action, autonomy, user, name)
+    except ValueError as e:
+        return _back("/policy#clients", False, str(e))
+    ledger.append(db, "decision", user, f"policy: {action} for {name} -> {autonomy}",
+                  {"action": action, "autonomy": autonomy, "platform_client_id": platform_client_id, "client": name})
+    return _back("/policy#clients", True, f"{skills.get(action).title} for {name}: {autonomy}.")
+
+
+@app.post("/policy/client/{oid}/remove")
+def policy_client_remove(oid: str, user: str = RequireAdmin, db: Session = Depends(get_db)):
+    gone = policy.remove_client_autonomy(db, oid)
+    if gone is None:
+        raise HTTPException(404)
+    ledger.append(db, "decision", user, f"policy: {gone['action']} for {gone['client'] or gone['platform_client_id']} -> global",
+                  {"removed": gone})
+    return _back("/policy#clients", True, f"Override removed; {gone['client'] or 'the client'} follows the global level again.")
+
+
+@app.post("/policy/thresholds")
+def policy_thresholds_set(platform_client_id: str = Form(...), escalate_after_minutes: str = Form(""),
+                          stale_case_days: str = Form(""), critical_ack_minutes: str = Form(""),
+                          user: str = RequireAdmin, db: Session = Depends(get_db)):
+    name = _client_name(db, platform_client_id)
+    if not name:
+        return _back("/policy#thresholds", False, "Unknown client; run a cycle so SABINE sees the platform's clients.")
+    values = {"escalate_after_minutes": escalate_after_minutes.strip(), "stale_case_days": stale_case_days.strip(),
+              "critical_ack_minutes": critical_ack_minutes.strip()}
+    try:
+        row = policy.set_thresholds(db, platform_client_id, values, user, name)
+    except ValueError as e:
+        return _back("/policy#thresholds", False, str(e))
+    ledger.append(db, "decision", user, f"thresholds: {name} -> " + (", ".join(f"{k}={v}" for k, v in values.items() if v) or "defaults"),
+                  {"platform_client_id": platform_client_id, "client": name, "thresholds": {k: (int(v) if v else None) for k, v in values.items()}})
+    return _back("/policy#thresholds", True, f"Thresholds for {name} saved." if row else f"{name} uses the defaults again.")
+
+
+@app.post("/policy/thresholds/{pid}/remove")
+def policy_thresholds_remove(pid: str, user: str = RequireAdmin, db: Session = Depends(get_db)):
+    name = _client_name(db, pid)
+    policy.set_thresholds(db, pid, {}, user, name)
+    ledger.append(db, "decision", user, f"thresholds: {name or pid} -> defaults", {"platform_client_id": pid, "client": name})
+    return _back("/policy#thresholds", True, f"{name or 'The client'} uses the defaults again.")
 
 
 @app.post("/policy/{action}")
@@ -468,6 +596,7 @@ def settings_page(request: Request, user: str = auth.RequireUser, db: Session = 
         "voice": voice.voice_label(),
         "board": "on (kiosk token set)" if settings.kiosk_token else "staff sessions only (KIOSK_TOKEN unset)",
         "reach": ", ".join(sorted(reach.directory())) or "nothing (MODULE_DIRECTORY unset)",
+        "business": ", ".join(f"{k} {v}" for k, v in business.status().items()),
         "platform": provision.state(),
     }
     return render(request, "settings.html", user=user, cfg=cfg, api_token=auth.api_token(), n_users=n_users)
@@ -583,7 +712,8 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
     return {
         "module": "sabine", "display_name": "SABINE", "platform": "Vendetta Platform", "role": "agent",
         "enabled": settings.module_enabled, "public_url": settings.public_url,
-        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/metrics", "/api/ledger/verify", "/api/module"],
+        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/metrics",
+                      "/api/business", "/api/concierge", "/api/ledger/verify", "/api/module"],
         "readiness": readiness_mod.block(),
         "stats": brain.stats(db),
     }

@@ -22,7 +22,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import perception, policy, reach, skills
+from . import memory, perception, policy, reach, skills
 from .config import settings
 from .db import Proposal, WorkItem, utcnow
 
@@ -46,23 +46,52 @@ def _pending(db: Session, key: str) -> Proposal | None:
                       .order_by(Proposal.created_at.desc()).limit(1)).scalar_one_or_none()
 
 
+def _client_id(facts: dict, target: dict) -> str:
+    return str((target or {}).get("platform_client_id") or (facts or {}).get("platform_client_id") or "")
+
+
+def _recently_rejected(db: Session, key: str, hours: float) -> bool:
+    since = utcnow() - dt.timedelta(hours=hours)
+    return db.execute(select(Proposal.id).where(Proposal.key == key, Proposal.status == "rejected",
+                                                Proposal.decided_at >= since).limit(1)).first() is not None
+
+
 def propose(db: Session, action: str, key: str, title: str, rationale: str, facts: dict, target: dict,
-            confidence: float, domain: str | None = None, work_item: WorkItem | None = None) -> Proposal | None:
-    """Raise a proposal unless an equivalent one is already pending or was executed
-    recently, or the action is switched off. The action must be a skill in the
-    catalog; the proposal takes its domain and risk from there."""
+            confidence: float, domain: str | None = None, work_item: WorkItem | None = None,
+            window_hours: float = 24, reject_cooldown_hours: float = 0, signature: str | None = None) -> Proposal | None:
+    """Raise a proposal unless an equivalent one is already pending, was executed
+    inside the dedupe window (24 hours unless the rule says otherwise), was rejected
+    inside the rule's cool-down, or the action is switched off. The action must be a
+    skill in the catalog; the proposal takes its domain and risk from there.
+
+    When the proposal targets a client, the client's autonomy override applies, and
+    decision memory adjusts the confidence by what people decided before on the same
+    (skill, client, signature); the adjustment is written into the facts."""
     skill = skills.get(action)
-    level = policy.autonomy(db, action)
+    pid = _client_id(facts, target)
+    level = policy.autonomy(db, action, pid or None)
     if level == "off":
         return None
     prior = _pending(db, key)
     if prior is not None:
-        if prior.status == "executed" and prior.executed_at and (utcnow() - prior.executed_at) < dt.timedelta(hours=24):
+        if prior.status == "executed" and prior.executed_at and (utcnow() - prior.executed_at) < dt.timedelta(hours=window_hours):
             return None
         if prior.status in ("pending", "approved"):
             return None
+    if reject_cooldown_hours and _recently_rejected(db, key, reject_cooldown_hours):
+        return None
+    facts = dict(facts or {})
+    confidence = max(0.0, min(1.0, confidence))
+    if pid:
+        sig = signature or facts.get("signature") or memory.signature(facts.get("title") or title)
+        facts["signature"] = sig
+        confidence, record = memory.adjust(db, action, pid, sig, confidence)
+        if record:
+            facts["memory"] = record
+            rationale += (f" Decision memory: people approved {record['approved']} and rejected {record['rejected']} "
+                          f"earlier proposals like this for this client, so confidence moved {record['adjustment']:+.2f}.")
     p = Proposal(key=key, action=action, domain=domain or skill.domain, title=title[:400], rationale=rationale,
-                 facts=facts, target=target, confidence=max(0.0, min(1.0, confidence)), risk=skill.risk,
+                 facts=facts, target=target, confidence=confidence, risk=skill.risk,
                  autonomy=level, work_item_id=work_item.id if work_item else None)
     db.add(p)
     db.flush()
@@ -110,12 +139,13 @@ def soc_rules(db: Session) -> list[Proposal]:
                 out.append(p)
             continue
         age = _age_minutes(f.get("created_at"))
-        if age < threshold:
+        limit = policy.threshold(db, subj.get("platform_client_id"), "escalate_after_minutes", threshold)
+        if age < limit:
             continue
         confidence = 0.9 if sev == "critical" else 0.75
         why = (f"A {sev} finding (\"{f.get('title', '')}\") has been active in {mod} for "
                f"{int(age)} minutes with no IR case attached. Policy escalates {sev} findings after "
-               f"{threshold} minutes so a responder owns it on the {f.get('workstream', 'Scoping and Containment')} workstream.")
+               f"{limit} minutes so a responder owns it on the {f.get('workstream', 'Scoping and Containment')} workstream.")
         facts = {"module": mod, "finding_id": f["id"], "severity": sev, "age_minutes": int(age),
                  "title": f.get("title"), "client": subj.get("client"), "platform_client_id": subj.get("platform_client_id"),
                  "matched": f.get("matched")}
@@ -177,7 +207,8 @@ def soc_rules(db: Session) -> list[Proposal]:
             (f"A critical {f.get('type')} alert is active on {host} for {subj.get('client', '')}: \"{f.get('title', '')}\". "
              "SABINE does not touch hosts. A responder with the act grant should decide on isolation in managed services, "
              "where the second-person control applies."),
-            {"module": "managed-services", "finding_id": f["id"], "host": host, "client": subj.get("client"), "type": f.get("type")},
+            {"module": "managed-services", "finding_id": f["id"], "host": host, "client": subj.get("client"), "type": f.get("type"),
+             "platform_client_id": subj.get("platform_client_id") or "", "title": f.get("title")},
             {"module": "managed-services", "id": f["id"],
              "link": (reach.public_url("managed-services") + f"/alerts/{f['id']}") if reach.public_url("managed-services") else ""},
             0.6)
@@ -274,7 +305,7 @@ def services_rules(db: Session) -> list[Proposal]:
     out: list[Proposal] = []
     for c in perception.cases(db):
         days = _age_minutes(c.get("last_update_at") or c.get("opened_at")) / 1440
-        if days < settings.stale_case_days:
+        if days < policy.threshold(db, (c.get("client") or {}).get("platform_client_id"), "stale_case_days", settings.stale_case_days):
             continue
         board = c.get("board") or {}
         name = (c.get("client") or {}).get("name", "")
@@ -337,7 +368,10 @@ def services_rules(db: Session) -> list[Proposal]:
 
 
 def run(db: Session) -> list[Proposal]:
-    out = soc_rules(db) + admin_rules(db) + services_rules(db)
+    from . import concierge
+
+    out = (soc_rules(db) + concierge.soc_rules(db) + admin_rules(db) + services_rules(db)
+           + concierge.services_rules(db) + concierge.business_rules(db))
     db.commit()
     return out
 
