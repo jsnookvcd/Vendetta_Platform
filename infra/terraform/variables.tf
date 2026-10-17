@@ -35,7 +35,7 @@ variable "git_ref" {
 # deploys it. Ports match each module's docker-compose. Add a module here when it is
 # ready to deploy.
 variable "modules" {
-  description = "key => { subdir, port, deploy }. Every built module; mdr and network-operations join when they exist."
+  description = "key => { subdir, port, deploy }. Every built module; network-operations joins when it exists."
   type = map(object({
     subdir = string
     port   = number
@@ -80,6 +80,11 @@ variable "modules" {
     professional-services = {
       subdir = "modules/professional-services"
       port   = 8700
+      deploy = true
+    }
+    mdr = {
+      subdir = "modules/mdr"
+      port   = 8800
       deploy = true
     }
   }
@@ -158,6 +163,7 @@ variable "module_hosts" {
     penetration-testing      = "pentest"
     sabine                   = "sabine"
     professional-services    = "osp"
+    mdr                      = "mdr"
   }
 }
 

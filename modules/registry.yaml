@@ -13,7 +13,9 @@ modules:
     provisioning: /api/platform/clients
     notes: >-
       The front door and system of record for clients, per-client module
-      enablement, and per-client tool mapping. Every client module pulls its roster
+      enablement, per-client tool mapping, service tier and response commitments,
+      the Security Journey and client communications. Client 360 across every
+      module, and the client portal home that links into every service line. Every client module pulls its roster
       from it (and is pushed a sync when a client changes); the overview and
       readiness screen read their live state back. Deep links into each module's
       view of a client.
@@ -119,8 +121,18 @@ modules:
   - name: mdr
     display_name: Managed Detection and Response
     service_lines: [managed-security]
-    status: planned
+    status: in-progress
     enablement: MODULE_ENABLED
+    manifest: /api/module
+    findings: /api/findings
+    escalation: /api/findings/{id}/escalate
+    notes: >-
+      Detection and investigation over managed-services signals (EDR, identity,
+      cloud, backup). Rules are data an admin reads and edits, mapped to MITRE
+      ATT&CK, with per-client overrides and expiring suppressions ("this was
+      noise"). Investigations carry a verdict, a signed timeline and a containment
+      hand-off to managed services; MDR never acts on a host. Publishes MTTD, MTTA
+      and MTTR per client. Client portal. Port 8800, host mdr.
 
   - name: managed-services
     display_name: Managed Services

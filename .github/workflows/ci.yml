@@ -43,6 +43,9 @@ jobs:
           - module: ai-triage
             role: aitriage
             db: aitriage_test
+          - module: mdr
+            role: mdr
+            db: mdr_test
 
     services:
       postgres:
@@ -97,7 +100,7 @@ jobs:
       fail-fast: false
       matrix:
         module: [platform, incident-response, managed-services, dark-web-monitoring,
-                 vulnerability-management, penetration-testing, sabine, professional-services]
+                 vulnerability-management, penetration-testing, sabine, professional-services, mdr]
     steps:
       - uses: actions/checkout@v4
       - name: Build the module image the host builds

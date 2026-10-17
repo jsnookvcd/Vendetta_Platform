@@ -253,8 +253,8 @@ resource "random_password" "admin" {
 }
 
 locals {
-  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine", "professional-services"]
-  finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
+  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine", "professional-services", "mdr"]
+  finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing", "mdr"]
   # Modules that escalate into the IR hub: the finding modules, plus the Office of
   # Special Projects, which opens a case from an engagement without serving findings.
   hub_modules    = concat(local.finding_modules, ["professional-services"])
@@ -358,6 +358,14 @@ resource "aws_ssm_parameter" "module_directory" {
   value = jsonencode(local.module_directory)
 }
 
+# MDR pulls signals from managed services with the managed-services API token.
+resource "aws_ssm_parameter" "mdr_signal_token" {
+  count = contains(keys(local.deployed), "mdr") && contains(keys(local.deployed), "managed-services") ? 1 : 0
+  name  = "${var.ssm_prefix}/mdr/MANAGED_SERVICES_TOKEN"
+  type  = "SecureString"
+  value = random_password.api_token["managed-services"].result
+}
+
 # SABINE's board: the wall-display token (open <sabine host>/board?k=<token> once on
 # the display; it keeps a cookie from then on).
 resource "random_password" "kiosk" {
@@ -424,6 +432,12 @@ resource "aws_ssm_parameter" "common" {
     # Managed services starts read-only: no tool action can fire until an operator
     # sets <prefix>/managed-services/ACTIONS_READONLY=false and redeploys.
     each.key == "managed-services" ? { ACTIONS_READONLY = "true" } : {},
+    # MDR reads its signals from managed services by service name and links a
+    # responder to the managed-services alert page for any containment hand-off.
+    each.key == "mdr" && contains(keys(local.deployed), "managed-services") ? merge(
+      { MANAGED_SERVICES_URL = local.service_url["managed-services"] },
+      local.public_url["managed-services"] != "" ? { MANAGED_SERVICES_PUBLIC_URL = local.public_url["managed-services"] } : {}
+    ) : {},
     # SABINE speaks in Azure's Jane (Dragon HD) once an operator adds
     # <prefix>/sabine/AZURE_SPEECH_KEY (SecureString) and AZURE_SPEECH_REGION and
     # redeploys; until then she falls back to the browser's own voice.
