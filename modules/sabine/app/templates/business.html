@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% block title %}Business{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">Budgets and capacity from Harvest, renewals and new wins from HubSpot. SABINE raises a services work item when a project passes {{ v.burn_pct }}% of its budget, a person passes {{ v.capacity_pct }}% of capacity this week, a renewal closes inside {{ v.renewal_days }} days, or a won deal is not onboarded on the platform.</p>
+
+<div class="row" style="gap:12px; margin-bottom:16px; flex-wrap:wrap">
+  {% for name, label, keys in (("harvest", "Harvest", ("harvest:projects", "harvest:capacity")), ("hubspot", "HubSpot", ("hubspot:deals",))) %}
+  <div class="panel pad" style="flex:1; min-width:220px">
+    <div class="faint" style="font-size:12px">{{ label }}</div>
+    {% if v.status[name] == 'configured' %}
+      {% for k in keys %}{% set s = v.sources[k] %}<div style="font-size:13px"><span class="hdot {{ 'up' if s.ok else 'down' }}"></span> {{ k.split(':')[1] }}: {{ 'read ' ~ s.at.strftime('%b %d %H:%M') if s.ok and s.at else s.detail }}</div>{% endfor %}
+    {% else %}
+      <div style="font-size:16px"><b>not configured</b></div>
+      <div class="faint" style="font-size:12px">{% if name == 'harvest' %}Set HARVEST_ACCOUNT_ID and HARVEST_TOKEN{% else %}Set HUBSPOT_TOKEN (and HUBSPOT_RENEWAL_PIPELINE if renewals live in their own pipeline){% endif %}. Until then SABINE skips this source.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Open business items</div><div style="font-size:26px"><b>{{ v.work|length }}</b></div><div class="faint" style="font-size:12px"><a class="alink" href="/queue?domain=services">services queue</a></div></div>
+</div>
+
+{% if v.status.harvest == 'configured' %}
+<div class="section-head"><h2>Engagement budget burn</h2><span class="count">{{ v.projects|length }} active projects</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Project</th><th>Client</th><th class="num">Budget</th><th class="num">Spent</th><th class="num">Used</th></tr></thead>
+  <tbody>{% for pj in v.projects %}<tr>
+    <td><b>{{ pj.name }}</b></td><td class="faint">{{ pj.client }}</td>
+    <td class="num">{{ '{:,.0f}'.format(pj.budget) if pj.budget else 'none' }}</td><td class="num">{{ '{:,.0f}'.format(pj.spent) }}</td>
+    <td class="num">{% if pj.pct is not none %}<span class="stchip st-{{ 'critical' if pj.pct >= 100 else ('high' if pj.pct >= v.burn_pct else 'low') }}">{{ pj.pct|round|int }}%</span>{% else %}<span class="faint">no budget</span>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="5" class="faint">No active projects in Harvest.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+
+<div class="section-head"><h2>Capacity this week</h2><span class="count">{{ v.people|length }} people</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Person</th><th class="num">Hours</th><th class="num">Capacity</th><th class="num">Load</th></tr></thead>
+  <tbody>{% for u in v.people %}<tr>
+    <td><b>{{ u.name or u.email }}</b></td><td class="num">{{ u.hours }}</td><td class="num">{{ u.capacity_hours }}</td>
+    <td class="num">{% if u.pct is not none %}<span class="stchip st-{{ 'high' if u.pct >= v.capacity_pct else 'low' }}">{{ u.pct|round|int }}%</span>{% else %}<span class="faint">no capacity set</span>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="4" class="faint">No active users in Harvest.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endif %}
+
+{% if v.status.hubspot == 'configured' %}
+<div class="section-head"><h2>Renewals</h2><span class="count">closing inside {{ v.renewal_days }} days</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Company</th><th>Deal</th><th>Closes</th><th>Stage</th><th class="num">Amount</th></tr></thead>
+  <tbody>{% for d in v.renewals %}<tr>
+    <td><b>{{ d.company or 'unknown company' }}</b></td><td class="faint">{{ d.name }}</td><td class="nowrap">{{ d.close_date }}</td>
+    <td class="faint">{{ d.stage }}</td><td class="num">{{ '{:,.0f}'.format(d.amount) }}</td>
+  </tr>{% else %}<tr><td colspan="5" class="faint">No renewals in the window.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+
+<div class="section-head"><h2>New wins</h2><span class="count">closed won in the last 30 days</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Company</th><th>Deal</th><th>Closed</th><th class="num">Amount</th><th>On the platform</th></tr></thead>
+  <tbody>{% for d in v.won %}<tr>
+    <td><b>{{ d.company or 'unknown company' }}</b></td><td class="faint">{{ d.name }}</td><td class="nowrap">{{ d.close_date }}</td>
+    <td class="num">{{ '{:,.0f}'.format(d.amount) }}</td><td>{% if d.onboarded %}<span class="pill pill-ok">onboarded</span>{% else %}<span class="pill pill-warn">not yet</span>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="5" class="faint">No wins in the last 30 days.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endif %}
+
+<div class="section-head"><h2>What SABINE raised</h2></div>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Sev</th><th>Item</th><th>Raised</th></tr></thead>
+  <tbody>{% for w in v.work %}<tr>
+    <td><span class="stchip st-{{ w.severity }}">{{ w.severity }}</span></td><td>{{ w.title }}</td>
+    <td class="faint nowrap">{{ w.first_seen.strftime('%b %d %H:%M') }}</td>
+  </tr>{% else %}<tr><td colspan="3" class="faint">Nothing open from Harvest or HubSpot.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

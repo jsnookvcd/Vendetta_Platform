@@ -19,4 +19,42 @@
   </tr>{% endfor %}</tbody>
 </table></div></div>
 {% endfor %}
+
+<div class="section-head" id="clients"><h2>Per-client autonomy</h2><span class="count">{{ overrides|length }} overrides</span></div>
+<p class="faint" style="margin:0 0 10px">An override sets one skill's level for one client; every other client follows the level above. A high-risk skill is never automatic for any client. Each change is written to the ledger.</p>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Client</th><th>Skill</th><th>Autonomy</th><th>Set by</th><th></th></tr></thead>
+  <tbody>{% for o in overrides %}<tr>
+    <td><b>{{ o.client or o.platform_client_id }}</b></td><td>{% for s in catalog %}{% if s.key == o.action %}{{ s.title }}{% endif %}{% endfor %}<div class="faint mono" style="font-size:11px">{{ o.action }}</div></td>
+    <td><span class="chip">{{ o.autonomy }}</span></td><td class="faint">{{ o.updated_by }} · {{ o.updated_at.strftime('%b %d %H:%M') }}</td>
+    <td>{% if is_admin %}<form class="inline" method="post" action="/policy/client/{{ o.id }}/remove"><button class="btn btn-xs btn-ghost">Remove</button></form>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="5" class="faint">No per-client overrides. Every client follows the levels above.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if is_admin %}<form method="post" action="/policy/client" class="row" style="gap:8px; padding:12px; flex-wrap:wrap; border-top:1px solid var(--line, #222)">
+  <select name="platform_client_id" required><option value="">Client</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
+  <select name="action" required><option value="">Skill</option>{% for s in catalog %}<option value="{{ s.key }}">{{ s.title }}{{ ' (high risk)' if s.risk == 'high' }}</option>{% endfor %}</select>
+  <select name="autonomy">{% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}</select>
+  <button class="btn btn-sm">Add override</button>
+</form>{% endif %}</div>
+
+<div class="section-head" id="thresholds"><h2>Per-client thresholds</h2><span class="count">{{ thresholds|length }} clients tuned</span></div>
+<p class="faint" style="margin:0 0 10px">Blank means the default: escalate after {{ defaults.escalate_after_minutes }} minutes, nudge a case quiet for {{ defaults.stale_case_days }} days, and page when a critical is unacknowledged past the client's commitment on the platform (or {{ defaults.critical_ack_minutes }} minutes when it has none). A value here overrides the commitment for SABINE's paging only.</p>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Client</th><th class="num">Escalate after (min)</th><th class="num">Stale case (days)</th><th class="num">Critical ack (min)</th><th>Set by</th><th></th></tr></thead>
+  <tbody>{% for t in thresholds %}<tr>
+    <td><b>{{ t.client or t.platform_client_id }}</b></td>
+    <td class="num">{{ t.escalate_after_minutes if t.escalate_after_minutes is not none else 'default' }}</td>
+    <td class="num">{{ t.stale_case_days if t.stale_case_days is not none else 'default' }}</td>
+    <td class="num">{{ t.critical_ack_minutes if t.critical_ack_minutes is not none else 'commitment' }}</td>
+    <td class="faint">{{ t.updated_by }} · {{ t.updated_at.strftime('%b %d %H:%M') }}</td>
+    <td>{% if is_admin %}<form class="inline" method="post" action="/policy/thresholds/{{ t.platform_client_id }}/remove"><button class="btn btn-xs btn-ghost">Reset</button></form>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="6" class="faint">Every client uses the defaults.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if is_admin %}<form method="post" action="/policy/thresholds" class="row" style="gap:8px; padding:12px; flex-wrap:wrap; border-top:1px solid var(--line, #222)">
+  <select name="platform_client_id" required><option value="">Client</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
+  <input name="escalate_after_minutes" type="number" min="1" placeholder="escalate after (min)" style="width:170px">
+  <input name="stale_case_days" type="number" min="1" placeholder="stale case (days)" style="width:150px">
+  <input name="critical_ack_minutes" type="number" min="1" placeholder="critical ack (min)" style="width:150px">
+  <button class="btn btn-sm">Save thresholds</button>
+</form>{% endif %}</div>
 {% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Concierge{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">What SABINE raised for each active client on the platform: proposed Security Journey items and the progress she recorded, and the posture reviews and outreach emails she drafted. Nothing here reached a client on her word. A person accepts journey items and approves every communication on the platform.</p>
+{% for r in rows %}
+<div class="section-head"><h2>{{ r.client.name }}</h2><span class="count">{% if r.client.tier %}{{ r.client.tier }} · {% endif %}{% if r.link %}<a class="alink" href="{{ r.link }}" target="_blank" rel="noopener">open on the platform</a>{% endif %}</span></div>
+<div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
+  <thead><tr><th>Kind</th><th>Item</th><th>State</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for i in r.journey %}<tr>
+    <td class="faint nowrap">journey · {{ i.area }}</td><td><b>{{ i.title }}</b></td>
+    <td><span class="stchip st-{{ i.status|replace('_', '-') }}">{{ i.status|replace('_', ' ') }}</span></td>
+    <td class="faint">{{ i.note or (('due ' ~ i.due_on) if i.due_on else '') }}{% if i.decided_by %} · {{ i.decided_by }}{% endif %}</td>
+  </tr>{% endfor %}
+  {% for i in r.communications %}<tr>
+    <td class="faint nowrap">{{ (i.kind or '')|replace('_', ' ') }}</td><td><b>{{ i.title }}</b></td>
+    <td><span class="stchip st-{{ 'pending' if i.status == 'draft' else ('executed' if i.status in ('approved', 'sent') else 'rejected') }}">{{ i.status }}</span></td>
+    <td class="faint">{% if i.status == 'draft' %}waiting for the account lead{% elif i.decided_by %}{{ i.decided_by }}{% endif %}{% if i.sent_detail %} · {{ i.sent_detail }}{% endif %}</td>
+  </tr>{% endfor %}
+  {% for p in r.proposals %}<tr>
+    <td class="faint nowrap">SABINE</td><td><a href="/proposals/{{ p.id }}">{{ p.title }}</a></td>
+    <td><span class="stchip st-{{ p.status }}">{{ p.status }}</span></td>
+    <td class="faint">{{ (p.result or {}).get('detail', 'not on the platform yet') }}</td>
+  </tr>{% endfor %}
+  {% if not r.journey and not r.communications and not r.proposals %}<tr><td colspan="4" class="faint">{% if not r.journey_read or not r.comms_read %}The platform's journey or communications for this client could not be read on the last cycle.{% else %}Nothing raised for this client yet.{% endif %}</td></tr>{% endif %}
+  </tbody>
+</table></div></div>
+{% else %}
+<div class="panel pad faint">No active clients yet. SABINE reads them from the platform on each cycle.</div>
+{% endfor %}
+{% endblock %}

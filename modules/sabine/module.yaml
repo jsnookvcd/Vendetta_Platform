@@ -13,4 +13,4 @@ description: >-
   what its autonomy policy allows, hands off anything that touches a host to a
   responder, and records all of it in a signed chain.
 reach: MODULE_DIRECTORY
-endpoints: [/api/queue, /api/proposals, /api/run, /api/briefs, /api/ledger/verify, /api/module]
+endpoints: [/api/queue, /api/proposals, /api/run, /api/briefs, /api/skills, /api/metrics, /api/business, /api/concierge, /api/ledger/verify, /api/module]

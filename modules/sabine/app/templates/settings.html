@@ -8,6 +8,7 @@
   <div class="kv"><div class="faint">Board</div><div>{{ cfg.board }} · <a class="alink" href="/board" target="_blank" rel="noopener">open the board</a></div></div>
   <div class="kv"><div class="faint">Voice</div><div>{{ cfg.persona }} (PERSONA=sabine or plain; client briefs are always professional)</div></div>
   <div class="kv"><div class="faint">Reach</div><div class="mono" style="font-size:12px">{{ cfg.reach }}</div></div>
+  <div class="kv"><div class="faint">Business sources</div><div>{{ cfg.business }} (HARVEST_ACCOUNT_ID and HARVEST_TOKEN; HUBSPOT_TOKEN) · <a class="alink" href="/business">Business</a></div></div>
   <div class="kv"><div class="faint">Staff roster</div><div>{% if cfg.platform.configured %}pull {{ 'ok' if cfg.platform.last_ok else (cfg.platform.last_detail) }}{% else %}PLATFORM_URL not set{% endif %}</div></div>
   <div class="kv"><div class="faint">SSO</div><div>{{ cfg.sso }} · <a class="alink" href="/settings/sso">configure</a></div></div>
   <div class="kv"><div class="faint">Users seen</div><div>{{ n_users }}</div></div>
