@@ -17,9 +17,10 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import boot
-from . import auth, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
+from . import auth, connectors, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
+from . import health, work_requests
 from .config import settings
-from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
+from .db import AuditLog, Client, Evidence, Hit, Item, RunRequest, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
 from .matcher import match_item
 from . import alerts
@@ -231,7 +232,40 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
         .where(Hit.status.in_(("new", "reviewing"))).order_by(desc(Hit.created_at)).limit(15)
     ).scalars().all()
     victims = db.execute(select(Item).where(Item.kind == "victim").order_by(desc(Item.collected_at)).limit(25)).scalars().all()
-    return render(request, "dashboard.html", user=user, stats=stats, hits=hits, victims=victims)
+    banner = _health_banner(db)
+    return render(request, "dashboard.html", user=user, stats=stats, hits=hits, victims=victims, banner=banner)
+
+
+def _health_banner(db: Session) -> dict:
+    try:
+        return connectors.health_summary(db)["banner"]
+    except Exception as e:  # noqa: BLE001
+        log.warning("health summary failed: %s", e)
+        db.rollback()
+        return {"level": "amber", "messages": ["Collector health could not be read."]}
+
+
+# ---------------------------------------------------------------- connectors
+@app.get("/connectors", response_class=HTMLResponse)
+def connectors_page(request: Request, queued: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    summary = connectors.health_summary(db)
+    return render(request, "connectors.html", user=user, h=summary, rows=summary["connectors"],
+                  can_run=bool(ident and not ident.is_viewer), queued=queued,
+                  stale_after=health.HEARTBEAT_STALE_SECONDS)
+
+
+@app.post("/connectors/{key}/run")
+def connector_run_now(key: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Queue an immediate run. The worker picks it up within a minute; the web
+    container never runs a collector itself."""
+    c = connectors.get(key)
+    if c is None:
+        raise HTTPException(404, "unknown connector")
+    if not work_requests.pending(db, RunRequest, RunRequest.payload["connector"].as_string() == key):
+        work_requests.enqueue(db, RunRequest, user, {"connector": key})
+        _audit(db, user, "connector.run_now", key)
+    return RedirectResponse(f"/connectors?queued={key}", status_code=302)
 
 
 # ---------------------------------------------------------------- clients and terms
