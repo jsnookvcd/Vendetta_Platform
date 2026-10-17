@@ -39,6 +39,20 @@ DEDUP="$(mktemp)"
 tac "$TMP" | awk -F= '!seen[$1]++' | tac > "$DEDUP"
 mv "$DEDUP" "$TMP"
 
+# docker compose interpolates $NAME inside .env and env_file values, so a bcrypt
+# hash ($2b$12$...) arrives blank and break-glass sign-in fails. Single-quote any
+# value that holds a "$": compose and python-dotenv both read single-quoted values
+# literally. A value holding both "$" and "'" gets "$$" instead (compose's escape).
+QUOTED="$(mktemp)"
+awk 'BEGIN { q = "\047" }
+{
+  i = index($0, "="); k = substr($0, 1, i - 1); v = substr($0, i + 1)
+  if (index(v, "$") == 0 || (substr(v, 1, 1) == q && substr(v, length(v), 1) == q)) { print; next }
+  if (index(v, q) == 0) { print k "=" q v q; next }
+  gsub(/\$/, "$$", v); print k "=" v
+}' "$TMP" > "$QUOTED"
+mv "$QUOTED" "$TMP"
+
 if ! grep -q '^SECRET_KEY=' "$TMP"; then
   echo "vendetta-env: no SECRET_KEY for $KEY under $PREFIX/$KEY/; refusing to render" >&2
   exit 3
