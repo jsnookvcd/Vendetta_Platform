@@ -22,6 +22,9 @@ Fields:
   item can be marked done, a document deleted; a case opened in the IR hub or an
   action on a host cannot be taken back).
 - synonyms: phrases the Ask page parser recognises for this skill.
+- client_visible: whether a carried-out action is listed in the client's "What
+  SABINE did on your account". Internal business work and the drafts that are
+  themselves client communications are not.
 """
 from __future__ import annotations
 
@@ -53,6 +56,7 @@ class Skill:
     chat: bool = False
     reversible: bool = True
     synonyms: tuple[str, ...] = field(default_factory=tuple)
+    client_visible: bool = True
 
     @property
     def can_auto(self) -> bool:
@@ -67,7 +71,7 @@ class Skill:
                 "domain_label": self.domain_label, "module": self.module, "risk": self.risk, "default": self.default,
                 "inputs": [{"name": i.name, "type": i.type, "required": i.required} for i in self.inputs],
                 "chat": self.chat, "reversible": self.reversible, "can_auto": self.can_auto,
-                "synonyms": list(self.synonyms)}
+                "synonyms": list(self.synonyms), "client_visible": self.client_visible}
 
 
 _SKILLS = (
@@ -91,6 +95,16 @@ _SKILLS = (
           "soc", "managed-services", "high", "propose", "handoff",
           (Input("finding_id", "finding_id"), Input("host", "host", required=False)), chat=True, reversible=False,
           synonyms=("isolate", "contain", "quarantine", "host action", "lock down the host")),
+    Skill("page_oncall", "Page the on-call responder for an unacknowledged critical",
+          "A critical MDR investigation or managed-services critical with no acknowledgement past the client's response commitment pages the on-call responder through the IR hub, at most once an hour per detection.",
+          "soc", "incident-response", "low", "auto", "page_oncall",
+          (Input("finding_id", "finding_id"),), chat=True, reversible=False,
+          synonyms=("page on-call", "page oncall", "page on call", "page the on-call", "page the on call", "wake the on-call")),
+    Skill("suggest_suppression", "Propose an MDR suppression for a pattern people keep calling noise",
+          "When people have rejected or closed as false positive the same detection pattern for one client the set number of times, SABINE proposes a time-limited MDR suppression for that client; a person approves it.",
+          "soc", "mdr", "medium", "propose", "suggest_suppression",
+          (Input("finding_id", "finding_id"),), chat=True, reversible=True,
+          synonyms=("suggest a suppression", "suggest suppression", "propose a suppression", "suppress this", "suppress the pattern", "this is noise")),
     Skill("roster_sync", "Re-sync a module whose roster pull is failing",
           "When a module reports a failed roster pull, SABINE asks it to pull again; if it still fails the item stays in the queue for an operator.",
           "admin", "the module named", "low", "auto", "roster_sync",
@@ -125,15 +139,49 @@ _SKILLS = (
           "An engagement still open past its planned end date is raised to its lead with what is still outstanding.",
           "services", "sabine", "low", "auto", "raise_work_item",
           (Input("engagement", "engagement"),), chat=False, reversible=True),
+    Skill("journey_suggest", "Propose a Security Journey item from evidence",
+          "A recurring finding pattern, overdue remediation, a class of pentest findings or a posture gap becomes a proposed item on the client's Security Journey on the platform; a person accepts or declines it there.",
+          "services", "platform", "low", "auto", "journey_suggest",
+          (Input("client", "client"),), chat=False, reversible=True, client_visible=False),
+    Skill("journey_progress", "Move a Security Journey item when its evidence resolves",
+          "A planned or in-progress journey item SABINE raised is marked in progress when its evidence shrinks and done when the evidence it rested on is gone.",
+          "services", "platform", "low", "auto", "journey_progress",
+          (Input("client", "client"),), chat=False, reversible=True),
+    Skill("posture_review", "Draft the monthly posture review",
+          "Once a month per active client, SABINE drafts the posture review from live data and what she did on the account, redacted for the client, and posts it as a draft communication on the platform; a person approves it before the client sees it.",
+          "services", "platform", "low", "auto", "posture_review",
+          (Input("client", "client"),), chat=True, reversible=True, client_visible=False,
+          synonyms=("posture review", "draft the posture review", "draft a posture review", "monthly review", "monthly posture review")),
+    Skill("client_outreach", "Draft a client email for a person to approve",
+          "When a cross-client campaign touches a client, a deliverable sits unaccepted, or a response commitment is at risk, SABINE drafts the email and posts it as an outreach draft on the platform; a person approves it and it sends.",
+          "services", "platform", "low", "auto", "client_outreach",
+          (Input("client", "client"),), chat=True, reversible=True, client_visible=False,
+          synonyms=("draft an email", "draft outreach", "email the client", "write to the client", "reach out to", "client outreach")),
+    Skill("engagement_budget_burn", "Flag an engagement burning through its budget",
+          "A Harvest project past the budget-burn threshold is raised to the services queue with what is spent and what is left.",
+          "services", "sabine", "low", "auto", "raise_work_item",
+          (Input("project", "project"),), chat=False, reversible=True, client_visible=False),
+    Skill("capacity_overload", "Flag a person booked past capacity this week",
+          "Someone whose Harvest hours this week pass the capacity threshold is raised so the load can be rebalanced.",
+          "services", "sabine", "low", "auto", "raise_work_item",
+          (Input("person", "person"),), chat=False, reversible=True, client_visible=False),
+    Skill("renewal_upcoming", "Flag a renewal coming up",
+          "A HubSpot renewal closing inside the window is raised with the client's current posture, so the account lead walks in prepared.",
+          "services", "sabine", "low", "auto", "raise_work_item",
+          (Input("deal", "deal"),), chat=False, reversible=True, client_visible=False),
+    Skill("won_not_onboarded", "Flag a won deal that is not onboarded",
+          "A deal closed won in HubSpot whose company is not an active client on the platform after a few days is raised so onboarding starts.",
+          "services", "sabine", "low", "auto", "raise_work_item",
+          (Input("deal", "deal"),), chat=False, reversible=True, client_visible=False),
     Skill("client_brief", "Write a client brief",
           "A short posture brief per client from live data across every module, kept under Briefs for a person to send.",
           "services", "sabine", "low", "auto", "client_brief",
-          (Input("client", "client"),), chat=True, reversible=True,
+          (Input("client", "client"),), chat=True, reversible=True, client_visible=False,
           synonyms=("write a brief", "client brief", "brief for", "posture brief", "write up")),
     Skill("daily_summary", "Write the daily summary",
           "What SABINE saw, proposed and did in the last day, for the morning stand-up.",
           "admin", "sabine", "low", "auto", "daily_summary",
-          (), chat=True, reversible=True,
+          (), chat=True, reversible=True, client_visible=False,
           synonyms=("daily summary", "stand-up summary", "standup summary", "write the summary", "morning summary")),
 )
 

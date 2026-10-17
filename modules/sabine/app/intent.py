@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import executor, ledger, narrative, perception, policy, reach, reasoner, skills
+from . import concierge, executor, ledger, memory, narrative, perception, policy, reach, reasoner, skills
 from .config import settings
 from .db import Proposal, WorkItem, utcnow
 
@@ -49,6 +49,7 @@ _MODULE_WORDS = {
     "incident-response": ("incident response", "incident-response", "ir hub", "the hub"),
     "professional-services": ("professional services", "professional-services", "osp", "special projects"),
     "platform": ("platform", "control plane"),
+    "mdr": ("mdr", "managed detection", "detection and response", "investigation"),
 }
 _CASE_RE = re.compile(r"\b(?:[A-Z]{2,5}-)?IR-\d{4}-\d{1,6}\b", re.I)
 
@@ -201,7 +202,8 @@ def resolve_args(db: Session, skill: skills.Skill, text: str, user: str = "") ->
     amb: list[dict] = []
     for inp in skill.inputs:
         if inp.type == "finding_id":
-            f, cands = resolve_finding(db, text, "managed-services" if skill.key == "host_action" else None)
+            hint = "managed-services" if skill.key == "host_action" else "mdr" if skill.key == "suggest_suppression" else None
+            f, cands = resolve_finding(db, text, hint)
             if f:
                 args["finding_id"], args["finding"] = f["id"], f
             elif inp.required:
@@ -369,6 +371,58 @@ def build(db: Session, intent: Intent, user: str) -> dict:
                     rationale=lead + f"A current posture brief for {c['name']} is written for the account owner to send.",
                     facts={**base, "client": c["name"], "platform_client_id": c["id"]},
                     target={"kind": "brief", "client": c["name"], "platform_client_id": c["id"]}, confidence=0.95)
+    if s.key == "page_oncall":
+        ref = f"{mod}:{f['id']}"
+        link = (reach.public_url(mod) + perception.FINDING_PATH[mod].format(id=f["id"])) if reach.public_url(mod) and mod in perception.FINDING_PATH else ""
+        title = f"Page on-call: {f.get('severity')} {mod.replace('-', ' ')} detection for {client_name or 'unknown client'}"
+        body = f"{who} asked SABINE to page the on-call responder for \"{f.get('title', '')}\" ({f.get('severity')}) on {client_name or 'an unknown client'}."
+        return dict(key=f"page_oncall:{ref}", title=title,
+                    rationale=lead + "SABINE pages the on-call responder through the IR hub.",
+                    facts={**base, "module": mod, "finding_id": f["id"], "severity": f.get("severity"), "title": f.get("title"),
+                           "client": client_name, "platform_client_id": cid},
+                    target={"module": "incident-response", "path": "/api/oncall/page", "platform_client_id": cid, "client": client_name,
+                            "link": link, "body": {"title": concierge.page_title(title), "body": body, "link": link,
+                                                   "severity": f.get("severity"), "platform_client_id": cid, "client": client_name,
+                                                   "source_module": mod, "source_ref": ref}},
+                    confidence=0.9)
+    if s.key == "suggest_suppression":
+        sig = memory.signature(f.get("title") or "")
+        h = memory.noise(db).get((cid, sig), {"false_positive": 0, "rejected": 0})
+        phrase = f.get("title") or ""
+        return dict(key=f"suggest_suppression:{cid}:{memory.sig_hash(sig)}",
+                    title=f"Suppress \"{phrase}\" for {client_name} for {settings.suppression_days} days"[:400],
+                    rationale=lead + (f"People have called this pattern noise for {client_name} {h['false_positive'] + h['rejected']} "
+                                      f"time(s) so far. A {settings.suppression_days}-day MDR suppression for this client only "
+                                      "needs a person's approval."),
+                    facts={**base, "module": mod, "finding_id": f["id"], "title": phrase, "client": client_name,
+                           "platform_client_id": cid, "signature": sig, "false_positive": h["false_positive"], "rejected": h["rejected"]},
+                    target={"module": "mdr", "path": "/api/suppressions", "platform_client_id": cid, "client": client_name,
+                            "title_contains": phrase, "days": settings.suppression_days,
+                            "reason": f"Asked for by {user or 'a person'} on the Ask page"},
+                    confidence=0.6)
+    if s.key == "posture_review":
+        c = a["client"]
+        month = utcnow().strftime("%Y-%m")
+        return dict(key=f"posture_review:{c['id']}:{month}", title=f"Posture review for {c['name']}, {utcnow():%B %Y}",
+                    rationale=lead + f"SABINE drafts the {utcnow():%B %Y} posture review for {c['name']} on the platform; the account lead approves it.",
+                    facts={**base, "client": c["name"], "platform_client_id": c["id"], "month": month, "source_ref": f"review:{c['id']}:{month}"},
+                    target={"kind": "posture_review", "platform_client_id": c["id"], "client": c["name"], "month": month,
+                            "source_ref": f"review:{c['id']}:{month}"},
+                    confidence=0.95)
+    if s.key == "client_outreach":
+        c = a["client"]
+        stamp = f"{utcnow():%Y%m%d%H%M}"
+        rows = [x for x in perception.findings(db) if _client_of(x)[1] == c["id"]]
+        msg = (f"We wanted to give you a short update. Your Vendetta team is watching {len(rows)} active item(s) for you "
+               "today and will walk through them with you." if rows else
+               "We wanted to give you a short update: nothing is active for you across our services today, and we keep watching.")
+        return dict(key=f"client_outreach:ask:{c['id']}:{stamp}", title=f"Outreach to {c['name']}: a note from your Vendetta team",
+                    rationale=lead + f"SABINE drafts an email to {c['name']} on the platform; a person approves it and it sends.",
+                    facts={**base, "client": c["name"], "platform_client_id": c["id"], "reason": "check_in", "message": msg,
+                           "source_ref": f"ask:{c['id']}:{stamp}"},
+                    target={"kind": "outreach", "platform_client_id": c["id"], "client": c["name"], "reason": "check_in",
+                            "source_ref": f"ask:{c['id']}:{stamp}"},
+                    confidence=0.85)
     if s.key == "daily_summary":
         return dict(key=f"daily_summary:ask:{utcnow():%Y%m%d%H%M}", title="Daily summary",
                     rationale=lead + "The day's observations, proposals, decisions and actions, written now.",
@@ -381,10 +435,12 @@ def act(db: Session, intent: Intent, user: str) -> dict:
     {kind, reply, proposal, result} where kind is one of done, failed, pending,
     high, off, already_pending, already_done."""
     s = intent.skill
-    level = policy.autonomy(db, s.key)
+    spec = build(db, intent, user)
+    # The client's own override applies when the request targets one client.
+    pid = (spec.get("target") or {}).get("platform_client_id") or (spec.get("facts") or {}).get("platform_client_id") or None
+    level = policy.autonomy(db, s.key, pid)
     if level == "off":
         return {"kind": "off", "reply": narrative.ask_reply("off", skill=s), "proposal": None}
-    spec = build(db, intent, user)
     prior = reasoner._pending(db, spec["key"])
     if prior is not None and prior.status in ("pending", "approved"):
         return {"kind": "already_pending", "reply": narrative.ask_reply("already_pending", skill=s, proposal=prior), "proposal": prior}
