@@ -8,6 +8,19 @@
   <div class="panel pad" style="flex:1; min-width:150px"><div class="faint" style="font-size:12px">Ledger</div><div style="font-size:26px"><b>{{ ledger_n }}</b></div><div class="faint" style="font-size:12px">signed records · <a class="alink" href="/ledger">verify</a></div></div>
 </div>
 
+{% set m7 = metrics[7] %}{% set m30 = metrics[30] %}
+<div class="panel pad" style="margin-bottom:16px">
+  <div class="row" style="gap:12px; align-items:baseline; flex-wrap:wrap"><b>Mean time to trusted action</b><span class="faint" style="font-size:12px">proposal raised to action carried out, from the ledger · <a class="alink" href="/api/metrics">json</a></span></div>
+  <div class="row" style="gap:18px; margin-top:8px; flex-wrap:wrap; font-size:13px">
+    {% for w in (m7, m30) %}<div style="min-width:220px">
+      <div class="faint" style="font-size:12px">last {{ w.days }} days · {{ w.proposals_raised }} raised</div>
+      <div>auto <b>{{ fmt_s(w.auto.median_s) }}</b> <span class="faint">p90 {{ fmt_s(w.auto.p90_s) }} · {{ w.auto.ok }} done</span></div>
+      <div>with a person <b>{{ fmt_s(w.human.median_s) }}</b> <span class="faint">p90 {{ fmt_s(w.human.p90_s) }} · {{ w.human.ok }} done</span></div>
+      <div class="faint">{{ w.decided }} decided{% if w.approval_rate is not none %}, {{ (w.approval_rate*100)|round|int }}% approved{% endif %}{% if w.autonomous_share is not none %} · {{ (w.autonomous_share*100)|round|int }}% closed without a person{% endif %}</div>
+    </div>{% endfor %}
+  </div>
+</div>
+
 <div style="display:grid; grid-template-columns: 3fr 2fr; gap:16px; align-items:start">
 <div>
   <div class="section-head"><h2>Top of the queue</h2><span class="count"><a class="alink" href="/queue">all {{ stats.open }}</a></span></div>

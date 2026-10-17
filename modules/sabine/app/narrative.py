@@ -109,11 +109,11 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple
     return "\n".join(lines), "rules"
 
 
-def daily_summary(stats: dict, proposals: list[dict], actions: list[dict]) -> tuple[str, str]:
+def daily_summary(stats: dict, proposals: list[dict], actions: list[dict], measure: str = "") -> tuple[str, str]:
     today = dt.date.today().isoformat()
-    facts = {"date": today, "stats": stats, "proposals": proposals[:40], "actions": actions[:40]}
+    facts = {"date": today, "stats": stats, "proposals": proposals[:40], "actions": actions[:40], "trusted_action": measure}
     text = _complete("Write the morning stand-up summary of what SABINE observed, proposed and did in the last day, "
-                     "and what is waiting on a person. Keep it to one screen. "
+                     "and what is waiting on a person. Keep it to one screen. End with the trusted-action numbers in one sentence. "
                      f"Facts (JSON): {facts}")
     if text:
         return f"# SABINE daily summary, {today}\n\n" + text, "llm"
@@ -130,6 +130,8 @@ def daily_summary(stats: dict, proposals: list[dict], actions: list[dict]) -> tu
         lines += ["## Waiting on you", ""]
         for p in proposals[:20]:
             lines.append(f"{p.get('title')} ({p.get('risk')} risk, {int(100 * p.get('confidence', 0))}% confidence)")
+    if measure:
+        lines += ["", "## How I am doing", "", measure]
     return "\n".join(lines), "rules"
 
 

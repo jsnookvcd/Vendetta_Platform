@@ -26,7 +26,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 @keyframes pulse { 0%,100% { box-shadow: 0 0 0 6px rgba(224,18,47,0.15); } 50% { box-shadow: 0 0 0 12px rgba(224,18,47,0.04); } }
 @keyframes glow { from { color: var(--brand-2); } to { color: var(--text); } }
 
-.tiles { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 14px; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr 1.4fr 2fr; gap: 14px; }
+.tile .v.small { font-size: 30px; }
 .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
 .tile .k { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
 .tile .v { font-size: 44px; font-weight: 800; line-height: 1.1; margin-top: 4px; }

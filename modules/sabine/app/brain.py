@@ -21,7 +21,7 @@ import time
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import executor, ledger, perception, policy, reasoner
+from . import executor, ledger, metrics, perception, policy, reasoner
 from .config import settings
 from .db import Proposal, SessionLocal, WorkItem, utcnow
 
@@ -61,6 +61,7 @@ def cycle(db: Session) -> dict:
 
             LAST.update(at=utcnow(), ok=True, detail="ok", **summary)
             LAST["line"] = narrative.cycle_line(stats(db), summary)
+            metrics.invalidate()
             return summary
         except Exception as e:  # noqa: BLE001
             log.exception("cycle failed")
@@ -84,6 +85,7 @@ def decide(db: Session, p: Proposal, actor: str, approve: bool, note: str = "") 
     res = executor.execute(db, p)
     ledger.append(db, "action", settings.actor_name, f"{p.action} {'done' if res.get('ok') else 'failed'}: {p.title}",
                   {"result": res, "autonomy": "approved", "by": actor, "action": p.action}, ref=p.id)
+    metrics.invalidate()
     return res
 
 

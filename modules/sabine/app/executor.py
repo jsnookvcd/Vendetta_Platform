@@ -11,7 +11,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import narrative, perception, reach, skills
+from . import metrics, narrative, perception, reach, skills
 from .db import Brief, Proposal, WorkItem, utcnow
 
 log = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ def daily_summary(db: Session, p: Proposal) -> dict:
     recent = db.execute(select(Proposal).where(Proposal.created_at >= since).order_by(Proposal.created_at.desc())).scalars().all()
     pending = [{"title": x.title, "risk": x.risk, "confidence": x.confidence} for x in recent if x.status == "pending"]
     done = [{"title": x.title, "result": (x.result or {}).get("detail", "")} for x in recent if x.status == "executed"]
-    body, source = narrative.daily_summary(stats, pending, done)
+    body, source = narrative.daily_summary(stats, pending, done, metrics.line(metrics.compute(metrics.rows_from_ledger(db))))
     b = Brief(kind="daily-summary", title=f"Daily summary, {utcnow().date().isoformat()}", body_md=body, source=source)
     db.add(b)
     db.flush()

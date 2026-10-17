@@ -39,10 +39,12 @@ def _release(engine):
 def fresh_db():
     if not _db_up():
         pytest.skip("test database not reachable")
+    from app import metrics
     from app.db import Base, engine, init_db
     _release(engine)
     Base.metadata.drop_all(engine)
     init_db()
+    metrics.invalidate()
     yield
     _release(engine)
 

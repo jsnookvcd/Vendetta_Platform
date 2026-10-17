@@ -45,6 +45,10 @@
     document.getElementById("t-open").textContent = d.stats.open;
     document.getElementById("t-split").textContent = d.stats.soc + " SOC · " + d.stats.admin + " admin · " + d.stats.services + " services";
     document.getElementById("t-pending").textContent = d.stats.pending;
+    if (d.mtta) {
+      document.getElementById("t-mtta").textContent = d.mtta.auto;
+      document.getElementById("t-mtta-sub").textContent = d.mtta.sub;
+    }
     var cyc = document.getElementById("cycle");
     if (d.last_cycle.at) {
       var t = new Date(d.last_cycle.at);

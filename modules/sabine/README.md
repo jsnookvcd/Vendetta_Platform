@@ -110,6 +110,17 @@ candidates. A person named in the sentence ("and tell Dan") gets the outcome as
 a claimed item on the queue. A sentence that matches no skill is answered as
 before.
 
+## Mean time to trusted action
+
+SABINE measures herself from the ledger (`app/metrics.py`). For the last 7 and
+30 days: the median and p90 of proposal raised to action carried out, split into
+automatic and approved by a person; proposals decided and the approval rate; and
+the autonomous share, the fraction of proposals raised in the window that she
+closed without a person. `compute()` is a pure function over ledger rows;
+`get()` caches the answer for a minute and a cycle or a decision clears it. The
+numbers show as a block on the Overview, a tile on the board, a sentence at the
+end of the daily summary, and at `GET /api/metrics`.
+
 ## Voice
 
 To Vendetta's own people SABINE is a she: warm, confident, quick, with a dry wit,

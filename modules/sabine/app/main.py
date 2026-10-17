@@ -21,7 +21,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, intent, ledger, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
+from . import auth, boot, brain, intent, ledger, metrics, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
 from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
@@ -179,7 +179,8 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
     snaps = perception.snapshots(db)
     return render(request, "dashboard.html", user=user, stats=brain.stats(db), queue=_queue(db)[:12],
                   pending=pending, recent=recent, last=brain.LAST, snaps=sorted(snaps.values(), key=lambda s: s.source),
-                  ledger_n=ledger.count(db), directory=reach.directory())
+                  ledger_n=ledger.count(db), directory=reach.directory(), metrics=metrics.get(db)["windows"],
+                  fmt_s=metrics.fmt_seconds)
 
 
 @app.post("/run")
@@ -369,6 +370,7 @@ def _board_ok(request: Request) -> bool:
 
 def _board_payload(db: Session) -> dict:
     snaps = perception.snapshots(db)
+    m = metrics.get(db)["windows"]
     mods = {k.split(":", 1)[1]: {"ok": s.ok, "detail": s.detail} for k, s in snaps.items() if k.startswith("module:")}
     queue = _queue(db)
     pending = db.execute(select(Proposal).where(Proposal.status == "pending").order_by(desc(Proposal.created_at)).limit(6)).scalars().all()
@@ -385,7 +387,21 @@ def _board_payload(db: Session) -> dict:
         "recent": [{"title": p.title, "ok": p.status == "executed", "detail": (p.result or {}).get("detail", "")} for p in recent],
         "refresh": settings.board_refresh_seconds,
         "speak": voice.provider(),
+        "metrics": m,
+        "mtta": _mtta_tile(m.get(7) or {}),
     }
+
+
+def _mtta_tile(w: dict) -> dict:
+    """The board's one-glance version of the 7-day numbers."""
+    if not w or not w.get("proposals_raised"):
+        return {"auto": "n/a", "sub": "no proposals in 7 days"}
+    sub = f"person {metrics.fmt_seconds(w['human']['median_s'])}"
+    if w.get("approval_rate") is not None:
+        sub += f" · {int(round(100 * w['approval_rate']))}% approved"
+    if w.get("autonomous_share") is not None:
+        sub += f" · {int(round(100 * w['autonomous_share']))}% on her own"
+    return {"auto": f"auto {metrics.fmt_seconds(w['auto']['median_s'])}", "sub": sub}
 
 
 @app.get("/board", response_class=HTMLResponse)
@@ -546,6 +562,12 @@ def api_briefs(kind: str = Query(""), user: str = Depends(auth.api_user), db: Se
              "created_at": b.created_at.isoformat(), "body_md": b.body_md} for b in db.execute(q).scalars().all()]
 
 
+@app.get("/api/metrics")
+def api_metrics(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Mean Time to Trusted Action over 7 and 30 days, from the ledger."""
+    return metrics.get(db)
+
+
 @app.get("/api/skills")
 def api_skills(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     return policy.catalog(db)
@@ -561,7 +583,7 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
     return {
         "module": "sabine", "display_name": "SABINE", "platform": "Vendetta Platform", "role": "agent",
         "enabled": settings.module_enabled, "public_url": settings.public_url,
-        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/ledger/verify", "/api/module"],
+        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/metrics", "/api/ledger/verify", "/api/module"],
         "readiness": readiness_mod.block(),
         "stats": brain.stats(db),
     }
