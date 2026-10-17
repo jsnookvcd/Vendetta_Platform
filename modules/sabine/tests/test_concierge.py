@@ -54,7 +54,7 @@ def test_page_oncall_past_the_commitment_through_the_ir_hub(world):
     assert p.status == "executed" and p.autonomy == "auto" and p.risk == "low"
     assert p.facts["ack_minutes"] == 10 and p.facts["commitment_source"] == "advanced commitment" and p.facts["age_minutes"] >= 39
     assert p.result["sent"] == {"teams": "sent"} and p.result["detail"] == "paged via teams"
-    body = next(b for b in world.pages if b["source_ref"] == "mdr:i1")
+    body = next(b for b in world.pages if b["source_module"] == "mdr" and b["source_ref"] == "i1")
     assert set(body) == {"title", "body", "link", "severity", "platform_client_id", "client", "source_module", "source_ref"}
     assert body["title"].startswith("Critical MDR investigation unacknowledged") and "Riverbend Credit Union" in body["title"]
     assert body["link"] == "https://mdr.example/investigations/i1" and body["severity"] == "critical" and body["source_module"] == "mdr"
@@ -339,3 +339,54 @@ def test_internal_skills_stay_out_of_the_client_brief(world):
     whats = {a["what"] for a in acts}
     assert "Page the on-call responder for an unacknowledged critical" in whats
     assert not whats & {"Draft the monthly posture review", "Propose a Security Journey item from evidence", "Write a client brief"}
+
+
+# ---------------------------------------------------------------- the real MDR finding shape
+def _real_mdr(fid, n, host, **extra):
+    """An MDR investigation exactly as MDR serves it: the title leads with the number and
+    names the rule, and signal_title carries the tool's own words."""
+    num = f"MDR-2026-00{n:02d}"
+    return _investigation(fid, extra.pop("sev", "medium"), f"{num}: Unsanctioned remote access tool on {host}", num,
+                          extra.pop("opened", (NOW - dt.timedelta(days=1)).isoformat()), matched=host,
+                          signal_title="AnyDesk.exe remote access tool executed from user profile",
+                          rule="remote-access-tool", **extra)
+
+
+def test_suggested_suppression_matches_signal_titles_not_investigation_numbers(world):
+    """Regression (live smoke): three noise closes of numbered MDR investigations
+    proposed title_contains "MDR-2026-000", which matches no signal ever. The phrase
+    now comes from signal_title, the text MDR's suppression engine compares."""
+    db = SessionLocal()
+    world.mdr_closed = [_real_mdr(f"ra{n}", n, f"KFCU-WS20{n}", native_status="closed", verdict="false_positive")
+                        for n in (5, 6, 7)]
+    brain.cycle(db)
+    p = next(iter(_props(db, "suggest_suppression").values()))
+    assert p.target["title_contains"] == "AnyDesk.exe remote access tool executed from user profile"
+    assert "MDR-2026" not in p.title and p.facts["false_positive"] == 3
+
+
+def test_posture_review_names_each_numbered_investigation_once(world):
+    """Regression (live smoke): MDR titles already lead with the number, and the review
+    printed "MDR-2026-0007: MDR-2026-0007: ..."."""
+    db = SessionLocal()
+    world.findings["mdr"] = [_real_mdr("i9", 7, "WS01", sev="critical", opened=(NOW - dt.timedelta(minutes=2)).isoformat())]
+    brain.cycle(db)
+    body = next(i for i in world.communications["plat-rb"] if i["kind"] == "posture_review")["body_md"]
+    assert "MDR-2026-0007" in body and "MDR-2026-0007: MDR-2026-0007" not in body
+
+
+def test_alert_an_mdr_investigation_owns_neither_pages_nor_escalates_twice(world):
+    """Regression (live smoke): MDR opened an investigation over a critical
+    managed-services alert, was paged and escalated; five minutes later SABINE paged
+    again for the raw alert, and at 30 minutes would have opened a second IR case.
+    An alert named as an active investigation's response.alert_ref is MDR's to page
+    and escalate; host_action still points the responder at the alert."""
+    db = SessionLocal()
+    world.findings["mdr"] = [_investigation("i1", "critical", "MDR-2026-0007: Ransomware behavior on WS01", "MDR-2026-0007",
+                                            (NOW - dt.timedelta(minutes=40)).isoformat(), matched="WS01", alert_ref="al1")]
+    brain.cycle(db)
+    pages = set(_props(db, "page_oncall"))
+    assert "page_oncall:mdr:i1" in pages and "page_oncall:managed-services:al1" not in pages
+    assert "escalate_finding:managed-services:al1" not in _props(db, "escalate_finding")
+    assert "escalate_finding:mdr:i1" in _props(db, "escalate_finding")
+    assert "host_action:al1" in _props(db, "host_action")

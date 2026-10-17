@@ -110,7 +110,9 @@ def noise(db: Session) -> dict[tuple[str, str], dict]:
             continue
         s = slot(pid, signature(f.get("title") or ""), subj.get("client") or "")
         s["false_positive"] += 1
-        s["titles"].append(f.get("title") or "")
+        # An MDR suppression matches the signal's title, never the investigation's
+        # ("MDR-2026-0005: <rule> on <host>"), so the phrase comes from signal_title.
+        s["titles"].append(f.get("signal_title") or f.get("title") or "")
         if f.get("matched"):
             s["hosts"].add(f["matched"])
     for p in _decided(db, SOC_ON_FINDINGS):
@@ -121,8 +123,9 @@ def noise(db: Session) -> dict[tuple[str, str], dict]:
             continue
         s = slot(pid, proposal_signature(p), (p.facts or {}).get("client") or "")
         s["rejected"] += 1
-        if (p.facts or {}).get("title"):
-            s["titles"].append(p.facts["title"])
+        phrase = (p.facts or {}).get("signal_title") or (p.facts or {}).get("title")
+        if phrase:
+            s["titles"].append(phrase)
     return out
 
 

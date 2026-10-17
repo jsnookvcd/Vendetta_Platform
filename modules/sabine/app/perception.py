@@ -147,6 +147,19 @@ def findings(db: Session) -> list[dict]:
     return out
 
 
+def mdr_covered_alerts(db: Session) -> set[str]:
+    """Managed-services alert ids an active MDR investigation already owns (its
+    response.alert_ref). MDR pages and escalates for those; the raw alert must not
+    page or open a second case for the same detection."""
+    out = set()
+    for f in findings(db):
+        if f["_module"] == "mdr":
+            ref = (f.get("response") or {}).get("alert_ref")
+            if ref:
+                out.add(str(ref))
+    return out
+
+
 def cases(db: Session) -> list[dict]:
     rows = snapshot(db, "cases:incident-response")
     return list(rows) if isinstance(rows, list) else []

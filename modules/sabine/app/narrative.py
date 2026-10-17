@@ -227,7 +227,10 @@ def posture_review(client: dict, month: str, findings: list[dict], cases: list[d
                      f"and contain it within {commit.get('critical_contain_minutes')} minutes.")
     if mdr:
         for f in mdr[:10]:
-            lines.append(f"{f.get('number') or 'Investigation'}: {f.get('title')} ({f.get('severity')}, "
+            # MDR's finding title already leads with the number ("MDR-2026-0001: ...").
+            num, title = f.get("number") or "", f.get("title") or ""
+            head = title if num and title.startswith(num) else f"{num or 'Investigation'}: {title}"
+            lines.append(f"{head} ({f.get('severity')}, "
                          f"{f.get('native_status') or f.get('status')}).")
     else:
         lines.append("No open investigations this month.")

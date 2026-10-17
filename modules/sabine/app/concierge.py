@@ -80,10 +80,13 @@ def _unacknowledged(f: dict) -> bool:
 def soc_rules(db: Session) -> list[Proposal]:
     out: list[Proposal] = []
     cmap = _client_map(db)
+    covered_by_mdr = perception.mdr_covered_alerts(db)
     for f in perception.findings(db):
         mod = f["_module"]
         if mod not in ("mdr", "managed-services") or f.get("severity") != "critical" or not _unacknowledged(f):
             continue
+        if mod == "managed-services" and str(f["id"]) in covered_by_mdr:
+            continue  # the MDR investigation over this alert is the one that pages
         subj = f.get("subject") or {}
         if subj.get("case_ref") or f.get("escalated_case"):
             continue  # a case exists and the hub paged when it opened
@@ -110,11 +113,11 @@ def soc_rules(db: Session) -> list[Proposal]:
              f"She pages again only if it is still unacknowledged after {settings.page_repeat_minutes} minutes."),
             {"module": mod, "finding_id": f["id"], "severity": "critical", "title": f.get("title"), "client": name,
              "platform_client_id": pid, "age_minutes": int(age), "ack_minutes": ack, "commitment_source": source,
-             "matched": f.get("matched"), "rule": f.get("rule")},
+             "matched": f.get("matched"), "rule": f.get("rule"), "signal_title": f.get("signal_title") or ""},
             {"module": "incident-response", "path": "/api/oncall/page", "platform_client_id": pid, "client": name,
              "link": link, "body": {"title": page_title(title), "body": body, "link": link,
                                     "severity": "critical", "platform_client_id": pid, "client": name,
-                                    "source_module": mod, "source_ref": ref}},
+                                    "source_module": mod, "source_ref": f["id"]}},
             0.9 if mod == "mdr" else 0.85, window_hours=settings.page_repeat_minutes / 60)
         if p:
             out.append(p)

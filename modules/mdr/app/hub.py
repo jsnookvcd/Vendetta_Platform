@@ -77,6 +77,9 @@ def finding_dict(inv: Investigation) -> dict:
         "response": {"action": inv.response or "none", "host": inv.host or "", "alert_ref": alert_ref(inv)},
         "rule": inv.rule_key,
         "signals": len(inv.links),
+        # The latest signal's own title, as the tool wrote it. A suppression matches
+        # signal titles, so a caller proposing one (SABINE) scopes it with this.
+        "signal_title": latest.title if latest else "",
         "published": bool(inv.published),
     }
 

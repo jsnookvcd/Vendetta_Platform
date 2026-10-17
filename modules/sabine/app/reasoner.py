@@ -103,6 +103,7 @@ def soc_rules(db: Session) -> list[Proposal]:
     out: list[Proposal] = []
     threshold = settings.escalate_after_minutes
     by_client: dict[str, list[dict]] = defaultdict(list)
+    covered_by_mdr = perception.mdr_covered_alerts(db)
     for f in perception.findings(db):
         subj = f.get("subject") or {}
         cid = subj.get("platform_client_id") or subj.get("client") or ""
@@ -113,6 +114,8 @@ def soc_rules(db: Session) -> list[Proposal]:
         if subj.get("case_ref"):
             continue  # already in a case
         mod = f["_module"]
+        if mod == "managed-services" and str(f["id"]) in covered_by_mdr:
+            continue  # MDR investigates this alert and escalates it; a second case would split the story
         wi = db.execute(select(WorkItem).where(WorkItem.key == f"finding:{mod}:{f['id']}")).scalar_one_or_none()
         # The module's triage copilot, when it has spoken and no human has decided yet.
         cp = f.get("copilot") or {}
@@ -149,6 +152,8 @@ def soc_rules(db: Session) -> list[Proposal]:
         facts = {"module": mod, "finding_id": f["id"], "severity": sev, "age_minutes": int(age),
                  "title": f.get("title"), "client": subj.get("client"), "platform_client_id": subj.get("platform_client_id"),
                  "matched": f.get("matched")}
+        if f.get("signal_title"):
+            facts["signal_title"] = f["signal_title"]  # MDR: what a suppression would match
         if cp_open and cp_verdict == "true_positive" and cp_conf >= settings.copilot_tp_confidence:
             confidence = min(0.99, confidence + 0.1)
             why += (f" The module's triage copilot ({cp.get('model', 'rules')}) agrees it is a true positive at "

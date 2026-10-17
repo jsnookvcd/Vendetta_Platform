@@ -100,7 +100,8 @@ def _investigation(fid, sev, title, number, opened, pid="plat-rb", client="River
                     native_status=extra.pop("native_status", "new"), verdict=extra.pop("verdict", "pending"),
                     mitre=["T1486"], opened_at=opened, acknowledged_at=extra.pop("acknowledged_at", None),
                     contained_at=extra.pop("contained_at", None),
-                    response={"action": "isolate_host", "host": extra.get("matched", ""), "alert_ref": "al1"},
+                    response={"action": "isolate_host", "host": extra.get("matched", ""),
+                              "alert_ref": extra.pop("alert_ref", f"ms-{fid}")},
                     rule=extra.pop("rule", "ransomware-behavior"), signals=extra.pop("signals", 2), number=number, **extra)
 
 

@@ -37,7 +37,7 @@ def test_ask_pages_on_call_and_drafts_the_review(client, seen, world):
     _login(client)
     r = client.post("/ask", data={"question": "page on-call for i1"})
     assert "Done. Paged the on-call responder for i1 on Riverbend Credit Union: paged via teams" in r.text
-    assert world.pages[-1]["source_ref"] == "mdr:i1" and world.pages[-1]["link"] == "https://mdr.example/investigations/i1"
+    assert world.pages[-1]["source_ref"] == "i1" and world.pages[-1]["source_module"] == "mdr" and world.pages[-1]["link"] == "https://mdr.example/investigations/i1"
     r = client.post("/ask", data={"question": "draft the posture review for Riverbend"})
     assert "The posture review for Riverbend Credit Union is a draft on the platform" in r.text
     item = world.communications["plat-rb"][0]

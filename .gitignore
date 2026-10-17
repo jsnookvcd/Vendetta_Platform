@@ -12,3 +12,4 @@ venv/
 *.tfplan
 infra/terraform/backend.hcl
 infra/terraform/*.tfvars
+.claude/

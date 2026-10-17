@@ -59,6 +59,18 @@ def test_findings_match_shared_schema_with_mdr_extras(client, now, monkeypatch):
     assert acme["subject"]["platform_client_id"] == "plat-acme"
 
 
+def test_finding_carries_latest_signal_title_for_suppressions(client, now):
+    """Regression: a suppression matches signal titles, and the investigation title
+    ("MDR-2026-0001: <rule> on <host>") never matches one. SABINE scopes the
+    suppressions it proposes with signal_title, the latest signal's own title."""
+    make_client()
+    ingest([finding(fid="r1", title="AnyDesk.exe remote access tool executed from user profile",
+                    severity="medium", at=now - dt.timedelta(minutes=3))], now=now)
+    row = client.get("/api/findings", headers=bearer()).json()[0]
+    _check("finding.schema.json", row)
+    assert row["title"].startswith(row["number"] + ": ")
+    assert row["signal_title"] == "AnyDesk.exe remote access tool executed from user profile"
+
 def test_findings_filters(client, now):
     inv = _setup(now)
     get = lambda **p: client.get("/api/findings", params=p, headers=bearer()).json()  # noqa: E731
