@@ -56,8 +56,9 @@ class Settings(BaseSettings):
     admin_user: str = "admin"
     admin_password_hash: str = ""
 
-    # Microsoft 365 / Entra ID SSO (blank = admin login only). Staff only; the
-    # control plane has no client portal (clients use each module's own portal).
+    # Microsoft 365 / Entra ID SSO (blank = admin login only). Staff sign in by
+    # roster; client users sign in to the control plane's /portal, mapped to one
+    # client by the portal domains on that client.
     entra_tenant_id: str = ""
     entra_client_id: str = ""
     entra_client_secret: str = ""
@@ -77,6 +78,10 @@ class Settings(BaseSettings):
 
     # Seconds the cross-module overview caches each module probe before re-fetching.
     probe_cache_seconds: int = 45
+    # Client 360: seconds each live module read is cached per client, and the
+    # per-request timeout. A module slower than the timeout shows as unreachable.
+    client360_cache_seconds: int = 30
+    client360_timeout_seconds: float = 5.0
 
     # The onboarding note (app/notify.py). Blank SMTP_HOST logs the note instead of
     # sending it; onboarding never fails on mail. SMTP_FROM is the sender address,
