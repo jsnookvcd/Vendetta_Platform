@@ -157,4 +157,25 @@ def api_user(request: Request) -> str:
     return current_user(request)
 
 
+def _clean_email(raw: str) -> str:
+    e = "".join(ch for ch in (raw or "").strip().lower() if ch.isalnum() or ch in "@.-_+'")[:320]
+    return e if e.count("@") == 1 and not e.startswith("@") and "." in e.split("@")[1] else ""
+
+
+def acting_person(request: Request, caller: str) -> str:
+    """Who a decision or a question should be recorded against. A bridge holding the
+    bearer token (the Slack responder) names the member of staff it acts for in
+    X-Vendetta-On-Behalf-Of; the record then reads "dan@vendettacd.io via slack".
+    Without the token the header is ignored and the caller is its own person.
+    Callers keep using `caller` for permission checks (an "api" caller still
+    cannot decide a high-risk proposal): this only changes the name on record."""
+    if not caller.startswith("api"):
+        return caller
+    person = _clean_email(request.headers.get("x-vendetta-on-behalf-of", ""))
+    if not person:
+        return caller
+    via = caller.split(":", 1)[1] if ":" in caller else "api"
+    return f"{person} via {via}"
+
+
 RequireUser = Depends(current_user)

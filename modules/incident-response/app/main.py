@@ -754,7 +754,9 @@ def api_module(user: str = Depends(auth.api_user)):
         "roles": ["admin", "analyst", "viewer", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
         "card_statuses": board.TASK_STATUSES,
         "readiness": readiness_mod.block(),
-        "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/oncall/page", "/api/module"],
+        "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/ir-cases/{ref}", "/api/ir-cases/{ref}/updates",
+                      "/api/ir-cases/{ref}/status", "/api/ir-cases/{ref}/details", "/api/ir-cases/{ref}/tasks",
+                      "/api/ir-cases/{ref}/tasks/{tid}/move", "/api/oncall/page", "/api/module"],
     }
 
 
@@ -797,8 +799,175 @@ async def api_declare(request: Request, user: str = Depends(auth.api_user), db: 
     if c is None:
         c = hub.resolve_client(db, "", payload.get("client", ""), payload.get("platform_client_id", ""))
     db.refresh(c)
-    case = _declare(db, c, payload.get("description", ""), f"api:{user}", payload.get("severity", "high"))
-    return {"case_id": case.number, "id": case.id}
+    actor = auth.api_person(request)
+    actor = actor if actor.startswith("api") or " via " in actor else f"api:{user}"
+    sev = str(payload.get("severity") or "high").lower()
+    sev = sev if sev in ("low", "medium", "high", "critical") else "high"
+    case = _declare(db, c, str(payload.get("description") or "")[:2000], actor, sev)
+    return {"case_id": case.number, "id": case.id, "link": _case_link(case)}
+
+
+# ------------------------------------------------- case operations for bridges
+# The Slack responder (and any later chat bridge) works a case through these. The
+# caller names the person it acts for in X-Vendetta-On-Behalf-Of; every entry and
+# audit line then carries that person (auth.api_person). A case is addressed by
+# its id or its number (VCD-IR-2026-781), whichever the caller holds.
+def _case_link(case: Case) -> str:
+    return f"{settings.public_url.rstrip('/')}/cases/{case.id}" if settings.public_url else ""
+
+
+def _get_case_ref(db: Session, ref: str) -> Case:
+    ref = (ref or "").strip()
+    opts = (selectinload(Case.client).selectinload(Client.retainer), selectinload(Case.workstreams),
+            selectinload(Case.updates), selectinload(Case.tasks))
+    case = db.execute(select(Case).options(*opts).where((Case.id == ref) | (func.upper(Case.number) == ref.upper()))
+                      ).scalars().first()
+    if not case:
+        raise HTTPException(404, f"no case {ref}")
+    return case
+
+
+async def _json_body(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "JSON object required")
+    return body
+
+
+def _case_detail_json(case: Case, updates: int = 12) -> dict:
+    out = _case_json(case)
+    out.update({
+        "link": _case_link(case), "incident_type": case.incident_type,
+        "tasks": [{"id": t.id, "workstream": t.workstream, "title": t.title, "status": t.status, "owner": t.owner,
+                   "due_on": t.due_on.isoformat() if t.due_on else None}
+                  for t in sorted(case.tasks, key=lambda t: (WORKSTREAMS.index(t.workstream)
+                                                             if t.workstream in WORKSTREAMS else 99, t.position))],
+        "updates": [{"at": u.at.isoformat(), "actor": u.actor, "kind": u.kind, "note": u.note[:1000],
+                     "workstream": u.workstream, "internal_only": u.internal_only}
+                    for u in case.updates[:max(0, min(updates, 50))]],
+    })
+    return out
+
+
+@app.get("/api/ir-cases/{ref}")
+def api_case_detail(ref: str, updates: int = Query(12), user: str = Depends(auth.api_user),
+                    db: Session = Depends(get_db)):
+    return _case_detail_json(_get_case_ref(db, ref), updates)
+
+
+@app.post("/api/ir-cases/{ref}/updates")
+async def api_case_update(ref: str, request: Request, db: Session = Depends(get_db)):
+    """{note, workstream?, internal_only? (default true), task_id?, move_to?, source?}.
+    `source` is a short provenance line (a Slack permalink) kept in the entry's
+    payload so the chain records where the observation came from."""
+    actor = auth.api_person(request)
+    body = await _json_body(request)
+    case = _get_case_ref(db, ref)
+    note = str(body.get("note") or "").strip()[:8000]
+    if not note:
+        raise HTTPException(400, "note required")
+    workstream = str(body.get("workstream") or "")
+    workstream = workstream if workstream in WORKSTREAMS else ""
+    task = None
+    if body.get("task_id"):
+        task = next((t for t in case.tasks if t.id == body["task_id"]), None)
+        if task is None:
+            raise HTTPException(404, "card not on this case")
+    source = str(body.get("source") or "")[:500]
+    entry = CaseUpdate(workstream=workstream, actor=actor, kind="note", note=note,
+                       internal_only=body.get("internal_only", True) is not False,
+                       payload={"source": source} if source else {})
+    case.updates.append(entry)
+    if task is not None:
+        board.apply_update(case, entry, task, str(body.get("move_to") or ""), actor)
+    db.commit()
+    _audit(db, actor, "case.update.api", f"{case.number} internal={entry.internal_only}")
+    return {"ok": True, "case_id": case.number, "update_id": entry.id}
+
+
+@app.post("/api/ir-cases/{ref}/status")
+async def api_case_status(ref: str, request: Request, db: Session = Depends(get_db)):
+    actor = auth.api_person(request)
+    body = await _json_body(request)
+    case = _get_case_ref(db, ref)
+    status = str(body.get("status") or "").lower()
+    if status not in CASE_STATUSES:
+        raise HTTPException(400, f"status must be one of {', '.join(CASE_STATUSES)}")
+    old = case.status
+    if old != status:
+        case.status = status
+        case.closed_at = utcnow() if status == "closed" else None
+        case.updates.append(CaseUpdate(actor=actor, kind="status", note=f"Status {old} to {status}.",
+                                       internal_only=False))
+        db.commit()
+        _audit(db, actor, "case.status", f"{case.number} {old}->{status}")
+    return {"ok": True, "case_id": case.number, "from": old, "status": status}
+
+
+@app.post("/api/ir-cases/{ref}/details")
+async def api_case_details(ref: str, request: Request, db: Session = Depends(get_db)):
+    """Partial update of {severity, lead, incident_type}. Each change is a timeline entry."""
+    actor = auth.api_person(request)
+    body = await _json_body(request)
+    case = _get_case_ref(db, ref)
+    changes = []
+    if "severity" in body:
+        sev = str(body["severity"] or "").lower()
+        if sev not in ("low", "medium", "high", "critical"):
+            raise HTTPException(400, "severity must be low, medium, high or critical")
+        if sev != case.severity:
+            changes.append(f"Severity {case.severity} to {sev}.")
+            case.severity = sev
+    if "lead" in body:
+        lead = str(body["lead"] or "").strip()[:200]
+        if lead != case.lead:
+            changes.append(f"Case lead {case.lead or 'unassigned'} to {lead or 'unassigned'}.")
+            case.lead = lead
+    if "incident_type" in body:
+        it = str(body["incident_type"] or "").strip()[:60]
+        if it != case.incident_type:
+            changes.append(f"Incident type set to {it or 'unspecified'}.")
+            case.incident_type = it
+    for note in changes:
+        case.updates.append(CaseUpdate(actor=actor, kind="system", note=note, internal_only=True))
+    if changes:
+        db.commit()
+        _audit(db, actor, "case.details", f"{case.number} {' '.join(changes)}"[:4000])
+    return {"ok": True, "case_id": case.number, "changes": changes}
+
+
+@app.post("/api/ir-cases/{ref}/tasks")
+async def api_case_task(ref: str, request: Request, db: Session = Depends(get_db)):
+    """{workstream, title, owner?, status?}"""
+    actor = auth.api_person(request)
+    body = await _json_body(request)
+    case = _get_case_ref(db, ref)
+    try:
+        t = board.add_task(case, str(body.get("workstream") or ""), str(body.get("title") or ""), actor,
+                           owner=str(body.get("owner") or ""), status=str(body.get("status") or "todo"))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    db.commit()
+    return {"ok": True, "case_id": case.number, "task": {"id": t.id, "workstream": t.workstream, "title": t.title,
+                                                          "status": t.status, "owner": t.owner}}
+
+
+@app.post("/api/ir-cases/{ref}/tasks/{tid}/move")
+async def api_case_task_move(ref: str, tid: str, request: Request, db: Session = Depends(get_db)):
+    """{status} in todo, in_progress, blocked, done."""
+    actor = auth.api_person(request)
+    body = await _json_body(request)
+    case = _get_case_ref(db, ref)
+    task = _get_task(case, tid)
+    status = str(body.get("status") or "")
+    if status not in board.TASK_STATUSES:
+        raise HTTPException(400, f"status must be one of {', '.join(board.TASK_STATUSES)}")
+    moved = board.move_task(case, task, status, actor)
+    db.commit()
+    return {"ok": True, "case_id": case.number, "moved": moved, "task": {"id": task.id, "status": task.status}}
 
 
 @app.post("/api/oncall/page")

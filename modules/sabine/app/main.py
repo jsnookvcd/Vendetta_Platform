@@ -664,14 +664,44 @@ def api_proposals(status: str = Query("pending"), user: str = Depends(auth.api_u
 
 
 @app.post("/api/proposals/{pid}/decide")
-def api_decide(pid: str, body: dict, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_decide(pid: str, body: dict, request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     p = db.get(Proposal, pid)
     if not p:
         raise HTTPException(404)
     if p.risk == "high" and user.startswith("api"):
         raise HTTPException(403, "a high-risk proposal is decided by a person in the console")
-    res = brain.decide(db, p, user, bool(body.get("approve")), str(body.get("note") or ""))
+    res = brain.decide(db, p, auth.acting_person(request, user), bool(body.get("approve")), str(body.get("note") or ""))
     return JSONResponse({**res, "proposal": _p_json(p)}, status_code=200 if res.get("ok") else 409)
+
+
+@app.post("/api/ask")
+def api_ask(body: dict, request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The Ask page over the service API, for chat bridges. {question} in, and out
+    {reply, source, outcome, proposal}. A question is answered from the picture; a
+    request becomes a skill call under the autonomy policy exactly as on the Ask
+    page, recorded against the person the bridge names. A high-risk skill never
+    runs from here, and the bridge cannot decide one either (api_decide)."""
+    q = str((body or {}).get("question") or "").strip()[:1000]
+    if not q:
+        raise HTTPException(400, "question required")
+    person = auth.acting_person(request, user)
+    it = intent.parse(db, q, person)
+    outcome, prop = None, None
+    if it.skill is not None and it.ambiguities:
+        text_ = intent.clarify(it)
+        ledger.append(db, "observation", person, f"asked: {q[:200]}",
+                      {"source": "ask", "via": user, "intent": it.as_dict() | {"args": intent._plain_args(it.args)}})
+    elif it.actionable:
+        outcome = intent.act(db, it, person)
+        prop = outcome.get("proposal")
+        text_ = outcome["reply"]
+        ledger.append(db, "observation", person, f"asked: {q[:200]}",
+                      {"source": "ask", "via": user, "skill": it.skill.key, "outcome": outcome["kind"]})
+    else:
+        text_, _src = narrative.answer(q, brain.picture(db))
+        ledger.append(db, "observation", person, f"asked: {q[:200]}", {"source": _src, "via": user})
+    return {"reply": text_, "outcome": outcome["kind"] if outcome else "",
+            "proposal": _p_json(prop) if prop is not None else None}
 
 
 @app.post("/api/run")
@@ -712,7 +742,7 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
     return {
         "module": "sabine", "display_name": "SABINE", "platform": "Vendetta Platform", "role": "agent",
         "enabled": settings.module_enabled, "public_url": settings.public_url,
-        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/metrics",
+        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/ask", "/api/metrics",
                       "/api/business", "/api/concierge", "/api/ledger/verify", "/api/module"],
         "readiness": readiness_mod.block(),
         "stats": brain.stats(db),

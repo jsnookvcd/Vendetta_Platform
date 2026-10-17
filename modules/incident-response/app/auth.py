@@ -170,4 +170,27 @@ def api_user(request: Request) -> str:
     return current_user(request)
 
 
+def _clean_email(raw: str) -> str:
+    e = "".join(ch for ch in (raw or "").strip().lower() if ch.isalnum() or ch in "@.-_+'")[:320]
+    return e if e.count("@") == 1 and not e.startswith("@") and "." in e.split("@")[1] else ""
+
+
+def api_person(request: Request) -> str:
+    """The actor a timeline entry should carry for a service-API call. A bridge that
+    acts for a named member of staff (the Slack responder does) sends the person in
+    X-Vendetta-On-Behalf-Of alongside its own bearer token; the entry then reads
+    "dan@vendettacd.io via slack" so the record names the human who acted. The
+    header is honored only with the bearer token: a browser session is always
+    its own person. The bridge, which holds the token, is the party that checked
+    the person's grant on the platform roster before it called."""
+    caller = api_user(request)
+    if not caller.startswith("api"):
+        return caller
+    person = _clean_email(request.headers.get("x-vendetta-on-behalf-of", ""))
+    if not person:
+        return caller
+    via = caller.split(":", 1)[1] if ":" in caller else "api"
+    return f"{person} via {via}"
+
+
 RequireUser = Depends(current_user)
