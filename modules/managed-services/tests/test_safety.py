@@ -3,9 +3,9 @@ actions need confirmation, and both are logged as blocked without calling the to
 from app import actions as act
 from app import connectors
 from app.config import settings
-from app.db import ActionLog, SessionLocal
+from app.db import SessionLocal
 
-from test_app import FakeS1, _client_with_s1
+from test_app import FakeS1, _actions, _client_with_s1
 
 _WRITES = {"mitigate", "incident", "disconnect", "reconnect"}
 
@@ -32,7 +32,7 @@ def test_readonly_blocks_every_tool_action_and_does_not_call_tool(admin, monkeyp
     # a destructive one too
     admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"})
     assert not _wrote(fake)  # the connector was never touched for a write
-    rows = SessionLocal().query(ActionLog).filter_by(alert_id=a.id).all()
+    rows = _actions(a.id).all()
     assert rows and all(x.result == "blocked" for x in rows)
 
 
@@ -48,7 +48,7 @@ def test_destructive_action_needs_confirm(admin, monkeypatch):
     r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
     assert not _wrote(fake)
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one().result == "blocked"
+    assert _actions(a.id).one().result == "blocked"
     # with confirm: it runs
     admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"})
     assert ("mitigate", "quarantine", ["t9"]) in fake.calls

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import boot
 from . import actions as act, sso
-from . import auth, connectors, creds, indicators, messaging, oidc, posture, preflight, provision, sla, sync
+from . import auth, connectors, copilot, creds, indicators, messaging, oidc, posture, preflight, provision, sla, sync
 from .config import (DESK_NAMES, DESKS, SEVERITIES, SEVERITY_ORDER, SLA_PROFILE_NAMES,
                      SLA_PROFILES, TOOL_NAMES, TOOLS, settings)
 from .db import (ActionLog, Alert, AuditLog, Channel, Client, Device, Message, SessionLocal,
@@ -34,7 +34,9 @@ app = FastAPI(title=settings.app_name, docs_url="/api/docs", redoc_url=None)
 templates = Jinja2Templates(directory=str(_APP_DIR / "templates"))
 templates.env.globals.update(app_name=settings.app_name, TOOLS=TOOLS, TOOL_NAMES=TOOL_NAMES,
                              DESKS=DESKS, DESK_NAMES=DESK_NAMES, SEVERITIES=SEVERITIES,
-                             ALERT_ACTIONS=act.ALERT_ACTIONS, DEVICE_ACTIONS=act.DEVICE_ACTIONS)
+                             ALERT_ACTIONS=act.ALERT_ACTIONS, DEVICE_ACTIONS=act.DEVICE_ACTIONS,
+                             VERDICTS=copilot.VERDICTS, VERDICT_NAMES=copilot.VERDICT_NAMES,
+                             CLOSING_VERDICTS=copilot.CLOSING_VERDICTS)
 app.mount("/static", StaticFiles(directory=str(_APP_DIR / "static")), name="static")
 from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
 
@@ -521,7 +523,80 @@ def alert_page(aid: str, request: Request, user: str = auth.RequireUser, db: Ses
     approvers = [u for u in approvers if u.role == "admin" or u.can_approve]
     return render(request, "alert.html", user=user, a=a, hub_ready=bool(settings.platform_hub_url),
                   can_act=can_act, can_self_approve=can_approve and not settings.require_second_approver,
-                  approvers=approvers, require_second=settings.require_second_approver)
+                  approvers=approvers, require_second=settings.require_second_approver,
+                  cp=copilot.summary(a.copilot))
+
+
+@app.post("/alerts/{aid}/copilot")
+def alert_copilot(aid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Compute (or recompute) the copilot's proposal for an alert from the console."""
+    a = _get_alert(db, aid)
+    p = copilot.propose(db, a)
+    db.commit()
+    _audit(db, user, "alert.copilot", f"{a.id} {p.verdict} {p.confidence:.2f} ({p.model})")
+    return _back(f"/alerts/{aid}", True, f"Copilot proposes {copilot.verdict_name(p.verdict)} ({p.confidence:.0%}).")
+
+
+@app.post("/alerts/{aid}/copilot/decide")
+def copilot_decide(aid: str, decision: str = Form(...), verdict: str = Form(""), approver: str = Form(""),
+                   note: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """A human accepts, rejects or overrides the copilot's proposal. Accepting or
+    overriding applies the verdict here: a closing verdict (false positive, benign,
+    duplicate) resolves the alert on this console and is high-stakes, so it goes
+    through the same approver rule as a destructive tool action; a true positive or
+    needs-investigation verdict acknowledges the alert. Rejecting records the
+    disagreement and changes nothing. Every decision is signed into the chain."""
+    a = _get_alert(db, aid)
+    proposal = copilot.from_stored(a.copilot)
+    if proposal is None:
+        return _back(f"/alerts/{aid}", False, "No copilot proposal on this alert yet.")
+    if decision == "accept":
+        final = proposal.verdict
+    elif decision == "override":
+        if verdict not in copilot.VERDICTS:
+            raise HTTPException(400)
+        final = verdict
+        decision = "accepted" if verdict == proposal.verdict else "overridden"
+    elif decision == "reject":
+        final = ""
+    else:
+        raise HTTPException(400)
+    decision = {"accept": "accepted", "reject": "rejected"}.get(decision, decision)
+
+    closes = final in copilot.CLOSING_VERDICTS
+    appr = ""
+    if closes:
+        # Closing on the copilot's word is the high-stakes path: a second approver is
+        # required by the copilot (requires_approval is always set for a closing
+        # verdict) and resolved under the module's existing two-person rule.
+        can_act, can_approve = _caps(db, user)
+        if not can_act:
+            reason = "you do not have permission to close alerts on the copilot's verdict"
+        else:
+            appr = _resolve_approver(db, user, can_approve, approver)
+            reason = "" if appr else "closing an alert on the copilot's verdict needs approval from an authorized responder"
+        if reason:
+            db.add(ActionLog(client_id=a.client_id, alert_id=a.id, device_id=a.device_id, tool=a.tool,
+                             action="triage_decided", actor=user, detail=reason, result="blocked",
+                             payload={"decision": decision, "final_verdict": final, "proposed_verdict": proposal.verdict}))
+            db.commit()
+            _audit(db, user, "alert.copilot.decide", f"{a.id} blocked: {reason}")
+            return _back(f"/alerts/{aid}", False, reason)
+
+    copilot.decide(db, a, decision=decision, final_verdict=final, actor=user, approver=appr, note=note.strip()[:2000])
+    label = f"{decision.capitalize()} copilot proposal"
+    if closes and a.status != "resolved":
+        a.status = "resolved"
+        sla.mark_contained(a)
+        label += f"; resolved as {copilot.verdict_name(final).lower()}"
+    elif final and a.status == "open":
+        a.status = "acknowledged"
+        sla.mark_acknowledged(a)
+        label += "; acknowledged"
+    a.updated_at = utcnow()
+    db.commit()
+    _audit(db, user, "alert.copilot.decide", f"{a.id} {decision} {final} approver={appr}")
+    return _back(f"/alerts/{aid}", True, f"{label}.")
 
 
 @app.post("/alerts/{aid}/triage")
@@ -927,6 +1002,16 @@ def api_findings(status: str = Query("active"), platform_client_id: str = Query(
 def healthz(db: Session = Depends(get_db)):
     db.execute(text("select 1"))
     return {"ok": True}
+
+
+@app.post("/api/alerts/{aid}/copilot")
+def api_alert_copilot(aid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Compute (or recompute) the copilot's proposal for one alert over the service API."""
+    a = _get_alert(db, aid)
+    p = copilot.propose(db, a)
+    db.commit()
+    _audit(db, user, "alert.copilot", f"{a.id} {p.verdict} {p.confidence:.2f} ({p.model})")
+    return {"id": a.id, "copilot": copilot.summary(a.copilot)}
 
 
 @app.post("/api/findings/{aid}/escalate")

@@ -65,8 +65,15 @@ def _upsert_alert(db: Session, client: Client, tool: str, a: dict,
         row.status = "resolved"
     row.updated_at = utcnow()
     row.synced_at = utcnow()
-    from . import indicators
+    from . import copilot, indicators
     indicators.sync_for_alert(db, row)
+    if created:
+        # First sight of the alert: the copilot proposes a verdict, signed into the
+        # client's chain. A human still decides; see main.py copilot_decide.
+        try:
+            copilot.propose(db, row)
+        except Exception:  # noqa: BLE001
+            log.exception("copilot proposal failed for %s/%s", tool, a.get("external_id"))
     return row, created
 
 

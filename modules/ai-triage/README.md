@@ -41,6 +41,13 @@ Two backends behind one `triage(finding, backend=None)` call:
 
 Modules vendor this package into `app/triage/` the same copy-per-module way they vendor `evidence.py` and `evidence_export`.
 
+## Adoption
+
+- managed-services: the reference wiring. `app/copilot.py` maps an alert onto a Finding (title, detail, severity, host, tool, recurrence count for the same client, tool and title, and a human's most recent final verdict on that signature as `prior_verdict`). A proposal is computed when sync first sees an alert and on demand at `POST /api/alerts/{id}/copilot`; it is stored on the alert (`Alert.copilot`) and signed into the per-client action chain as a `triage_proposed` row attributed to `copilot:<model>`. The alert page shows the verdict, confidence and rationale with accept, override and reject controls; the queue shows a verdict badge. A human decision is signed as `triage_decided` with the approver named. Accepting or overriding to a closing verdict (false positive, benign, duplicate) resolves the alert and goes through the module's existing `can_act` / `can_approve` two-person rule; a true positive acknowledges it. `GET /api/findings` carries the proposal as a `copilot` sub-object (see docs/contracts/finding.schema.json), and SABINE reads it: a false positive at 0.9 or higher is queued for confirmation instead of escalated, a true positive at 0.85 or higher raises the escalation proposal's confidence.
+- Not yet adopted: vulnerability-management, penetration-testing, dark-web-monitoring.
+
+Settings in an adopting module: `triage_llm_api_key` and `triage_llm_model` (`TRIAGE_LLM_API_KEY`, `TRIAGE_LLM_MODEL` in `.env.example`); both blank means the rules backend.
+
 ## Tests
 
 `pytest -q` from the module directory. No database; the rules backend and engine need no third-party packages (httpx is used only by the optional LLM backend).

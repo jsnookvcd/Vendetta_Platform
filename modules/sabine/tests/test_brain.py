@@ -52,7 +52,15 @@ class World:
         self.findings = {
             "dark-web-monitoring": [_finding("dark-web-monitoring", "dw1", "critical", "rb combolist leak", matched="jdoe@riverbendcu.org")],
             "managed-services": [_finding("managed-services", "al1", "critical", "Ransomware behavior on WS01", type="threat", matched="WS01"),
-                                 _finding("managed-services", "al2", "high", "jdoe@riverbendcu.org credential stuffing", matched="jdoe@riverbendcu.org", created=FRESH)],
+                                 _finding("managed-services", "al2", "high", "jdoe@riverbendcu.org credential stuffing", matched="jdoe@riverbendcu.org", created=FRESH),
+                                 # the module's triage copilot has spoken on these two; no human has decided yet
+                                 _finding("managed-services", "al3", "critical", "Scheduled task created by admin tool", matched="SRV02",
+                                          copilot={"verdict": "false_positive", "confidence": 0.95, "model": "rules-v1", "requires_approval": True,
+                                                   "rationale": "a human previously dispositioned this asset/signature as false positive.",
+                                                   "created_at": OLD, "decision": None}),
+                                 _finding("managed-services", "al4", "high", "Credential dumping on FS01", matched="FS01",
+                                          copilot={"verdict": "true_positive", "confidence": 0.9, "model": "rules-v1", "requires_approval": False,
+                                                   "rationale": "high severity; carries a CVE identifier.", "created_at": OLD, "decision": None})],
             "vulnerability-management": [_finding("vulnerability-management", "v1", "high", "OpenSSL < 3.0.14", pid="plat-hp", client="Harbor Point",
                                                   native_status="remediating", created=(NOW - dt.timedelta(days=45)).isoformat())],
         }
@@ -198,6 +206,36 @@ def test_office_of_special_projects_rules(world):
     brain.cycle(db)
     assert db.query(WorkItem).filter_by(key="acceptance:professional-services:d1").one().state == "gone"
     assert db.query(WorkItem).filter_by(key="engagement_overdue:professional-services:e2").one().state == "gone"
+    assert ledger.verify(db)["ok"]
+
+
+def test_copilot_verdicts_shape_soc_proposals(world):
+    """A confident false-positive verdict from a module's triage copilot is not
+    escalated: it becomes a low-severity confirm-and-close item. A confident true
+    positive raises the escalation proposal's confidence. A human decision on the
+    proposal, or a case already attached, switches the copilot rules off."""
+    db = SessionLocal()
+    brain.cycle(db)
+    props = {p.key: p for p in db.query(Proposal).all()}
+    assert "escalate_finding:managed-services:al3" not in props
+    fp = props["copilot_false_positive:managed-services:al3"]
+    assert fp.status == "executed" and fp.risk == "low" and fp.autonomy == "auto" and fp.confidence == 0.95
+    assert fp.title.startswith("Copilot says false positive, confirm and close") and "second approver" in fp.rationale
+    w = db.query(WorkItem).filter_by(key="sabine:copilot_false_positive:copilot_false_positive:managed-services:al3").one()
+    assert w.kind == "copilot_fp" and w.severity == "low" and w.client == "Riverbend Credit Union"
+    assert w.link == "https://msp.example/alerts/al3"
+    assert db.query(WorkItem).filter_by(key="finding:managed-services:al3").one().payload["copilot"]["verdict"] == "false_positive"
+    # al4: high, so the base confidence is 0.75; the copilot's true positive at 0.9 lifts it
+    tp = props["escalate_finding:managed-services:al4"]
+    assert tp.status == "pending" and tp.confidence == 0.85 and "copilot" in tp.rationale and tp.facts["copilot"]["confidence"] == 0.9
+    assert props["escalate_finding:dark-web-monitoring:dw1"].confidence == 0.9  # no copilot: unchanged
+    # the responder decides in the module: the finding reports the decision, and the next
+    # cycle treats it as an ordinary finding again (al3 now escalates on age)
+    world.findings["managed-services"][2]["copilot"]["decision"] = {"decision": "rejected", "final_verdict": "", "analyst": "dan@vendettacd.io", "approver": "", "at": FRESH}
+    world.findings["managed-services"][3]["subject"]["case_ref"] = "VCD-IR-2026-801"
+    brain.cycle(db)
+    props = {p.key: p for p in db.query(Proposal).all()}
+    assert "escalate_finding:managed-services:al3" in props
     assert ledger.verify(db)["ok"]
 
 

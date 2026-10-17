@@ -82,22 +82,53 @@ def soc_rules(db: Session) -> list[Proposal]:
             continue
         if subj.get("case_ref"):
             continue  # already in a case
+        mod = f["_module"]
+        wi = db.execute(select(WorkItem).where(WorkItem.key == f"finding:{mod}:{f['id']}")).scalar_one_or_none()
+        # The module's triage copilot, when it has spoken and no human has decided yet.
+        cp = f.get("copilot") or {}
+        cp_verdict, cp_conf = cp.get("verdict") or "", float(cp.get("confidence") or 0.0)
+        cp_open = bool(cp_verdict) and not cp.get("decision")
+        if cp_open and cp_verdict == "false_positive" and cp_conf >= settings.copilot_fp_confidence:
+            # A confident false-positive call is not escalated; a person confirms and
+            # closes it in the module, where the two-person rule applies.
+            p = propose(
+                db, "copilot_false_positive", f"copilot_false_positive:{mod}:{f['id']}",
+                f"Copilot says false positive, confirm and close: {f.get('title', '')}"[:400],
+                (f"The {mod} triage copilot ({cp.get('model', 'rules')}) proposes false positive at "
+                 f"{cp_conf:.0%} confidence for this {sev} finding for {subj.get('client', 'unknown client')}: "
+                 f"{cp.get('rationale', '')} SABINE does not escalate it. A responder should confirm the call and "
+                 f"close it in {mod}, where closing on the copilot's word needs a second approver."),
+                {"module": mod, "finding_id": f["id"], "severity": sev, "title": f.get("title"),
+                 "client": subj.get("client"), "platform_client_id": subj.get("platform_client_id"),
+                 "copilot": {"verdict": cp_verdict, "confidence": cp_conf, "model": cp.get("model", "")}},
+                {"kind": "copilot_fp", "severity": "low", "client": subj.get("client", ""),
+                 "platform_client_id": subj.get("platform_client_id") or "",
+                 "link": wi.link if wi else ""},
+                cp_conf, work_item=wi)
+            if p:
+                out.append(p)
+            continue
         age = _age_minutes(f.get("created_at"))
         if age < threshold:
             continue
-        mod = f["_module"]
-        wi = db.execute(select(WorkItem).where(WorkItem.key == f"finding:{mod}:{f['id']}")).scalar_one_or_none()
+        confidence = 0.9 if sev == "critical" else 0.75
+        why = (f"A {sev} finding (\"{f.get('title', '')}\") has been active in {mod} for "
+               f"{int(age)} minutes with no IR case attached. Policy escalates {sev} findings after "
+               f"{threshold} minutes so a responder owns it on the {f.get('workstream', 'Scoping and Containment')} workstream.")
+        facts = {"module": mod, "finding_id": f["id"], "severity": sev, "age_minutes": int(age),
+                 "title": f.get("title"), "client": subj.get("client"), "platform_client_id": subj.get("platform_client_id"),
+                 "matched": f.get("matched")}
+        if cp_open and cp_verdict == "true_positive" and cp_conf >= settings.copilot_tp_confidence:
+            confidence = min(0.99, confidence + 0.1)
+            why += (f" The module's triage copilot ({cp.get('model', 'rules')}) agrees it is a true positive at "
+                    f"{cp_conf:.0%} confidence.")
+            facts["copilot"] = {"verdict": cp_verdict, "confidence": cp_conf, "model": cp.get("model", "")}
         p = propose(
             db, "escalate_finding", f"escalate_finding:{mod}:{f['id']}",
             f"Escalate {sev} {mod.replace('-', ' ')} finding for {subj.get('client', 'unknown client')}",
-            (f"A {sev} finding (\"{f.get('title', '')}\") has been active in {mod} for "
-             f"{int(age)} minutes with no IR case attached. Policy escalates {sev} findings after "
-             f"{threshold} minutes so a responder owns it on the {f.get('workstream', 'Scoping and Containment')} workstream."),
-            {"module": mod, "finding_id": f["id"], "severity": sev, "age_minutes": int(age),
-             "title": f.get("title"), "client": subj.get("client"), "platform_client_id": subj.get("platform_client_id"),
-             "matched": f.get("matched")},
+            why, facts,
             {"module": mod, "id": f["id"], "path": f"/api/findings/{f['id']}/escalate"},
-            0.9 if sev == "critical" else 0.75, work_item=wi)
+            confidence, work_item=wi)
         if p:
             out.append(p)
 

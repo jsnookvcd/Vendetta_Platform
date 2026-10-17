@@ -74,6 +74,12 @@ class FakeSuperOps:
         self.replies.append((ticket_id, content))
 
 
+def _actions(alert_id, **by):
+    """Tool action rows on an alert, leaving out the triage copilot's own chain rows
+    (the proposal written on first sync and any human decision on it)."""
+    return SessionLocal().query(ActionLog).filter_by(alert_id=alert_id, **by).filter(~ActionLog.action.like("triage_%"))
+
+
 def _client_with_s1(fake):
     connectors._instances["sentinelone"] = fake
     db = SessionLocal()
@@ -127,7 +133,7 @@ def test_alert_action_calls_tool_and_logs(admin):
     r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"}, follow_redirects=False)
     assert r.status_code == 302 and "msg=" in r.headers["location"]
     assert ("mitigate", "quarantine", ["t9"]) in fake.calls
-    log = SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one()
+    log = _actions(a.id).one()
     assert log.result == "ok" and log.action == "Quarantine threat"
     assert log.client_visible is False  # not published yet
 
@@ -144,7 +150,7 @@ def test_wrong_tool_action_is_refused(admin):
     fake, c, a = _synced_alert(admin)
     r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "h_approve"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).count() == 0
+    assert _actions(a.id).count() == 0
 
 
 def test_failed_tool_call_logs_failed_and_surfaces_message(admin):
@@ -158,7 +164,7 @@ def test_failed_tool_call_logs_failed_and_surfaces_message(admin):
     a = SessionLocal().query(Alert).one()
     r = admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one().result == "failed"
+    assert _actions(a.id).one().result == "failed"
 
 
 def _portal_session(client, email, c):

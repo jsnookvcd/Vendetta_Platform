@@ -98,8 +98,9 @@ modules:
       Shared library, not a service. Turns any module's signed chain of custody into a
       court-admissible, self-verifying export package (sealed manifest, embedded
       standalone verifier, optional RFC 3161 trusted timestamp), and provides the
-      independent verifier that confirms one offline. professional-services is the
-      reference wiring. Built and tested.
+      independent verifier that confirms one offline. Wired into professional-services
+      (the reference, per client), incident-response (per case, client copy seals
+      internal entries) and managed-services (per client). Built and tested.
 
   - name: ai-triage
     display_name: AI Triage Copilot
@@ -111,7 +112,9 @@ modules:
       written rationale, with a deterministic rules fallback that always runs and
       grounds any LLM output. A human accepts or rejects, a second approver is required
       for high-stakes or low-confidence verdicts, and both the proposal and the human
-      decision are written to the signed evidence chain. Built and tested.
+      decision are written to the signed evidence chain. Wired into managed-services
+      (the reference: proposal on first sync, accept/override/reject on the alert page,
+      copilot sub-object on /api/findings that SABINE reads). Built and tested.
 
   - name: mdr
     display_name: Managed Detection and Response

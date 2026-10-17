@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     stale_engagement_days: int = 30        # a pentest engagement open this long with no findings
     remediation_sla_days: dict = {"critical": 7, "high": 30, "medium": 90, "low": 180}
     acceptance_nudge_days: int = 7         # an OSP deliverable delivered and not yet accepted this long
+    # A module's triage copilot verdict (the finding's "copilot" sub-object) at or above
+    # these confidences: a false positive is queued for confirmation instead of being
+    # escalated; a true positive raises the escalation proposal's confidence.
+    copilot_fp_confidence: float = 0.9
+    copilot_tp_confidence: float = 0.85
 
     @property
     def oidc_enabled(self) -> bool:

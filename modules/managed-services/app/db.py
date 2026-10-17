@@ -149,6 +149,11 @@ class Alert(Base):
     published: Mapped[bool] = mapped_column(Boolean, default=False)
     client_note: Mapped[str] = mapped_column(Text, default="")
     escalated_case: Mapped[str] = mapped_column(String(60), default="")  # IR hub case number
+    # The triage copilot's proposal for this alert (see copilot.py): verdict,
+    # confidence, rationale, signals, model, requires_approval, created_at, and once a
+    # human has dispositioned it, a nested "decision". Null until computed. The same
+    # content is signed into the action chain; this copy is what the pages read.
+    copilot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     client: Mapped[Client] = relationship(back_populates="alerts")
     device: Mapped[Device | None] = relationship()
@@ -194,6 +199,9 @@ class ActionLog(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
     result: Mapped[str] = mapped_column(String(20), default="ok")  # ok | failed
     client_visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Structured evidence for triage copilot events (the proposal the copilot made,
+    # the decision a human took). Null on ordinary tool actions.
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     # Chain of custody: a signed, tamper-evident chain per client (the tenant), so
@@ -328,6 +336,9 @@ def init_db() -> None:
         conn.execute(_text("UPDATE alerts SET received_at = COALESCE(received_at, synced_at, occurred_at, now())"))
         conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ"))
         conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS contained_at TIMESTAMPTZ"))
+        # Triage copilot: the proposal on the alert, structured payload on chain rows.
+        conn.execute(_text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS copilot JSON"))
+        conn.execute(_text("ALTER TABLE action_log ADD COLUMN IF NOT EXISTS payload JSON"))
         # Indicators table is created by create_all; nothing to migrate for it yet.
 
 
@@ -338,7 +349,7 @@ _GLOBAL_CHAIN = "_module"  # chain key for actions with no client (module-level)
 def action_fields(a: "ActionLog") -> dict:
     """The immutable, evidentiary fields of an action, in the exact shape the chain
     hashes. Write and verify both go through this so the two always agree."""
-    return {
+    fields = {
         "id": a.id,
         "client_id": a.client_id,
         "alert_id": a.alert_id,
@@ -352,6 +363,12 @@ def action_fields(a: "ActionLog") -> dict:
         "client_visible": bool(a.client_visible),
         "at": a.at.isoformat() if a.at is not None else None,
     }
+    # The payload joins the hashed fields only when present, so rows signed before
+    # the column existed still verify, and a payload added to or stripped from a row
+    # after signing breaks its hash.
+    if a.payload:
+        fields["payload"] = a.payload
+    return fields
 
 
 def _chain_new_actions(session) -> None:

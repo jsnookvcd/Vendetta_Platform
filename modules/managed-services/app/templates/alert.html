@@ -58,7 +58,42 @@
   </div>
 
   <div>
-    <div class="section-head"><h2>Triage</h2></div>
+    <div class="section-head"><h2>Copilot</h2>
+      <form class="inline" method="post" action="/alerts/{{ a.id }}/copilot" style="margin-left:auto"><button class="btn btn-sm btn-ghost">{{ 'Recompute' if cp else 'Ask the copilot' }}</button></form>
+    </div>
+    <div class="panel pad">
+      {% if cp %}
+      <p style="margin:0 0 8px"><span class="copilot cp-{{ cp.verdict }}">{{ VERDICT_NAMES[cp.verdict] }} {{ (cp.confidence * 100)|round|int }}%</span></p>
+      <p style="margin:0; font-size:13.5px">Copilot: <b>{{ VERDICT_NAMES[cp.verdict] }}</b> ({{ (cp.confidence * 100)|round|int }}%) because {{ cp.rationale }}</p>
+      <p class="faint" style="font-size:12px; margin:8px 0 0">Model {{ cp.model }}{% if cp.requires_approval %} · a second approver is required before acting on this verdict{% endif %}. Proposed {{ cp.created_at[:16]|replace('T', ' ') }} UTC.</p>
+      {% if cp.decision %}
+      <p class="faint" style="font-size:12px; margin:8px 0 0"><b style="color:var(--fg)">{{ cp.decision.decision|capitalize }}</b> by {{ cp.decision.analyst }}{% if cp.decision.final_verdict %} as {{ VERDICT_NAMES[cp.decision.final_verdict]|lower }}{% endif %}{% if cp.decision.approver %}, approved by {{ cp.decision.approver }}{% endif %}.</p>
+      {% else %}
+      <form method="post" action="/alerts/{{ a.id }}/copilot/decide" class="{{ 'confirm' if cp.verdict in CLOSING_VERDICTS }}"{% if cp.verdict in CLOSING_VERDICTS %} data-confirm="Accepting resolves this alert on this console as {{ VERDICT_NAMES[cp.verdict]|lower }}. Continue?"{% endif %} style="margin-top:10px">
+        <input type="hidden" name="decision" value="accept">
+        <div class="row" style="gap:7px; flex-wrap:wrap; align-items:center">
+          <button class="btn btn-sm btn-primary">Accept {{ VERDICT_NAMES[cp.verdict]|lower }}</button>
+          {% if cp.verdict in CLOSING_VERDICTS %}{{ approver_field() }}{% endif %}
+        </div>
+      </form>
+      <form method="post" action="/alerts/{{ a.id }}/copilot/decide" style="margin-top:8px">
+        <input type="hidden" name="decision" value="override">
+        <div class="row" style="gap:7px; flex-wrap:wrap; align-items:center">
+          <select name="verdict">{% for v in VERDICTS if v != cp.verdict %}<option value="{{ v }}">{{ VERDICT_NAMES[v] }}</option>{% endfor %}</select>
+          {{ approver_field() }}
+          <input name="note" placeholder="why (optional)" style="width:180px; font-size:12px">
+          <button class="btn btn-sm">Override</button>
+        </div>
+      </form>
+      <form method="post" action="/alerts/{{ a.id }}/copilot/decide" style="margin-top:8px"><input type="hidden" name="decision" value="reject"><button class="btn btn-sm btn-ghost">Reject proposal</button></form>
+      <p class="faint" style="font-size:12px; margin:10px 0 0">The copilot only proposes. Accepting or overriding to a closing verdict resolves the alert here and needs an approver; a true positive acknowledges it. Both the proposal and your decision are signed into the client's action chain.</p>
+      {% endif %}
+      {% else %}
+      <p class="faint" style="font-size:12px; margin:0">No proposal yet. New alerts get one on sync; ask for one here.</p>
+      {% endif %}
+    </div>
+
+    <div class="section-head" style="margin-top:14px"><h2>Triage</h2></div>
     <div class="panel pad">
       <div class="row" style="gap:7px; flex-wrap:wrap">
         {% if a.status == 'open' %}<form class="inline" method="post" action="/alerts/{{ a.id }}/triage"><input type="hidden" name="op" value="acknowledge"><button class="btn btn-sm">Acknowledge</button></form>{% endif %}

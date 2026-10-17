@@ -160,6 +160,14 @@ class Settings(BaseSettings):
     # responder can still act, with the self-approval recorded in the signed log.
     require_second_approver: bool = False
 
+    # Triage copilot (app/triage, vendored from modules/ai-triage). Blank model means
+    # the deterministic rules backend: no key, no network, reproducible verdicts.
+    # Setting both switches on the LLM backend, whose output is grounded against the
+    # rules and falls back to them on any failure.
+    triage_llm_api_key: str = ""
+    triage_llm_model: str = ""
+    triage_llm_base_url: str = ""
+
     # Pre-incident posture thresholds. An endpoint is "dark" once it has gone this
     # many days without reporting; telemetry from a tool is stale once its newest
     # device sync is older than this many hours; a host left isolated longer than

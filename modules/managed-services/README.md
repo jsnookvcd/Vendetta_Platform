@@ -48,6 +48,21 @@ The tech console
   tenancy.
 - Triage separate from the tools: acknowledge, resolve on this console only,
   reopen, and escalate to an IR case in the engagement hub.
+- Triage copilot (app/triage, vendored from modules/ai-triage, with app/copilot.py
+  as the glue): when sync first sees an alert, the copilot proposes a verdict
+  (true positive, false positive, needs investigation, duplicate, benign) with a
+  confidence and a written rationale, from the deterministic rules backend unless
+  TRIAGE_LLM_API_KEY and TRIAGE_LLM_MODEL switch on an LLM whose output is
+  grounded against the rules. The alert page reads "Copilot: <verdict> (<n>%)
+  because <rationale>" and the queue shows a verdict badge. The copilot never
+  changes an alert. A tech accepts, overrides or rejects it: a closing verdict
+  resolves the alert here and needs an approver under the same can_act and
+  can_approve rule as a destructive tool action (no self-approval when
+  REQUIRE_SECOND_APPROVER is on); a true positive acknowledges it and stamps the
+  SLA clock. The proposal (triage_proposed, actor copilot:<model>) and the
+  decision (triage_decided, with the approver) are signed into the client's
+  action chain. POST /api/alerts/{id}/copilot recomputes on demand, and
+  GET /api/findings carries the proposal as a copilot sub-object for SABINE.
 - Chain of custody: every action row is hash-chained and Ed25519-signed per
   client as it is written, with the approver of a destructive action inside the
   signed record. The client page verifies the chain and downloads the proof, and

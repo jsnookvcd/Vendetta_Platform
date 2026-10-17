@@ -10,6 +10,7 @@ import logging
 import httpx
 from sqlalchemy.orm import Session
 
+from . import copilot
 from .config import TOOL_NAMES, settings
 from .db import Alert
 
@@ -45,6 +46,7 @@ def finding_dict(alert: Alert) -> dict:
         "analyst_notes": alert.client_note,
         "evidence": [],
         "workstream": WORKSTREAM_BY_KIND.get(alert.kind, "Scoping and Containment"),
+        "copilot": copilot.summary(alert.copilot),
     }
 
 

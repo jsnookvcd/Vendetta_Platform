@@ -31,6 +31,13 @@ can do nothing a module's service API does not allow.
 SOC: escalate a critical or high finding left without a case past the threshold;
 note related findings across modules for one client (shared host, credential or
 title); recommend a host action for a critical threat alert (hand-off only).
+When a finding carries a module triage copilot verdict (the `copilot` sub-object
+on the shared finding) and no human has decided on it: a false positive at
+`copilot_fp_confidence` (0.9) or higher is not escalated and instead becomes a
+low-severity "copilot says false positive, confirm and close" item linking to the
+module, where closing needs a second approver; a true positive at
+`copilot_tp_confidence` (0.85) or higher on a critical or high finding raises the
+escalation proposal's confidence by 0.1.
 
 Administration: re-sync a module whose roster pull failed; raise every red
 readiness item with the fix; flag staff with no grants, modules nobody is granted,

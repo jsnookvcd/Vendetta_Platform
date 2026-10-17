@@ -9,6 +9,10 @@ cannot drift from the hub without its own CI going red.
   `status` (`active`, the default, with `open` as a synonym; `all`; or a literal
   module status), `platform_client_id` (the control plane's id) and `client`
   (name substring).
+  A finding may carry an optional `copilot` sub-object (verdict, confidence,
+  rationale, model, requires_approval, created_at, and `decision` once a human
+  has dispositioned it) from the module's triage copilot; it is null or absent
+  on modules that have not adopted ai-triage.
 - escalation.schema.json: what a module POSTs to the hub at `POST /api/ir-cases`.
   Every finding module also exposes `POST /api/findings/{id}/escalate` so the
   control plane or another module can drive an escalation over the service API.

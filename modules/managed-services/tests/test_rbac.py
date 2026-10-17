@@ -2,9 +2,9 @@
 action needs an authorized approver, recorded in the signed action chain."""
 from app import auth, connectors
 from app.config import settings
-from app.db import ActionLog, SessionLocal, User
+from app.db import SessionLocal, User
 
-from test_app import FakeS1, _client_with_s1
+from test_app import FakeS1, _actions, _client_with_s1
 from test_safety import _wrote
 
 
@@ -42,7 +42,7 @@ def test_destructive_blocked_without_approver(client, monkeypatch):
     _as(client, "analyst@vendettacd.io", can_act=True, can_approve=False)  # cannot self-approve
     client.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"})
     assert not _wrote(fake)
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one().result == "blocked"
+    assert _actions(a.id).one().result == "blocked"
 
 
 def test_destructive_runs_with_named_approver_and_records_it(client, monkeypatch):
@@ -53,7 +53,7 @@ def test_destructive_runs_with_named_approver_and_records_it(client, monkeypatch
     client.post(f"/alerts/{a.id}/action",
                 data={"action_id": "s1_quarantine", "confirm": "true", "approver": "lead@vendettacd.io"})
     assert ("mitigate", "quarantine", ["t9"]) in fake.calls
-    row = SessionLocal().query(ActionLog).filter_by(alert_id=a.id, result="ok").one()
+    row = _actions(a.id, result="ok").one()
     assert row.approver == "lead@vendettacd.io"
     # the approver is inside the signed chain
     from app import evidence
@@ -68,7 +68,7 @@ def test_admin_self_approves_by_default(admin, monkeypatch):
     fake, a = _synced_alert()
     admin.post(f"/alerts/{a.id}/action", data={"action_id": "s1_quarantine", "confirm": "true"})
     assert ("mitigate", "quarantine", ["t9"]) in fake.calls
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id, result="ok").one().approver == "admin"
+    assert _actions(a.id, result="ok").one().approver == "admin"
 
 
 def test_strict_mode_forbids_self_approval(admin, monkeypatch):
@@ -79,7 +79,7 @@ def test_strict_mode_forbids_self_approval(admin, monkeypatch):
     admin.post(f"/alerts/{a.id}/action",
                data={"action_id": "s1_quarantine", "confirm": "true", "approver": "admin"})
     assert not _wrote(fake)
-    assert SessionLocal().query(ActionLog).filter_by(alert_id=a.id).one().result == "blocked"
+    assert _actions(a.id).one().result == "blocked"
 
 
 def test_team_caps_requires_admin(client):

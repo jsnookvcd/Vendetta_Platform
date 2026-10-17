@@ -311,6 +311,12 @@ pre.body { white-space: pre-wrap; word-break: break-word; background: var(--bg-2
 .alink { color: var(--info); font-size: 12px; }
 .sev-info { color: var(--faint); background: rgba(95,108,128,0.15); }
 .lock { font-size: 11px; color: var(--faint); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; }
+.copilot { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 0 6px; white-space: nowrap; letter-spacing: 0.02em; }
+.cp-true_positive { color: #ff9ba6; background: rgba(224,18,47,0.16); }
+.cp-false_positive { color: #9fd9b4; background: rgba(46,160,96,0.16); }
+.cp-needs_investigation { color: #f1cd82; background: rgba(224,165,46,0.14); }
+.cp-duplicate { color: #aeb9cc; background: rgba(91,107,130,0.18); }
+.cp-benign_expected { color: #a9c4f0; background: rgba(79,129,214,0.16); }
 .cstate { font-size: 12px; font-weight: 700; text-transform: capitalize; }
 .cstate-open { color: var(--brand-2); }
 .cstate-contained { color: var(--high); }

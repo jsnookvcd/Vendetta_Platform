@@ -27,6 +27,12 @@ ACTIONS = {
         "description": "A critical or high finding left unescalated beyond the threshold is escalated to the IR hub through the module's own API, opening or linking a case.",
         "executor": "escalate_finding",
     },
+    "copilot_false_positive": {
+        "label": "Queue a finding the triage copilot calls a false positive for confirmation",
+        "domain": "soc", "risk": "low", "default": "auto",
+        "description": "When a module's triage copilot proposes false positive at high confidence and no case exists, SABINE does not escalate; it raises a low-severity work item so a responder confirms and closes it in the module, under that module's second-approver rule.",
+        "executor": "raise_work_item",
+    },
     "link_related_findings": {
         "label": "Note related findings across modules for one client",
         "domain": "soc", "risk": "low", "default": "auto",

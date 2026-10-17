@@ -172,7 +172,7 @@ def build_queue(db: Session) -> dict:
                 client=subj.get("client", ""), platform_client_id=subj.get("platform_client_id") or "",
                 severity=sev, link=link,
                 payload={"finding": {k: f.get(k) for k in ("id", "type", "status", "title", "matched", "created_at", "workstream")},
-                         "case_ref": subj.get("case_ref") or ""})
+                         "case_ref": subj.get("case_ref") or "", "copilot": f.get("copilot")})
         observed.add(key)
         counts["finding"] += 1
 

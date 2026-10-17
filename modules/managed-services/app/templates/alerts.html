@@ -17,7 +17,7 @@
     <td class="nowrap"><a href="/clients/{{ a.client_id }}">{{ a.client.name }}</a></td>
     <td class="nowrap">{{ toolchip(a.tool) }}</td>
     <td class="nowrap faint">{{ a.kind }}</td>
-    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a>{% if a.published %} <span class="lock">portal</span>{% endif %}{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}</td>
+    <td><a href="/alerts/{{ a.id }}">{{ a.title|truncate(70) }}</a>{% if a.published %} <span class="lock">portal</span>{% endif %}{% if a.escalated_case %} <span class="lock">{{ a.escalated_case }}</span>{% endif %}{% if a.copilot and a.copilot.verdict %} <span class="copilot cp-{{ a.copilot.verdict }}" title="Copilot: {{ a.copilot.rationale }}">{{ VERDICT_NAMES[a.copilot.verdict] }} {{ (a.copilot.confidence * 100)|round|int }}%</span>{% endif %}</td>
     <td class="nowrap faint">{{ a.device.hostname if a.device else '' }}</td>
     <td class="nowrap faint">{{ a.status }}</td>
     <td class="nowrap faint">{{ a.tool_status }}</td>
