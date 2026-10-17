@@ -12,6 +12,8 @@ Four kinds of record make up what SABINE knows and does:
   action is appended, so what SABINE saw, suggested, who allowed it and what it did
   can be verified independently later.
 - Policy: the autonomy level per action kind (off, propose, auto), set by an admin.
+- ClientPolicy and ClientThreshold: per-client overrides of that level and of the
+  thresholds the rules use.
 - Brief: a document SABINE wrote (a client brief, a daily summary), kept for review.
 """
 from __future__ import annotations
@@ -20,7 +22,7 @@ import datetime as dt
 import uuid
 
 from sqlalchemy import (JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text,
-                        create_engine, text)
+                        UniqueConstraint, create_engine, text)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from .config import settings
@@ -115,6 +117,35 @@ class Policy(Base):
     __tablename__ = "policies"
     action: Mapped[str] = mapped_column(String(40), primary_key=True)
     autonomy: Mapped[str] = mapped_column(String(10), default="propose")  # off | propose | auto
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ClientPolicy(Base):
+    """An admin's per-client autonomy override for one skill. The global Policy row
+    applies wherever no override exists; a high-risk skill is never auto either way."""
+
+    __tablename__ = "client_policies"
+    __table_args__ = (UniqueConstraint("platform_client_id", "action", name="uq_client_policy"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    platform_client_id: Mapped[str] = mapped_column(String(32), index=True)
+    client: Mapped[str] = mapped_column(String(200), default="")
+    action: Mapped[str] = mapped_column(String(40))
+    autonomy: Mapped[str] = mapped_column(String(10), default="propose")
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ClientThreshold(Base):
+    """Per-client thresholds; a null column falls back to the global setting (or, for
+    critical_ack_minutes, to the client's commitments on the platform)."""
+
+    __tablename__ = "client_thresholds"
+    platform_client_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    client: Mapped[str] = mapped_column(String(200), default="")
+    escalate_after_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stale_case_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    critical_ack_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by: Mapped[str] = mapped_column(String(320), default="")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
