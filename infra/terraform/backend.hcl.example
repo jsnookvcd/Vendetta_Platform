@@ -1,0 +1,10 @@
+# Copy to backend.hcl (git-ignored), fill in, and run:
+#   terraform init -backend-config=backend.hcl
+# after uncommenting the backend "s3" {} block in main.tf. The bucket must exist
+# first, in the same account, with versioning on and public access blocked; the
+# DynamoDB table needs a string partition key named LockID.
+bucket         = "vcd-platform-tfstate-<account id>"
+key            = "platform/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "vcd-platform-tfstate-lock"
+encrypt        = true

@@ -10,6 +10,14 @@ terraform {
       version = "~> 3.6"
     }
   }
+
+  # Remote state. State holds every generated secret (SSM values, admin
+  # passwords), so it belongs in a private, versioned, encrypted bucket with a
+  # lock table, never on a laptop. Uncomment, then pass the bucket details at
+  # init time from a copy of backend.hcl.example:
+  #   terraform init -backend-config=backend.hcl
+  # CI keeps running validate with -backend=false, which ignores this block.
+  # backend "s3" {}
 }
 
 provider "aws" {

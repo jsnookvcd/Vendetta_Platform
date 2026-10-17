@@ -260,6 +260,135 @@ the config (secret encrypted) and checks it against Microsoft right then, so you
 confirm sign-in works without a redeploy. The same values can be pre-seeded through
 SSM instead; the SSO page then shows source "env" and lets you override in place.
 
+## Live verification
+
+Two paths have never been exercised against the real services: Microsoft 365 sign-in
+and the dark web module's Tor path. These checks follow what the code does
+(modules/*/app/sso.py and oidc.py, modules/dark-web-monitoring/app/fetch.py and
+worker.py); each says what to look at and what success looks like.
+
+### Entra SSO
+
+One Entra app registration serves every console; each module host is one more
+redirect URI on it.
+
+1. App registration (Entra admin center > App registrations). Record three values:
+   the Directory (tenant) ID, the Application (client) ID, and a client secret
+   value (Certificates and secrets; copy the value, not the secret ID). Under API
+   permissions grant Microsoft Graph delegated `openid`, `profile` and `email`. The
+   platform type is Web, with the confidential code flow; no implicit grant. If you
+   will restrict sign-in to a security group, add a groups claim under Token
+   configuration so group object IDs appear in the id_token.
+2. Redirect URIs (Authentication > Web). Add `https://<host>/auth/callback` for
+   every module host, one per line, exactly:
+   `platform.<domain>`, `ir.<domain>`, `msp.<domain>`, `darkweb.<domain>`,
+   `vuln.<domain>`, `pentest.<domain>`, `sabine.<domain>` and `osp.<domain>`. Each
+   module sends its own Redirect URL setting when set, and otherwise the URL it
+   computes for its `/auth/callback` route from the request host; behind the ALB
+   that is the public hostname, so leaving the setting blank works once the public
+   URL is on. A mismatch is the most common first-run failure and Microsoft reports
+   it on its own page as `AADSTS50011`.
+3. Enter the values on each console. Open Settings > SSO on the control plane and
+   on every module. Fill Tenant ID, Application (client) ID and Client secret, set
+   Redirect URL to that host's `/auth/callback` (or leave it blank behind the ALB),
+   fill Internal email domains (`vendettacd.io`) and Admin emails (the first admin,
+   as the bootstrap path into the control plane), tick SSO enabled, and click
+   **Save and verify**. The same values can be pre-seeded as
+   `<prefix>/<module>/ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET`
+   in SSM; the page then shows source "env" and still lets you override in place.
+4. What the verify button does. Save and verify (and Verify again) does two live
+   calls from the container: it fetches
+   `https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration`
+   and then posts a client-credentials token request to the token endpoint that
+   document names, with scope `https://graph.microsoft.com/.default`. Success is the
+   page banner "Microsoft 365 SSO verified. tenant reachable and client credentials
+   valid" and the pills ENABLED and VERIFIED, with the last test time. The result is
+   stored and the readiness screen's "SSO verified" check turns green only on a
+   passed test; a saved but untested config stays amber. Failures name the step:
+   "tenant discovery failed (http 400); check the tenant ID", "client credentials
+   rejected: AADSTS7000215 ..." (the secret is wrong or expired), or "unreachable:
+   ConnectError" (the host cannot reach login.microsoftonline.com; check egress).
+   The client-credentials request needs no Graph application permission; the token
+   it gets is discarded.
+5. The browser round trip. Open the console's `/login`; with SSO enabled it shows a
+   "Sign in with Microsoft 365" button. Click it: `/auth/login` redirects to
+   Microsoft, you sign in, Microsoft returns to `/auth/callback`, and you land on
+   the console's home page. Two outcomes short of that are explained by the
+   login page: `/login?sso=failed` means the code exchange with Microsoft failed
+   (check the redirect URI and the secret), and `/login?sso=denied` means Microsoft
+   signed you in but the console refused the account. The denial rule is in
+   oidc.py: once anyone is on the platform staff roster, the roster decides per
+   module (a person not granted that module is denied, however their domain
+   reads); before that, the account must be in Internal email domains, Extra
+   allowed emails or the allowed group. On the control plane an address in Admin
+   emails is admitted either way. A successful sign-in writes a `login.sso` row in
+   that module's audit_log table with the role granted:
+
+   ```bash
+   cd /opt/vendetta_platform/modules/platform
+   docker compose -p vcd-platform exec db psql -U platform -c \
+     "select at, actor, detail from audit_log where action='login.sso' order by at desc limit 5"
+   ```
+
+6. Do it on every host. Repeat step 5 on each module console; the roster pull
+   means the same person gets the level set on the Staff page everywhere, and the
+   control plane's readiness screen shows "SSO verified" per module.
+
+### Dark web module: the Tor path
+
+The dark web stack runs its own Tor client container (service `tor`, built from
+modules/dark-web-monitoring/infra/tor, SOCKS on 9050, client only, no relay). The
+web and worker containers reach it as `TOR_PROXY=socks5://tor:9050`. Anything
+ending in `.onion` goes through Tor; clearnet goes direct unless "Route clearnet
+through Tor" is ticked. The readiness screen does not test Tor; it reports the
+dark web module's collection sources count under integrations. Tor is verified
+on the host and in the module as follows.
+
+1. The Tor container is healthy. Its healthcheck is a TCP connect to 9050 with a
+   90 second start period:
+
+   ```bash
+   cd /opt/vendetta_platform/modules/dark-web-monitoring
+   docker compose -p vcd-dark-web-monitoring ps        # tor should read "healthy"
+   docker compose -p vcd-dark-web-monitoring logs tor | grep -i "bootstrapped"
+   ```
+
+   Success is a `Bootstrapped 100% (done): Done` line. The worker container
+   depends on `tor` being healthy and will not start before it.
+2. The worker saw Tor. At start the worker polls the exit check up to twenty times,
+   fifteen seconds apart, before scheduling any crawl:
+
+   ```bash
+   docker compose -p vcd-dark-web-monitoring logs worker | grep -i "tor"
+   ```
+
+   Success is `tor ok, exit ip <address>`; repeated `waiting for tor: {...}` lines
+   with an error mean the proxy is up but circuits are not built yet, or egress to
+   the Tor network is blocked.
+3. The exit check from the console. Signed in to the dark web console, open
+   `/research/torcheck` (linked from the Research page). It fetches
+   `https://check.torproject.org/api/ip` through the proxy and returns Tor's own
+   answer. Success is `{"IsTor": true, "IP": "<exit address>"}`. `{"IsTor": false,
+   "error": "..."}` means the fetch through the proxy failed (the error names why);
+   `IsTor: false` with an IP means the request did not go through Tor, which
+   should not happen with the proxy set.
+4. A .onion fetch. On the Research page paste a known onion URL (one of the seeded
+   ransomware leak-site sources on the Sources page has one) and click Fetch. The
+   page is read only: it fetches and renders visible text, nothing is posted. The
+   result panel shows Status, Final URL and Bytes. Success is Status `200 OK` with
+   a non-zero byte count and visible text below it. A failed fetch shows the status
+   or `failed` with the exception text; `.onion` requests are given a 60 second
+   connect and 90 second read window, so a slow site can take a minute to answer.
+   Ticking Preserve writes the capture to the evidence store and shows its SHA-256
+   with a download link; `/evidence/<id>/verify` confirms the stored bytes still
+   match. Every fetch is a `research.fetch` row in the module's audit log.
+5. The crawler fetches on its own. The onion crawl runs every
+   ONION_CRAWL_INTERVAL minutes (120 by default) over the enabled onion sources.
+   On the Sources page a source that fetched shows a "last ok" time and a fail
+   count of 0; a failing one shows the fail count climbing and the last error text.
+   The first crawl runs one interval after the worker starts, so either wait for it
+   or confirm a single source by fetching its URL on the Research page as in step 4.
+
 ## Rollback
 
 - A bad tool integration: disconnect it on the Integrations page (or clear its SSM
@@ -273,10 +402,8 @@ SSM instead; the SSO page then shows source "env" and lets you override in place
 ## What still needs doing for full production
 
 - Live Entra SSO and the dark web Tor path have not been exercised against the real
-  services yet; test them on the deployed host.
-- Access levels are admin and analyst per module (plus action and approval rights
-  in managed services); a read-only internal role would need every write route
-  gated in every module.
+  services yet; the Live verification section above is the runbook for the first
+  time on the deployed host.
 - MDR and network operations are still scaffolds (every other module is built,
   containerized and deployed).
 - The scanner-to-API path exposes POST /api/scans with a reference adapter
@@ -284,3 +411,4 @@ SSM instead; the SSO page then shows source "env" and lets you override in place
   scanner service yet; the first real scan is its shakeout.
 - The first `terraform plan` against the real account is the shakeout for the
   Terraform itself; CI validates it but has never applied it.
+  infra/terraform/PLAN.md says how to run it and what a clean plan shows.

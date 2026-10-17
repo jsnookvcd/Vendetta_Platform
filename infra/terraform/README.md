@@ -99,7 +99,8 @@ the vendettacd.io corporate mailbox; only the hostnames use vendettacyber.com.
 
 CI runs `terraform fmt -check` and `terraform validate`; no `terraform plan` has
 been run (no AWS credentials in CI). Run `terraform plan` against the target
-account before the first apply.
+account before the first apply; PLAN.md says how, what the runner needs, the
+remote state backend (`backend.hcl.example`), and what a clean plan shows.
 
 ## Notes
 

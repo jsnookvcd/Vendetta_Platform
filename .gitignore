@@ -4,3 +4,11 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# terraform working files, state and the filled-in backend config
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/terraform/backend.hcl
+infra/terraform/*.tfvars
