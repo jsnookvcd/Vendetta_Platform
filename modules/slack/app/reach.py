@@ -81,3 +81,28 @@ def get(key: str, path: str, **kw) -> dict:
 
 def post(key: str, path: str, json_body: dict | None = None, **kw) -> dict:
     return call(key, "POST", path, json_body=json_body, **kw)
+
+
+def get_bytes(key: str, path: str, *, person: str = "", params: dict | None = None,
+              timeout: float = 60.0) -> tuple[bytes | None, str]:
+    """A binary download (a PDF report). Returns (content, error)."""
+    entry = directory().get(key)
+    if not entry:
+        return None, f"{key} is not wired to the Slack responder"
+    headers = {"X-Vendetta-Actor": settings.actor_name}
+    if entry.get("token"):
+        headers["Authorization"] = f"Bearer {entry['token']}"
+    if person:
+        headers["X-Vendetta-On-Behalf-Of"] = person
+    try:
+        with httpx.Client(timeout=timeout, headers=headers, transport=_TRANSPORT) as http:
+            r = http.get(f"{entry['base_url']}{path}", params=params)
+    except httpx.HTTPError as e:
+        return None, f"{key} unreachable ({type(e).__name__})"
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail")
+        except ValueError:
+            detail = ""
+        return None, str(detail or f"{key} answered HTTP {r.status_code}")
+    return r.content, ""

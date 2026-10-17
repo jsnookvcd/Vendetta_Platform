@@ -25,6 +25,9 @@ os.environ["MODULE_DIRECTORY"] = json.dumps({
     "incident-response": {"base_url": "http://ir.test", "token": "ir-token", "public_url": "https://ir.example"},
     "sabine": {"base_url": "http://sabine.test", "token": "sabine-token", "public_url": "https://sabine.example"},
     "platform": {"base_url": "http://platform.test", "token": "platform-token", "public_url": "https://platform.example"},
+    "dark-web-monitoring": {"base_url": "http://dw.test", "token": "dw-token", "public_url": "https://darkweb.example"},
+    "vulnerability-management": {"base_url": "http://vm.test", "token": "vm-token", "public_url": "https://vuln.example"},
+    "managed-services": {"base_url": "http://ms.test", "token": "ms-token", "public_url": "https://msp.example"},
 })
 
 import bcrypt  # noqa: E402
@@ -74,6 +77,19 @@ class World:
                 {"email": "viewer@vendettacd.io", "role": "viewer", "name": "Vic Viewer"},
             ],
         }
+        for mod in ("dark-web-monitoring", "vulnerability-management", "managed-services"):
+            self.roster[mod] = [
+                {"email": "dan@vendettacd.io", "role": "analyst", "name": "Dan Baker",
+                 "config": {"can_act": True, "can_approve": False}},
+                {"email": "jordan@vendettacd.io", "role": "admin", "name": "Jordan Snook"},
+                {"email": "viewer@vendettacd.io", "role": "viewer", "name": "Vic Viewer"},
+                {"email": "kenedi@vendettacd.io", "role": "analyst", "name": "Kenedi Crossley",
+                 "config": {"can_act": True, "can_approve": True}},
+            ]
+        self.tool_calls: list[dict] = []
+        self.uploads: list[tuple[str, bytes]] = []
+        self.ms_readonly = False
+        self.requests: dict[str, dict] = {}
         self.governs = True
         self.clients = [{"id": "plat-rb", "name": "Riverbend Credit Union"}, {"id": "plat-hp", "name": "Harbor Point"},
                         {"id": "plat-rf", "name": "Riverfront Dental"}]
@@ -129,6 +145,11 @@ class World:
             return self._ir(req)
         if host == "sabine.test":
             return self._sabine(req)
+        if host == "files.slack.com":
+            self.uploads.append((str(req.url), req.content))
+            return httpx.Response(200, text="OK")
+        if host in ("dw.test", "vm.test", "ms.test"):
+            return self._tools(req)
         return httpx.Response(404)
 
     def _slack(self, req: httpx.Request) -> httpx.Response:
@@ -162,6 +183,10 @@ class World:
             return ok(messages=[])
         if method == "chat.getPermalink":
             return ok(permalink=f"https://vcd.slack.com/archives/{params['channel']}/p{params['message_ts'].replace('.', '')}")
+        if method == "files.getUploadURLExternal":
+            return ok(upload_url="https://files.slack.com/upload/v1/abc", file_id="F123")
+        if method == "conversations.open":
+            return ok(channel={"id": "D_" + params.get("users", "")})
         if method == "conversations.info":
             return ok(channel={"id": params["channel"], "name": "general-ir", "is_member": True, "is_private": False})
         return ok()
@@ -176,7 +201,7 @@ class World:
             mod = req.url.params.get("module")
             return httpx.Response(200, json={"module": mod, "governs": self.governs, "staff": self.roster.get(mod, [])})
         if req.url.path == "/api/platform/clients":
-            return httpx.Response(200, json={"module": "incident-response", "clients": self.clients})
+            return httpx.Response(200, json={"module": req.url.params.get("module"), "clients": self.clients})
         return httpx.Response(404)
 
     def _ir(self, req: httpx.Request) -> httpx.Response:
@@ -229,6 +254,74 @@ class World:
                 t["status"] = body["status"]
                 return httpx.Response(200, json={"ok": True, "case_id": c["number"], "moved": True, "task": t})
         return httpx.Response(404, json={"detail": "not found"})
+
+    def _tools(self, req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content) if req.content else {}
+        call = {"host": req.url.host, "method": req.method, "path": req.url.path, "body": body,
+                "params": dict(req.url.params), "person": req.headers.get("x-vendetta-on-behalf-of"),
+                "auth": req.headers.get("authorization")}
+        self.tool_calls.append(call)
+        tok = {"dw.test": "dw-token", "vm.test": "vm-token", "ms.test": "ms-token"}[req.url.host]
+        if call["auth"] != f"Bearer {tok}":
+            return httpx.Response(401, json={"detail": "bad token"})
+        p = req.url.path
+        if p.endswith("/report"):
+            return httpx.Response(200, json={
+                "client": "Riverbend Credit Union", "total": 7, "by_severity": {"critical": 1, "high": 3, "medium": 2, "low": 1},
+                "credential_count": 3, "credentials": [{"severity": "high", "matched": "jsmith@riverbendcu.org"}],
+                "leak_posts": [{"severity": "critical", "group": "akira", "kind": "victim", "title": "Riverbend Credit Union"}],
+                "access_broker": [], "evidence_captured": 2,
+                "actions": [{"title": "Force password resets and revoke sessions for exposed accounts", "detail": "x"}]})
+        if p.endswith("/report.pdf"):
+            return httpx.Response(200, content=b"%PDF-1.7 fake", headers={"content-type": "application/pdf"})
+        if p.endswith("/shodan"):
+            return httpx.Response(200, json={
+                "client": "Riverbend Credit Union", "scan_id": "s1", "counts": {"critical": 1, "high": 1, "medium": 0, "total": 4},
+                "hosts": [{"ip": "34.120.10.10", "label": "riverbendcu.org", "known": True, "ports": [443, 3389],
+                           "risky": ["Remote Desktop (RDP)"], "cves": ["CVE-2024-21762"]}],
+                "top": [{"severity": "critical", "title": "CVE-2024-21762 in Fortinet FortiGate 7.0.12 on 443/tcp",
+                         "asset": "34.120.10.10"}], "errors": [], "rejected": []})
+        if p == "/api/devices":
+            q = (req.url.params.get("q") or "").lower()
+            devs = [{"id": "dev1", "tool": "crowdstrike", "hostname": "RB-WS01", "status": "online", "platform": "Windows 11",
+                     "agent_version": "7.18", "last_seen": "2026-10-17T18:00:00+00:00", "link": "https://falcon.example/hosts/aid1",
+                     "client": "Riverbend Credit Union", "platform_client_id": "plat-rb",
+                     "open_alerts": [{"id": "a1", "severity": "critical", "title": "Ransomware behavior", "status": "open"}],
+                     "actions": [{"id": "cs_contain", "label": "Network contain", "destructive": True},
+                                 {"id": "cs_lift", "label": "Lift containment", "destructive": False}]},
+                    {"id": "dev2", "tool": "crowdstrike", "hostname": "RB-WS010", "status": "online", "platform": "",
+                     "agent_version": "", "last_seen": None, "link": "", "client": "Riverbend Credit Union",
+                     "platform_client_id": "plat-rb", "open_alerts": [],
+                     "actions": [{"id": "cs_contain", "label": "Network contain", "destructive": True}]}]
+            return httpx.Response(200, json={"client": "Riverbend Credit Union", "actions_readonly": self.ms_readonly,
+                                             "devices": [d for d in devs if q in d["hostname"].lower()]})
+        if p == "/api/action-requests":
+            rid = f"r{len(self.requests) + 1}"
+            danger = body["action_id"] == "cs_contain"
+            r = {"id": rid, "status": "pending" if danger else "done", "action_id": body["action_id"],
+                 "action": "Network contain" if danger else "Lift containment", "destructive": danger, "tool": "crowdstrike",
+                 "hostname": "RB-WS01" if body["device_id"] == "dev1" else "RB-WS010", "client": "Riverbend Credit Union",
+                 "requested_by": call["person"], "via": "slack", "reason": body.get("reason", ""),
+                 "source_ref": body.get("source_ref", ""), "decided_by": "", "detail": ""}
+            self.requests[rid] = r
+            return httpx.Response(200, json=r)
+        if p.startswith("/api/action-requests/") and p.endswith("/decide"):
+            r = self.requests[p.split("/")[3]]
+            if r["status"] != "pending":
+                return httpx.Response(409, json={**r, "refused": f"this request is already {r['status']}"})
+            if call["person"] == r["requested_by"]:
+                return httpx.Response(403, json={"detail": "you asked for this one; a second person has to approve it"})
+            if call["person"] == "dan@vendettacd.io":
+                return httpx.Response(403, json={"detail": "approving a destructive action needs approval rights in managed services"})
+            r["status"] = "done" if body["approve"] else "rejected"
+            r["decided_by"] = call["person"]
+            return httpx.Response(200, json=r)
+        if p.startswith("/api/action-requests/"):
+            return httpx.Response(200, json=self.requests[p.split("/")[3]])
+        return httpx.Response(404, json={"detail": "not found"})
+
+    def tools(self, path_suffix: str) -> list[dict]:
+        return [c for c in self.tool_calls if c["path"].endswith(path_suffix)]
 
     def _sabine(self, req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content) if req.content else {}

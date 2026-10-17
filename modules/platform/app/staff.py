@@ -180,7 +180,7 @@ def lookup(db: Session, email: str) -> Staff | None:
 # Bridges act for a person through other modules' grants rather than a grant of
 # their own: the Slack responder checks the incident-response and sabine grants.
 # A change to either grant reaches the bridge too, so it drops its cached roster.
-BRIDGES = {"slack": {"incident-response", "sabine"}}
+BRIDGES = {"slack": {"incident-response", "sabine", "dark-web-monitoring", "vulnerability-management", "managed-services"}}
 
 
 def modules_affected(person: Staff) -> set[str]:

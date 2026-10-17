@@ -366,7 +366,7 @@ def test_manifest_needs_the_token_and_reports_readiness(client, world):
     assert client.get("/api/module").status_code == 401
     m = client.get("/api/module", headers={"Authorization": f"Bearer {auth.api_token()}"}).json()
     assert m["module"] == "slack" and m["readiness"]["integrations"]["kind"] == "bridge"
-    assert m["readiness"]["hub_configured"] is True and set(m["acts_through"]) == {"incident-response", "sabine"}
+    assert m["readiness"]["hub_configured"] is True and set(m["acts_through"]) == {"incident-response", "sabine", "dark-web-monitoring", "vulnerability-management", "managed-services"}
 
 
 def test_console_login(client, world):

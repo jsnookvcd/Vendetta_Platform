@@ -21,7 +21,7 @@ _TRANSPORT: httpx.BaseTransport | None = None  # tests inject a MockTransport he
 
 # Read methods take form or query parameters; Slack only accepts JSON bodies on
 # write methods.
-_FORM_METHODS = {"auth.test", "users.info", "users.lookupByEmail", "conversations.history",
+_FORM_METHODS = {"auth.test", "files.getUploadURLExternal", "users.info", "users.lookupByEmail", "conversations.history",
                  "conversations.replies", "conversations.info", "chat.getPermalink", "apps.connections.open"}
 
 
@@ -136,3 +136,35 @@ def allowed_team(team_id: str) -> bool:
         whoami()  # the bot token may have been fixed since boot
         want = (IDENTITY.get("team_id") or "").strip()
     return bool(want) and team_id == want
+
+
+def upload(channel: str, filename: str, content: bytes, *, title: str = "", comment: str = "",
+           thread_ts: str = "") -> bool:
+    """Share a file into a channel (Slack's external upload: get a URL, send the
+    bytes, complete). The upload URL must be Slack's own file host."""
+    try:
+        d = call("files.getUploadURLExternal", filename=filename, length=str(len(content)))
+        url, fid = d.get("upload_url", ""), d.get("file_id", "")
+        if not url.startswith("https://files.slack.com/") or not fid:
+            log.warning("refusing an upload URL outside files.slack.com")
+            return False
+        with httpx.Client(timeout=30.0, transport=_TRANSPORT) as http:
+            r = http.post(url, content=content, headers={"Content-Type": "application/octet-stream"})
+        if r.status_code >= 400:
+            log.warning("file upload failed: http %s", r.status_code)
+            return False
+        body = {"files": [{"id": fid, "title": title or filename}], "channel_id": channel}
+        if comment:
+            body["initial_comment"] = comment
+        if thread_ts:
+            body["thread_ts"] = thread_ts
+        call("files.completeUploadExternal", **body)
+        return True
+    except (SlackError, httpx.HTTPError) as e:
+        log.warning("file upload failed: %s", e)
+        return False
+
+
+def dm_channel(user: str) -> str:
+    d = try_call("conversations.open", users=user)
+    return ((d or {}).get("channel") or {}).get("id", "")

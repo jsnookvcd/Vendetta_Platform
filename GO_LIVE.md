@@ -287,6 +287,13 @@ Mode, so nothing new is exposed through the ALB.
    Socket Mode is up.
 5. In Slack, `/ir help`, then `/ir declare` on a test client. Confirm the case in
    the IR hub, the war room, and a :memo: reaction landing on the timeline.
+6. Outside tools. `/ir darkweb` in the war room returns the summary and PDF. For
+   Shodan, put `/vendetta/vulnerability-management/SHODAN_API_KEY` in SSM
+   (SecureString), redeploy vulnerability-management, enter the client's external
+   IPs and domains on its client page there, then `/ir shodan`. `/ir host <name>`
+   shows the EDR record. Containment from Slack follows managed services'
+   ACTIONS_READONLY (step 8): until actions are on it refuses, and once they are,
+   `/ir contain` needs a second person with approval rights to click Approve.
 
 ## 7. Add an EDR, still read-only
 

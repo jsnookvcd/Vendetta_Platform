@@ -33,6 +33,9 @@ from .identity import Person, Refused
 
 log = logging.getLogger(__name__)
 IR, SABINE = "incident-response", "sabine"
+DW, VM, MS = "dark-web-monitoring", "vulnerability-management", "managed-services"
+MODULE_NAMES = {IR: "incident-response", SABINE: "SABINE", DW: "dark web monitoring",
+                VM: "vulnerability management", MS: "managed services"}
 CASE_REF = re.compile(r"^[A-Za-z0-9]+-IR-\d{4}-\d+$", re.IGNORECASE)
 MENTION = re.compile(r"<@([UW][A-Z0-9_]+)(?:\|[^>]*)?>")
 LINK = re.compile(r"<(https?://[^|>]+)\|([^>]+)>")
@@ -174,11 +177,13 @@ def _case_ref(db, ctx: Ctx, args: list[str]) -> tuple[str, list[str]]:
 
 
 def _need(person: Person, module: str = IR) -> None:
+    person.roles.setdefault(module, identity.role_for(person.email, module))
     if identity.stale(module):
         raise Refused("I cannot reach the staff roster on the platform and my copy is more than 15 minutes old, "
                       "so I can show you things but not change them. Use the IR hub directly until it is back.")
     if not person.can_write(module):
-        what = "work cases" if module == IR else "ask SABINE or decide her proposals"
+        what = {IR: "work cases", SABINE: "ask SABINE or decide her proposals", DW: "act in dark web monitoring",
+                VM: "run checks in vulnerability management", MS: "request response actions"}.get(module, "act")
         raise Refused(f"Your access lets you read but not {what}. Ask a platform admin for analyst access.")
 
 
@@ -570,8 +575,9 @@ def run(ctx: Ctx, sub: str, args: list[str]) -> None:
             return
         try:
             person = identity.resolve(db, ctx.user, modules)
-            if not person.can_read(IR) and fn is not cmd_ask:
-                raise Refused("You have no incident-response access on the platform roster.")
+            # The first module a command names is the grant it needs to run at all.
+            if not person.can_read(modules[0]) and fn is not cmd_ask:
+                raise Refused(f"You have no {MODULE_NAMES.get(modules[0], modules[0])} access on the platform roster.")
             fn(db, ctx, person, args)
         except Refused as e:
             audit(db, f"refused.{sub}", str(e), slack_user=ctx.user, ok=False)
@@ -748,6 +754,8 @@ def _block_action(payload: dict, user: str, action: dict) -> None:
     elif aid == "task_move":
         sel = (action.get("selected_option") or {}).get("value", "")
         DEFER(lambda: _run_fn(ctx, "task_move", _task_move, [sel]))
+    elif aid in tools.ACTIONS:
+        tools.on_action(payload, ctx, aid, value)
     elif aid in ("proposal_approve", "proposal_reject"):
         msg_ts = (payload.get("container") or {}).get("message_ts", "") or (payload.get("message") or {}).get("ts", "")
         DEFER(lambda: _run_fn(ctx, "proposal", _decide, [value, aid == "proposal_approve", msg_ts], modules=(SABINE,)))
@@ -1047,3 +1055,6 @@ def _announce_case(db, case: dict, warroom: WarRoom | None, declared_by: Person 
 
 
 _ = utcnow  # re-exported for the feed
+
+
+from . import tools  # noqa: E402  (registers the external-tool commands)

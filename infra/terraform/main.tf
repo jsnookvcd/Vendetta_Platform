@@ -265,7 +265,9 @@ locals {
   # a person changes; it holds no clients.
   directory_modules = [for k in local.client_modules : k if k != "sabine"]
   # What the Slack responder acts through, each with that module's own token.
-  slack_reach = [for k in ["incident-response", "sabine", "platform"] : k if contains(keys(local.deployed), k)]
+  slack_reach = [for k in ["incident-response", "sabine", "platform", "dark-web-monitoring", "vulnerability-management", "managed-services"] : k if contains(keys(local.deployed), k)]
+  # Modules the Slack responder acts through for a named person, each with its own bridge token.
+  bridge_modules = [for k in local.slack_reach : k if k != "platform"]
 
   # Service addresses on the shared docker network ("vendetta"): each module's web
   # container is reachable by its module key on port 8000 from any other container.
@@ -416,7 +418,7 @@ resource "aws_ssm_parameter" "sabine_directory" {
 # only token under which those modules honor X-Vendetta-On-Behalf-Of, so no other
 # module that holds their API token can put a person's name on the record.
 resource "random_password" "bridge" {
-  for_each = contains(keys(local.deployed), "slack") ? toset([for k in ["incident-response", "sabine"] : k if contains(keys(local.deployed), k)]) : toset([])
+  for_each = contains(keys(local.deployed), "slack") ? toset(local.bridge_modules) : toset([])
   length   = 48
   special  = false
 }
@@ -428,11 +430,13 @@ resource "aws_ssm_parameter" "bridge_token" {
   value    = each.value.result
 }
 
-# The Slack responder's reach: the IR hub and SABINE with the bridge tokens above,
-# and the control plane with its API token (the staff roster and client list).
+# The Slack responder's reach: the IR hub, SABINE, dark web, vulnerability
+# management and managed services with the bridge tokens above, and the control
+# plane with its API token (the staff roster and client list).
 # The Slack tokens themselves (SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
 # SLACK_SIGNING_SECRET) and the channel ids are added by an operator in SSM under
-# <prefix>/slack/ once the Slack app exists; see modules/slack/README.md.
+# <prefix>/slack/ once the Slack app exists; see modules/slack/README.md. The
+# Shodan key goes in <prefix>/vulnerability-management/SHODAN_API_KEY.
 resource "aws_ssm_parameter" "slack_directory" {
   count = contains(keys(local.deployed), "slack") ? 1 : 0
   name  = "${var.ssm_prefix}/slack/MODULE_DIRECTORY"

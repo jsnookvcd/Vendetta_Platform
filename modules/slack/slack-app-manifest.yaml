@@ -15,7 +15,7 @@ features:
   slash_commands:
     - command: /ir
       description: Work an incident without leaving Slack
-      usage_hint: "declare | cases | sitrep | note <text> | status contained | task <title> | page <msg> | ask <question>"
+      usage_hint: "declare | sitrep | note <text> | status contained | darkweb | shodan | host WS01 | contain WS01 <reason> | ask"
       should_escape: true
   shortcuts:
     - name: Declare an incident
@@ -37,6 +37,7 @@ oauth_config:
       - chat:write
       - chat:write.public
       - commands
+      - files:write
       - groups:history
       - groups:read
       - groups:write

@@ -23,6 +23,15 @@ In a war room the case comes from the channel:
 - React with :memo: on any message, or use the message shortcut *Log to IR case*, to put that message on the timeline with its author, time, attachments' names and Slack permalink. The message gets a check mark. Logging the same message twice is refused.
 - `/ir link VCD-IR-2026-781` binds an existing channel to a case; `/ir unlink` releases it.
 
+Outside tools (in a war room the client comes from the case and each result is noted on the timeline; elsewhere name the client):
+
+- `/ir darkweb [client] [days]` pulls the dark web exposure report from dark web monitoring: a summary card (hits by severity, exposed credentials, leak-site posts, access-broker listings, recommendations) and the PDF. In a war room both go to the room; elsewhere the summary is private and the PDF arrives by DM.
+- `/ir shodan [client] [ip, CIDR or domain ...]` runs the Shodan exposure check in vulnerability management, against the client's saved external assets or the targets given. Open ports, exposed management services and known CVEs come back in Slack and are recorded as findings.
+- `/ir host WS01 [client]` shows the EDR record from managed services (CrowdStrike, SentinelOne, Huntress): status, last seen, open alerts, with buttons to request containment.
+- `/ir contain WS01 <reason>` (outside a war room `/ir contain WS01 Riverbend: <reason>`) files a containment request in managed services. It posts with Approve and Reject; a different person with approval rights in managed services must approve before the tool is called. The requester can never approve their own, whatever the console's self-approval setting. Requests expire after 30 minutes. `/ir release WS01` lifts containment and runs at once.
+
+Slack holds no vendor credential. Dark web, Shodan and the EDR consoles are reached only through the module that owns them, and that module applies its own rules: ACTIONS_READONLY, can_act and can_approve, and the signed action log.
+
 Feeds:
 
 - `SLACK_IR_CHANNEL` hears every new case once, from any origin (escalations from MDR or managed services, the client portal, the console, Slack), with buttons to open its war room.
@@ -35,6 +44,9 @@ The platform staff roster decides everything. The Slack user's profile email mus
 
 - incident-response grant: viewer can read cases (cases, sitrep, tasks); analyst or admin can change them.
 - sabine grant (analyst or admin): ask SABINE, decide her proposals.
+- dark-web-monitoring grant (any level): pull the dark web report.
+- vulnerability-management grant (analyst or admin): run a Shodan check.
+- managed-services grant: any level to look a host up; analyst or admin with can_act to request containment; can_approve to approve someone else's request.
 
 Anyone else in the workspace is refused, and the refusal is audited. The roster is asked live with a one-minute cache; when the control plane changes a person it calls `POST /api/provision/sync` here and the cache is dropped, so a deactivation applies on the next command. If the control plane is down the last roster seen is used; if none has ever been seen, everyone is refused.
 
@@ -44,7 +56,7 @@ If the control plane is unreachable, reads continue on the last roster seen; cha
 
 ## What stays out of Slack
 
-- Host actions (isolate, kill, disable) stay in managed services under the two-person rule.
+- Containment from Slack always takes two people. Process kills, quarantine and remediation stay in the managed services console.
 - High-risk SABINE proposals show a link to her console; the API refuses a high-risk decision from any bridge.
 - Notes from Slack are internal only. Client-visible updates are written in the IR console.
 - Nothing in a war room is logged unless a person asks for it (a command, :memo:, or the shortcut). Privileged conversation stays in Slack unless someone puts it on the record.
@@ -65,7 +77,7 @@ If the control plane is unreachable, reads continue on the last roster seen; cha
    - optional `/vendetta/slack/WARROOM_INVITE` (Slack user ids or work emails, comma separated)
 4. Check the console at the module host (break-glass admin) or the platform's go-live screen. The banner names anything missing.
 
-Terraform wires the rest: the module's own secrets, the bridge tokens (`incident-response/BRIDGE_TOKEN`, `sabine/BRIDGE_TOKEN`), `MODULE_DIRECTORY` with the IR hub and SABINE on those tokens and the control plane on its API token, and `PLATFORM_TOKEN`. The module gets no ALB host (`private_modules`); its console is reached over SSM port forwarding on 8900.
+Terraform wires the rest: the module's own secrets, the bridge tokens (`BRIDGE_TOKEN` under incident-response, sabine, dark-web-monitoring, vulnerability-management and managed-services), `MODULE_DIRECTORY` with the IR hub and SABINE on those tokens and the control plane on its API token, and `PLATFORM_TOKEN`. The module gets no ALB host (`private_modules`); its console is reached over SSM port forwarding on 8900.
 
 ## Settings
 

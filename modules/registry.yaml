@@ -87,7 +87,9 @@ modules:
       Declare (opens the case, pages on-call, spins up a private war room with the
       case card pinned), sitrep, note, status, severity, lead, cards, page, and
       :memo: on any message to log it to the signed case timeline. New cases and
-      SABINE proposals post to chosen channels with Approve and Reject. Identity is
+      SABINE proposals post to chosen channels with Approve and Reject. Outside
+      tools through their modules: dark web report and PDF, Shodan exposure check,
+      EDR host lookup, and containment that a second person approves. Identity is
       the platform staff roster; entries read "<email> via slack". Holds no case
       data. Socket Mode by default, no inbound endpoint. Port 8900.
   - name: professional-services
