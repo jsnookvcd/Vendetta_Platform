@@ -125,3 +125,22 @@ def test_oidc_refuses_ambiguous_domain(client):
     db.commit()
     mapped = oidc._map_identity({"email": "cfo@shared.example"})
     assert mapped is not None and mapped[1] == "client" and mapped[2] == a.id
+
+
+@pytest.mark.parametrize("change", [{"active": False}, {"portal_enabled": False}])
+def test_portal_closes_for_deactivated_or_portal_off_client(client, now, change):
+    """An existing client session stops working on every portal route, the evidence
+    export included, once the client is deactivated or its portal is switched off."""
+    a, b, invs = _two(now)
+    as_user(client, "it@a.example", "client", a.id)
+    iid = invs["A-WS01"].id
+    paths = ["/portal", f"/portal/investigations/{iid}", f"/portal/investigations/{iid}/evidence/export.zip"]
+    assert all(client.get(p).status_code == 200 for p in paths)
+    db = SessionLocal()
+    c = db.get(Client, a.id)
+    for k, v in change.items():
+        setattr(c, k, v)
+    db.commit()
+    db.close()
+    for p in paths:
+        assert client.get(p, follow_redirects=False).status_code == 404, p

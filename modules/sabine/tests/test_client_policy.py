@@ -151,3 +151,29 @@ def test_memory_adjustment_is_bounded_and_recorded(world):
     db.add(old)
     db.commit()
     assert memory.history(db, "page_oncall", "plat-rb", "x")["rejected"] == 0  # outside the lookback
+
+
+def test_suggest_suppression_is_never_auto(admin, world):
+    """A person always decides a suppression: no global or per-client setting, and no
+    row forced in behind the API, makes suggest_suppression automatic."""
+    from app import skills
+    from app.db import Policy
+
+    s = skills.get("suggest_suppression")
+    assert s.person_decides is True and s.can_auto is False and s.as_dict()["can_auto"] is False
+    db = SessionLocal()
+    with pytest.raises(ValueError):
+        policy.set_autonomy(db, "suggest_suppression", "auto", "admin")
+    with pytest.raises(ValueError):
+        policy.set_client_autonomy(db, "plat-rb", "suggest_suppression", "auto", "admin")
+    db.get(Policy, "suggest_suppression").autonomy = "auto"
+    db.add(ClientPolicy(platform_client_id="plat-rb", action="suggest_suppression", autonomy="auto"))
+    db.commit()
+    assert policy.autonomy(db, "suggest_suppression") == "propose"
+    assert policy.autonomy(db, "suggest_suppression", "plat-rb") == "propose"
+    # propose and off remain available
+    policy.set_client_autonomy(db, "plat-rb", "suggest_suppression", "off", "admin")
+    assert policy.autonomy(db, "suggest_suppression", "plat-rb") == "off"
+    # the Autonomy page offers no auto option for it
+    row = admin.get("/policy").text.split('action="/policy/suggest_suppression"')[1].split("</form>")[0]
+    assert '<option value="auto"' not in row and '<option value="propose"' in row

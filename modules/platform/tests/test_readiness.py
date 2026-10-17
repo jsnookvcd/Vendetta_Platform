@@ -109,7 +109,7 @@ def _cp(label):
 
 
 def test_portal_client_without_account_lead_warns(admin):
-    from helpers import make_client
+    from helpers import add_staff, make_client
 
     assert _cp("Portal clients have an account lead") is None  # no portal clients, nothing to say
     c = make_client(admin, "Alpha", portal_domains="alpha.example", portal_enabled="true")
@@ -117,6 +117,7 @@ def test_portal_client_without_account_lead_warns(admin):
     assert chk["state"] == "warn" and "Alpha" in chk["detail"]
     # a client without the portal on is not graded
     make_client(admin, "Bravo")
+    add_staff("dan@vendettacd.io")
     admin.post(f"/clients/{c.id}/edit", data={"active": "true", "portal_domains": "alpha.example",
                                               "account_lead": "dan@vendettacd.io"})
     assert _cp("Portal clients have an account lead")["state"] == "ok"

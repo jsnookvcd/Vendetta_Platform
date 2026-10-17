@@ -264,7 +264,7 @@ def _staff_emails(db: Session) -> list[str]:
 
 
 @app.post("/clients/{cid}/edit")
-def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form(""),
+def edit_client(cid: str, request: Request, industry: str = Form(""), portal_domains: str = Form(""),
                 executive_emails: str = Form(""), active: bool = Form(False),
                 tier: str | None = Form(None), account_lead: str | None = Form(None),
                 critical_ack_minutes: str | None = Form(None), critical_contain_minutes: str | None = Form(None),
@@ -289,9 +289,22 @@ def edit_client(cid: str, industry: str = Form(""), portal_domains: str = Form("
         return _back(f"/clients/{cid}", False, e.detail)
     lead = c.account_lead
     if account_lead is not None:
-        lead = staff_mod.normalize_email(account_lead)
-        if lead and "@" not in lead:
-            return _back(f"/clients/{cid}", False, "The account lead is the Vendetta person's work email.")
+        wanted_lead = staff_mod.normalize_email(account_lead)
+        if wanted_lead != (c.account_lead or ""):
+            # The account lead approves client communications, so only a platform
+            # admin may change who it is. An analyst may still edit the other fields.
+            if auth.require_identity(request).role != "admin":
+                return _back(f"/clients/{cid}", False,
+                             "Only a platform admin can change the account lead. Nothing was saved.")
+            if wanted_lead and "@" not in wanted_lead:
+                return _back(f"/clients/{cid}", False, "The account lead is the Vendetta person's work email.")
+            if wanted_lead:
+                person = staff_mod.lookup(db, wanted_lead)
+                if person is None or not person.active:
+                    return _back(f"/clients/{cid}", False,
+                                 f"{wanted_lead} is not an active person on the staff roster. "
+                                 "The account lead must be on the roster.")
+        lead = wanted_lead
     # Normalise executive emails to a clean, lower-cased, comma-separated list.
     execs = ",".join(sorted({e.strip().lower() for e in executive_emails.split(",") if e.strip()}))
     c.industry, c.portal_domains, c.active = industry.strip(), portal_domains.strip(), active

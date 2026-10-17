@@ -7,8 +7,8 @@ level. An admin sets the level per skill in the console:
 - propose: SABINE writes the proposal and waits for a person to approve it.
 - auto: SABINE carries it out as soon as the rule fires, and records that it did.
 
-Hard limits that no setting changes: a skill with risk "high" can never be set to
-auto, and anything that touches a client host (isolate, contain, quarantine) is
+Hard limits that no setting changes: a skill with risk "high" or one a person
+always decides (skills.Skill.person_decides) can never be set to auto, and anything that touches a client host (isolate, contain, quarantine) is
 not an action SABINE can take at all. For those it raises a proposal whose
 execution is a deep link into the module, where a person with the right grant
 clicks, with the second-person control that module enforces.
@@ -64,7 +64,8 @@ def client_override(db: Session, action: str, client) -> str | None:
 def autonomy(db: Session, action: str, client=None) -> str:
     """The level for one skill, for one client when given (a platform client id or a
     client dict): the client's override when an admin set one, else the global row,
-    else the skill's default. A high-risk skill is never automatic either way."""
+    else the skill's default. A skill that cannot be automatic (high risk, or one a
+    person decides) is never automatic either way."""
     from .db import Policy
 
     s = skills.get(action)
@@ -72,10 +73,19 @@ def autonomy(db: Session, action: str, client=None) -> str:
     if level is None:
         row = db.get(Policy, action)
         level = row.autonomy if row else s.default
-    # Hard ceiling: high-risk skills are never automatic.
-    if s.risk == "high" and level == "auto":
+    # Hard ceiling: high-risk skills and skills a person decides are never automatic.
+    if not s.can_auto and level == "auto":
         return "propose"
     return level
+
+
+def _refuse_auto(action: str, level: str, scope: str = "") -> None:
+    s = skills.get(action)
+    if level != "auto" or s.can_auto:
+        return
+    if s.risk == "high":
+        raise ValueError(f"a high-risk action cannot be automatic{scope}")
+    raise ValueError(f"a person decides {s.key}, so it cannot be automatic{scope}")
 
 
 def set_client_autonomy(db: Session, pid: str, action: str, level: str, actor: str, client_name: str = "") -> str:
@@ -83,8 +93,7 @@ def set_client_autonomy(db: Session, pid: str, action: str, level: str, actor: s
 
     if not pid or action not in skills.REGISTRY or level not in AUTONOMY:
         raise ValueError("bad client, action or level")
-    if skills.get(action).risk == "high" and level == "auto":
-        raise ValueError("a high-risk action cannot be automatic, for any client")
+    _refuse_auto(action, level, " for any client")
     row = db.execute(select(ClientPolicy).where(ClientPolicy.platform_client_id == pid,
                                                 ClientPolicy.action == action)).scalar_one_or_none()
     if row is None:
@@ -190,8 +199,7 @@ def set_autonomy(db: Session, action: str, level: str, actor: str) -> str:
 
     if action not in skills.REGISTRY or level not in AUTONOMY:
         raise ValueError("bad action or level")
-    if skills.get(action).risk == "high" and level == "auto":
-        raise ValueError("a high-risk action cannot be automatic")
+    _refuse_auto(action, level)
     row = db.get(Policy, action)
     if row is None:
         row = Policy(action=action)
@@ -247,4 +255,6 @@ def catalog(db: Session) -> dict:
             {**rows[s.key], "last_run": rows[s.key]["last_run"].isoformat() if rows[s.key]["last_run"] else None}
             for s in ss]})
     return {"domains": groups, "levels": list(AUTONOMY),
-            "limits": ["a high-risk skill is never automatic", "SABINE never touches a client host"]}
+            "limits": ["a high-risk skill is never automatic",
+                       "a skill a person decides (suggest_suppression) is never automatic",
+                       "SABINE never touches a client host"]}

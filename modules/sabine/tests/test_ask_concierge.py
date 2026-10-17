@@ -64,3 +64,20 @@ def test_ask_honours_the_client_override(client, seen, world):
     policy.set_client_autonomy(SessionLocal(), "plat-hp", "posture_review", "propose", "admin", "Harbor Point")
     r = client.post("/ask", data={"question": "draft the posture review for Harbor Point"})
     assert "needs a person" in r.text and not world.communications["plat-hp"]
+
+
+def test_ask_suppression_uses_signal_title_scoped_to_tool_and_host(client, world):
+    """The Ask path matches what MDR's suppression engine compares: the signal title,
+    never the numbered investigation title, scoped to this detection's tool and host."""
+    from app import perception
+    world.findings["mdr"][0].update(title="MDR-2026-0007: Ransomware behavior on WS01", source_group="sentinelone",
+                                    signal_title="Ransomware behavior detected by agent")
+    db = SessionLocal()
+    perception.observe(db)
+    perception.build_queue(db)
+    _login(client)
+    client.post("/ask", data={"question": "suggest a suppression for i1"})
+    p = SessionLocal().query(Proposal).filter_by(action="suggest_suppression").one()
+    assert p.target["title_contains"] == "Ransomware behavior detected by agent"
+    assert p.target["tool"] == "sentinelone" and p.target["host"] == "WS01"
+    assert "MDR-2026" not in p.title

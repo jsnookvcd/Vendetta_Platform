@@ -43,6 +43,8 @@ _CLASS_AREA = (("phish", "awareness"), ("social", "awareness"), ("email", "email
                ("mfa", "identity"), ("auth", "identity"), ("privilege", "identity"), ("data", "data"), ("backup", "data"))
 JOURNEY_WINDOW_H = 30 * 24
 MONTH_H = 31 * 24
+# The shortest title fragment SABINE will propose as a suppression's title_contains.
+SUPPRESSION_MIN_PHRASE = 12
 
 
 def _link(mod: str, fid: str) -> str:
@@ -113,12 +115,16 @@ def soc_rules(db: Session) -> list[Proposal]:
              f"She pages again only if it is still unacknowledged after {settings.page_repeat_minutes} minutes."),
             {"module": mod, "finding_id": f["id"], "severity": "critical", "title": f.get("title"), "client": name,
              "platform_client_id": pid, "age_minutes": int(age), "ack_minutes": ack, "commitment_source": source,
-             "matched": f.get("matched"), "rule": f.get("rule"), "signal_title": f.get("signal_title") or ""},
+             "matched": f.get("matched"), "rule": f.get("rule"), "signal_title": f.get("signal_title") or "",
+             "source_group": f.get("source_group") or ""},
             {"module": "incident-response", "path": "/api/oncall/page", "platform_client_id": pid, "client": name,
              "link": link, "body": {"title": page_title(title), "body": body, "link": link,
                                     "severity": "critical", "platform_client_id": pid, "client": name,
                                     "source_module": mod, "source_ref": f["id"]}},
-            0.9 if mod == "mdr" else 0.85, window_hours=settings.page_repeat_minutes / 60)
+            0.9 if mod == "mdr" else 0.85, window_hours=settings.page_repeat_minutes / 60,
+            # A person who rejected the page is not asked again for the same detection
+            # inside the same window a sent page waits before repeating.
+            reject_cooldown_hours=settings.page_repeat_minutes / 60)
         if p:
             out.append(p)
 
@@ -126,7 +132,7 @@ def soc_rules(db: Session) -> list[Proposal]:
     active = perception.suppressions(db)
     now = utcnow()
 
-    def covered(pid: str, phrase: str) -> bool:
+    def covered(pid: str, phrase: str, tool: str = "", host: str = "") -> bool:
         for s in active:
             if (s.get("platform_client_id") or (s.get("client") if isinstance(s.get("client"), str) else "")) != pid:
                 continue
@@ -141,6 +147,9 @@ def soc_rules(db: Session) -> list[Proposal]:
                 continue
             m = s.get("match") or s
             needle = (m.get("title_contains") or "").lower()
+            # A suppression narrowed to another tool or host does not cover this pattern.
+            if (m.get("tool") or "") not in ("", tool) or (m.get("host") or "").lower() not in ("", host.lower()):
+                continue
             if needle and needle in phrase.lower():
                 return True
         return False
@@ -151,7 +160,11 @@ def soc_rules(db: Session) -> list[Proposal]:
         if total < n or not sig:
             continue
         phrase = memory.common_phrase(h["titles"])
-        if not phrase or covered(pid, phrase):
+        # A short fragment would match far more than the pattern people dismissed.
+        if len(phrase.strip()) < SUPPRESSION_MIN_PHRASE:
+            continue
+        tool, host = memory.scope(h)
+        if covered(pid, phrase, tool, host):
             continue
         name = h["client"] or (cmap.get(pid) or {}).get("name", "")
         p = propose(
@@ -159,13 +172,14 @@ def soc_rules(db: Session) -> list[Proposal]:
             f"Suppress \"{phrase}\" for {name} for {settings.suppression_days} days"[:400],
             (f"People have called \"{phrase}\" noise for {name} {total} times "
              f"({h['false_positive']} MDR investigations closed as false positive, {h['rejected']} SABINE proposals rejected). "
-             f"The threshold is {n}. A {settings.suppression_days}-day MDR suppression for this client only stops the repeat "
+             f"The threshold is {n}. A {settings.suppression_days}-day MDR suppression for this client only"
+             + (f", from {tool}" if tool else "") + (f", on {host}" if host else "") + ", stops the repeat "
              "work; it expires on its own and shows on MDR's monthly review list."),
             {"module": "mdr", "platform_client_id": pid, "client": name, "title": phrase, "signature": sig,
              "false_positive": h["false_positive"], "rejected": h["rejected"], "threshold": n,
-             "hosts": sorted(h["hosts"])[:10]},
+             "hosts": sorted(h["hosts"])[:10], "tool": tool, "host": host},
             {"module": "mdr", "path": "/api/suppressions", "platform_client_id": pid, "client": name,
-             "title_contains": phrase, "days": settings.suppression_days,
+             "title_contains": phrase, "tool": tool, "host": host, "days": settings.suppression_days,
              "reason": f"SABINE: called noise {total} times for this client ({h['false_positive']} false positive, {h['rejected']} rejected)"},
             min(0.9, 0.6 + 0.05 * (total - n)), reject_cooldown_hours=7 * 24, signature=sig)
         if p:

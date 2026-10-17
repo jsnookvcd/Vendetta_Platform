@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Autonomy{% endblock %}
 {% block body %}
-<p class="faint" style="margin:0 0 14px">Every skill SABINE has, and what she may do with it on her own. <b>off</b>: never raised. <b>propose</b>: written up and waits for a person. <b>auto</b>: done as soon as the rule fires, and recorded. A high-risk skill can never be automatic, and SABINE never touches a client host. Skills marked <b>chat</b> can be asked for in words on the Ask page; they still run under the level set here.</p>
+<p class="faint" style="margin:0 0 14px">Every skill SABINE has, and what she may do with it on her own. <b>off</b>: never raised. <b>propose</b>: written up and waits for a person. <b>auto</b>: done as soon as the rule fires, and recorded. A high-risk skill can never be automatic, a skill a person decides (proposing a suppression) can never be automatic, and SABINE never touches a client host. Skills marked <b>chat</b> can be asked for in words on the Ask page; they still run under the level set here.</p>
 {% for label, rows in groups %}
 <div class="section-head"><h2>{{ label }}</h2><span class="count">{{ rows|length }} skills</span></div>
 <div class="panel" style="margin-bottom:16px"><div class="table-wrap"><table>
@@ -32,7 +32,7 @@
 </table></div>
 {% if is_admin %}<form method="post" action="/policy/client" class="row" style="gap:8px; padding:12px; flex-wrap:wrap; border-top:1px solid var(--line, #222)">
   <select name="platform_client_id" required><option value="">Client</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
-  <select name="action" required><option value="">Skill</option>{% for s in catalog %}<option value="{{ s.key }}">{{ s.title }}{{ ' (high risk)' if s.risk == 'high' }}</option>{% endfor %}</select>
+  <select name="action" required><option value="">Skill</option>{% for s in catalog %}<option value="{{ s.key }}">{{ s.title }}{{ ' (high risk, never auto)' if s.risk == 'high' }}{{ ' (a person decides, never auto)' if s.person_decides }}</option>{% endfor %}</select>
   <select name="autonomy">{% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}</select>
   <button class="btn btn-sm">Add override</button>
 </form>{% endif %}</div>

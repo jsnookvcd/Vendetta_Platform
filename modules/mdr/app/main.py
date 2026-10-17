@@ -732,8 +732,11 @@ def client_portal_toggle(cid: str, portal_enabled: bool = Form(False), user: str
 
 # ---------------------------------------------------------------- client portal
 def _portal_client(db: Session, ident: auth.Identity) -> Client:
+    """The signed-in client's tenant, checked on every portal request. A session
+    outlives sign-in, so a client that has been deactivated or had its portal
+    switched off gets 404 here even with a valid cookie."""
     c = db.get(Client, ident.client_id)
-    if not c:
+    if not c or not c.active or not c.portal_enabled:
         raise HTTPException(404)
     return c
 
@@ -760,6 +763,7 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
 @app.get("/portal/investigations/{iid}", response_class=HTMLResponse)
 def portal_investigation(iid: str, request: Request, ident: auth.Identity = Depends(auth.require_client),
                          db: Session = Depends(get_db)):
+    _portal_client(db, ident)
     inv = db.execute(_inv_query().where(Investigation.id == iid)).scalar_one_or_none()
     auth.require_owned(ident, inv, extra=bool(inv and inv.published))
     if ident.is_executive:
@@ -772,6 +776,7 @@ def portal_investigation(iid: str, request: Request, ident: auth.Identity = Depe
 @app.get("/portal/investigations/{iid}/evidence/export.zip")
 def portal_investigation_export(iid: str, ident: auth.Identity = Depends(auth.require_client),
                                 db: Session = Depends(get_db)):
+    _portal_client(db, ident)
     inv = db.execute(_inv_query().where(Investigation.id == iid)).scalar_one_or_none()
     auth.require_owned(ident, inv, extra=bool(inv and inv.published))
     if ident.is_executive:

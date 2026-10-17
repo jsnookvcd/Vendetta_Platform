@@ -388,16 +388,21 @@ def build(db: Session, intent: Intent, user: str) -> dict:
     if s.key == "suggest_suppression":
         sig = memory.signature(f.get("title") or "")
         h = memory.noise(db).get((cid, sig), {"false_positive": 0, "rejected": 0})
-        phrase = f.get("title") or ""
+        # MDR's suppression engine compares the signal's title, never the investigation's
+        # numbered title, and the suppression is scoped to this detection's tool and host.
+        phrase = f.get("signal_title") or f.get("title") or ""
+        tool = (f.get("source_group") or "") if mod == "mdr" else ""
+        host = f.get("matched") or ""
         return dict(key=f"suggest_suppression:{cid}:{memory.sig_hash(sig)}",
                     title=f"Suppress \"{phrase}\" for {client_name} for {settings.suppression_days} days"[:400],
                     rationale=lead + (f"People have called this pattern noise for {client_name} {h['false_positive'] + h['rejected']} "
                                       f"time(s) so far. A {settings.suppression_days}-day MDR suppression for this client only "
                                       "needs a person's approval."),
                     facts={**base, "module": mod, "finding_id": f["id"], "title": phrase, "client": client_name,
-                           "platform_client_id": cid, "signature": sig, "false_positive": h["false_positive"], "rejected": h["rejected"]},
+                           "platform_client_id": cid, "signature": sig, "false_positive": h["false_positive"], "rejected": h["rejected"],
+                           "tool": tool, "host": host},
                     target={"module": "mdr", "path": "/api/suppressions", "platform_client_id": cid, "client": client_name,
-                            "title_contains": phrase, "days": settings.suppression_days,
+                            "title_contains": phrase, "tool": tool, "host": host, "days": settings.suppression_days,
                             "reason": f"Asked for by {user or 'a person'} on the Ask page"},
                     confidence=0.6)
     if s.key == "posture_review":

@@ -1,6 +1,6 @@
 """Shared helpers for the control-plane tests."""
 from app import auth
-from app.db import Client, SessionLocal, User
+from app.db import Client, SessionLocal, Staff, User
 
 
 def bearer(actor: str = "") -> dict:
@@ -13,6 +13,9 @@ def bearer(actor: str = "") -> dict:
 def make_client(admin, name="Riverbend Credit Union", **edit) -> Client:
     admin.post("/clients", data={"name": name})
     c = SessionLocal().query(Client).filter_by(name=name).one()
+    lead = (edit.get("account_lead") or "").strip().lower()
+    if lead and "@" in lead:
+        add_staff(lead)
     if edit:
         data = {"active": "true", **edit}
         r = admin.post(f"/clients/{c.id}/edit", data=data, follow_redirects=False)
@@ -32,3 +35,17 @@ def sign_in_as(client, email, role, client_id=None):
     finally:
         db.close()
     client.cookies.set(auth.COOKIE, auth.make_session(email))
+
+
+def add_staff(email, active=True, platform_role="analyst") -> None:
+    """Put a person on the staff roster so they can be named an account lead."""
+    db = SessionLocal()
+    try:
+        p = db.query(Staff).filter_by(email=email).one_or_none()
+        if p is None:
+            db.add(Staff(email=email, active=active, platform_role=platform_role))
+        else:
+            p.active = active
+        db.commit()
+    finally:
+        db.close()

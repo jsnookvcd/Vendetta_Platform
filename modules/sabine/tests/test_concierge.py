@@ -169,6 +169,7 @@ def test_journey_progress_when_evidence_resolves(world):
 
 # ---------------------------------------------------------------- posture review
 def test_posture_review_is_a_redacted_draft_once_a_month(world):
+    world.findings["mdr"][0]["published"] = True  # the review shows only what the client portal shows
     db = SessionLocal()
     brain.cycle(db)
     month = utcnow().strftime("%Y-%m")
@@ -369,7 +370,8 @@ def test_posture_review_names_each_numbered_investigation_once(world):
     """Regression (live smoke): MDR titles already lead with the number, and the review
     printed "MDR-2026-0007: MDR-2026-0007: ..."."""
     db = SessionLocal()
-    world.findings["mdr"] = [_real_mdr("i9", 7, "WS01", sev="critical", opened=(NOW - dt.timedelta(minutes=2)).isoformat())]
+    world.findings["mdr"] = [_real_mdr("i9", 7, "WS01", sev="critical", opened=(NOW - dt.timedelta(minutes=2)).isoformat(),
+                                       published=True)]
     brain.cycle(db)
     body = next(i for i in world.communications["plat-rb"] if i["kind"] == "posture_review")["body_md"]
     assert "MDR-2026-0007" in body and "MDR-2026-0007: MDR-2026-0007" not in body
@@ -390,3 +392,91 @@ def test_alert_an_mdr_investigation_owns_neither_pages_nor_escalates_twice(world
     assert "escalate_finding:managed-services:al1" not in _props(db, "escalate_finding")
     assert "escalate_finding:mdr:i1" in _props(db, "escalate_finding")
     assert "host_action:al1" in _props(db, "host_action")
+
+
+# ---------------------------------------------------------------- review fixes
+def test_suppression_target_scoped_to_tool_and_shared_host_and_executor_passes_them(world):
+    """Every piece of evidence shares one tool and one host: the suppression is scoped
+    to both, and the executor sends them to MDR's POST /api/suppressions."""
+    db = SessionLocal()
+    world.mdr_closed = [_real_mdr(f"ra{n}", n, "KFCU-WS205", native_status="closed", verdict="false_positive",
+                                  source_group="sentinelone") for n in (5, 6, 7)]
+    brain.cycle(db)
+    p = next(iter(_props(db, "suggest_suppression").values()))
+    assert p.target["tool"] == "sentinelone" and p.target["host"] == "KFCU-WS205"
+    brain.decide(db, p, "dan@vendettacd.io", True, "agreed")
+    assert world.suppressions[0]["match"] == {"title_contains": "AnyDesk.exe remote access tool executed from user profile",
+                                              "tool": "sentinelone", "host": "KFCU-WS205"}
+
+
+def test_suppression_drops_host_when_hosts_differ_and_skips_short_fragments(world):
+    db = SessionLocal()
+    world.mdr_closed = [_real_mdr(f"ra{n}", n, f"KFCU-WS20{n}", native_status="closed", verdict="false_positive",
+                                  source_group="sentinelone") for n in (5, 6, 7)]
+    brain.cycle(db)
+    p = next(iter(_props(db, "suggest_suppression").values()))
+    assert p.target["tool"] == "sentinelone" and p.target["host"] == ""
+    # a title fragment under 12 characters is too broad to propose
+    db.query(Proposal).filter_by(action="suggest_suppression").delete()
+    db.commit()
+    world.mdr_closed = [_investigation(f"y{n}", "medium", f"Odd login {n}", f"MDR-2026-01{n}", OLD, matched="WS01",
+                                       native_status="closed", verdict="false_positive", signal_title="Odd login")
+                        for n in (1, 2, 3)]
+    brain.cycle(db)
+    assert not _props(db, "suggest_suppression")
+
+
+def test_posture_review_shows_only_client_visible_findings(world):
+    """The review is a client draft: unpublished MDR investigations and findings not
+    yet confirmed or closed stay out, matching what the client portal shows."""
+    world.findings["managed-services"].append(_finding("managed-services", "al8", "high", "Confirmed mailbox forwarding rule",
+                                                       status="confirmed", matched="jdoe"))
+    world.findings["mdr"].append(_real_mdr("i8", 8, "WS02", published=True))
+    db = SessionLocal()
+    brain.cycle(db)
+    body = next(i for i in world.communications["plat-rb"] if i["kind"] == "posture_review")["body_md"]
+    assert "MDR-2026-0008" in body
+    assert "MDR-2026-0007" not in body  # i1 is not published
+    from app import executor, perception
+    seen = [f["id"] for f in perception.findings(db)
+            if executor.client_visible_finding(f) and (f.get("subject") or {}).get("platform_client_id") == "plat-rb"]
+    assert sorted(seen) == ["al8", "i8"]
+    assert "2 findings are active" in body
+
+
+def test_one_detection_counts_once_toward_noise(world):
+    """A false-positive close and rejected proposals on the same investigation are one
+    piece of evidence, so one detection never reaches the threshold alone."""
+    from app import memory
+    db = SessionLocal()
+    world.mdr_closed = [_investigation("z1", "high", "Scheduled task created by admin tool on SRV09", "MDR-2026-0031", OLD,
+                                       matched="SRV09", native_status="closed", verdict="false_positive", rule="schtask")]
+    sig = memory.signature("Scheduled task created by admin tool on SRV09")
+    for action in ("escalate_finding", "page_oncall"):
+        db.add(Proposal(key=f"{action}:mdr:z1", action=action, title="t", status="rejected", decided_by="dan@vendettacd.io",
+                        decided_at=utcnow(), facts={"module": "mdr", "finding_id": "z1", "platform_client_id": "plat-rb",
+                                                    "signature": sig, "title": "Scheduled task created by admin tool on SRV09",
+                                                    "matched": "SRV09"}))
+    db.commit()
+    brain.cycle(db)
+    h = memory.noise(db)[("plat-rb", sig)]
+    assert h["false_positive"] + h["rejected"] == 1
+    assert not _props(db, "suggest_suppression")
+
+
+def test_rejected_page_cools_down_for_the_page_window(world):
+    """A person rejects a page: SABINE does not propose it again for the same detection
+    inside PAGE_REPEAT_MINUTES."""
+    from app import policy
+    db = SessionLocal()
+    policy.set_autonomy(db, "page_oncall", "propose", "admin")
+    brain.cycle(db)
+    p = db.query(Proposal).filter_by(key="page_oncall:mdr:i1", status="pending").one()
+    brain.decide(db, p, "dan@vendettacd.io", False, "already on it")
+    brain.cycle(db)
+    assert db.query(Proposal).filter_by(key="page_oncall:mdr:i1").count() == 1
+    # once the window passes, it may be proposed again
+    p.decided_at = utcnow() - dt.timedelta(minutes=settings.page_repeat_minutes + 1)
+    db.commit()
+    brain.cycle(db)
+    assert db.query(Proposal).filter_by(key="page_oncall:mdr:i1", status="pending").count() == 1

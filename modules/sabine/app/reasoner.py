@@ -154,6 +154,8 @@ def soc_rules(db: Session) -> list[Proposal]:
                  "matched": f.get("matched")}
         if f.get("signal_title"):
             facts["signal_title"] = f["signal_title"]  # MDR: what a suppression would match
+        if f.get("source_group"):
+            facts["source_group"] = f["source_group"]  # MDR: the tool a suppression is scoped to
         if cp_open and cp_verdict == "true_positive" and cp_conf >= settings.copilot_tp_confidence:
             confidence = min(0.99, confidence + 0.1)
             why += (f" The module's triage copilot ({cp.get('model', 'rules')}) agrees it is a true positive at "

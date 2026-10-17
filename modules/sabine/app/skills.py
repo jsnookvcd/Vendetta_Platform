@@ -25,6 +25,8 @@ Fields:
 - client_visible: whether a carried-out action is listed in the client's "What
   SABINE did on your account". Internal business work and the drafts that are
   themselves client communications are not.
+- person_decides: a person always makes this decision, so the skill can never be
+  set to auto, globally or for one client, whatever its risk tier.
 """
 from __future__ import annotations
 
@@ -57,10 +59,11 @@ class Skill:
     reversible: bool = True
     synonyms: tuple[str, ...] = field(default_factory=tuple)
     client_visible: bool = True
+    person_decides: bool = False
 
     @property
     def can_auto(self) -> bool:
-        return self.risk != "high"
+        return self.risk != "high" and not self.person_decides
 
     @property
     def domain_label(self) -> str:
@@ -71,7 +74,8 @@ class Skill:
                 "domain_label": self.domain_label, "module": self.module, "risk": self.risk, "default": self.default,
                 "inputs": [{"name": i.name, "type": i.type, "required": i.required} for i in self.inputs],
                 "chat": self.chat, "reversible": self.reversible, "can_auto": self.can_auto,
-                "synonyms": list(self.synonyms), "client_visible": self.client_visible}
+                "synonyms": list(self.synonyms), "client_visible": self.client_visible,
+                "person_decides": self.person_decides}
 
 
 _SKILLS = (
@@ -104,7 +108,8 @@ _SKILLS = (
           "When people have rejected or closed as false positive the same detection pattern for one client the set number of times, SABINE proposes a time-limited MDR suppression for that client; a person approves it.",
           "soc", "mdr", "medium", "propose", "suggest_suppression",
           (Input("finding_id", "finding_id"),), chat=True, reversible=True,
-          synonyms=("suggest a suppression", "suggest suppression", "propose a suppression", "suppress this", "suppress the pattern", "this is noise")),
+          synonyms=("suggest a suppression", "suggest suppression", "propose a suppression", "suppress this", "suppress the pattern", "this is noise"),
+          person_decides=True),
     Skill("roster_sync", "Re-sync a module whose roster pull is failing",
           "When a module reports a failed roster pull, SABINE asks it to pull again; if it still fails the item stays in the queue for an operator.",
           "admin", "the module named", "low", "auto", "roster_sync",

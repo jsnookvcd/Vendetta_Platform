@@ -12,7 +12,9 @@ writes into the proposal's facts, so the change is visible and auditable.
 
 noise() feeds suggest_suppression: per (client, signature) of MDR detections, how
 many times a person rejected SABINE's proposal on it and how many investigations
-were closed as false positive in MDR.
+were closed as false positive in MDR. Each detection counts once per pattern: an
+investigation closed as false positive and then rejected again in SABINE is one
+piece of evidence, so a single detection never reaches the threshold alone.
 """
 from __future__ import annotations
 
@@ -99,7 +101,19 @@ def noise(db: Session) -> dict[tuple[str, str], dict]:
     out: dict[tuple[str, str], dict] = {}
 
     def slot(pid: str, sig: str, client: str) -> dict:
-        return out.setdefault((pid, sig), {"false_positive": 0, "rejected": 0, "titles": [], "client": client, "hosts": set()})
+        return out.setdefault((pid, sig), {"false_positive": 0, "rejected": 0, "titles": [], "client": client,
+                                           "hosts": set(), "tools": set(), "ids": set(),
+                                           "missing_host": False, "missing_tool": False})
+
+    def evidence(s: dict, host: str, tool: str) -> None:
+        if host:
+            s["hosts"].add(host)
+        else:
+            s["missing_host"] = True
+        if tool:
+            s["tools"].add(tool)
+        else:
+            s["missing_tool"] = True
 
     for f in perception.mdr_history(db):
         if (f.get("verdict") or "") != "false_positive":
@@ -109,24 +123,42 @@ def noise(db: Session) -> dict[tuple[str, str], dict]:
         if not pid:
             continue
         s = slot(pid, signature(f.get("title") or ""), subj.get("client") or "")
+        fid = str(f.get("id") or "")
+        if fid and fid in s["ids"]:
+            continue
+        s["ids"].add(fid)
         s["false_positive"] += 1
         # An MDR suppression matches the signal's title, never the investigation's
         # ("MDR-2026-0005: <rule> on <host>"), so the phrase comes from signal_title.
         s["titles"].append(f.get("signal_title") or f.get("title") or "")
-        if f.get("matched"):
-            s["hosts"].add(f["matched"])
+        evidence(s, f.get("matched") or "", f.get("source_group") or "")
     for p in _decided(db, SOC_ON_FINDINGS):
-        if p.status != "rejected" or (p.facts or {}).get("module") != "mdr":
+        facts = p.facts or {}
+        if p.status != "rejected" or facts.get("module") != "mdr":
             continue
         pid = proposal_client(p)
         if not pid:
             continue
-        s = slot(pid, proposal_signature(p), (p.facts or {}).get("client") or "")
+        s = slot(pid, proposal_signature(p), facts.get("client") or "")
+        # One detection is one piece of evidence, however many proposals on it were rejected.
+        fid = str(facts.get("finding_id") or f"proposal:{p.id}")
+        if fid in s["ids"]:
+            continue
+        s["ids"].add(fid)
         s["rejected"] += 1
-        phrase = (p.facts or {}).get("signal_title") or (p.facts or {}).get("title")
+        phrase = facts.get("signal_title") or facts.get("title")
         if phrase:
             s["titles"].append(phrase)
+        evidence(s, facts.get("matched") or "", facts.get("source_group") or "")
     return out
+
+
+def scope(h: dict) -> tuple[str, str]:
+    """(tool, host) a suppression for a noise pattern can be narrowed to: each one
+    only when every piece of evidence names it and they all agree, else ""."""
+    tool = next(iter(h["tools"])) if len(h.get("tools") or ()) == 1 and not h.get("missing_tool") else ""
+    host = next(iter(h["hosts"])) if len(h.get("hosts") or ()) == 1 and not h.get("missing_host") else ""
+    return tool, host
 
 
 def common_phrase(titles: list[str]) -> str:

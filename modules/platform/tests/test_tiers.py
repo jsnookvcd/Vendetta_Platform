@@ -68,3 +68,42 @@ def test_provisioning_api_carries_tier_lead_commitments_services(admin):
     assert out["services"] == ["managed-services", "mdr"] == out["modules"]
     scoped = admin.get("/api/platform/clients", params={"module": "mdr"}, headers=bearer()).json()["clients"]
     assert [x["id"] for x in scoped] == [c.id] and scoped[0]["commitments"]["critical_ack_minutes"] == 7
+
+
+def test_only_admin_changes_lead_and_lead_must_be_on_roster(client, admin):
+    """The account lead approves client communications, so an analyst cannot name
+    themselves lead, and the lead must be an active person on the roster."""
+    from helpers import add_staff, sign_in_as
+
+    c = make_client(admin, account_lead="dan@vendettacd.io")
+    # not on the roster, or deactivated: refused even for an admin
+    r = admin.post(f"/clients/{c.id}/edit", data={"active": "true", "account_lead": "ghost@vendettacd.io"},
+                   follow_redirects=False)
+    assert "err=" in r.headers["location"] and "roster" in r.headers["location"]
+    add_staff("gone@vendettacd.io", active=False)
+    r = admin.post(f"/clients/{c.id}/edit", data={"active": "true", "account_lead": "gone@vendettacd.io"},
+                   follow_redirects=False)
+    assert "err=" in r.headers["location"]
+    assert SessionLocal().get(Client, c.id).account_lead == "dan@vendettacd.io"
+    # an analyst on the roster cannot make themselves lead
+    add_staff("kenedi@vendettacd.io")
+    sign_in_as(client, "kenedi@vendettacd.io", "analyst")
+    r = client.post(f"/clients/{c.id}/edit", data={"active": "true", "industry": "bank",
+                                                   "account_lead": "kenedi@vendettacd.io"}, follow_redirects=False)
+    assert "err=" in r.headers["location"] and "admin" in r.headers["location"]
+    c2 = SessionLocal().get(Client, c.id)
+    assert c2.account_lead == "dan@vendettacd.io" and c2.industry == ""
+    # an analyst may still edit the other fields, sending the lead unchanged or not at all
+    r = client.post(f"/clients/{c.id}/edit", data={"active": "true", "industry": "bank",
+                                                   "account_lead": "dan@vendettacd.io"}, follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    assert SessionLocal().get(Client, c.id).industry == "bank"
+    # an admin may change it to an active roster person, or clear it
+    admin.cookies.clear()
+    client.post("/login", data={"username": "admin", "password": "pw", "next": "/"})
+    r = client.post(f"/clients/{c.id}/edit", data={"active": "true", "account_lead": "kenedi@vendettacd.io"},
+                    follow_redirects=False)
+    assert "msg=" in r.headers["location"]
+    assert SessionLocal().get(Client, c.id).account_lead == "kenedi@vendettacd.io"
+    client.post(f"/clients/{c.id}/edit", data={"active": "true", "account_lead": ""})
+    assert SessionLocal().get(Client, c.id).account_lead == ""

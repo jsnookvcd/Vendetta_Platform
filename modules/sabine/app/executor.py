@@ -195,11 +195,25 @@ def _post_draft(db: Session, p: Proposal, kind: str, title: str, subject: str, b
             "detail": ("draft on the platform waiting for approval" if d.get("created") else "draft already on the platform")}
 
 
+# Finding-model statuses a client portal shows for modules other than MDR.
+CLIENT_VISIBLE_STATUSES = ("confirmed", "closed")
+
+
+def client_visible_finding(f: dict) -> bool:
+    """What a client portal shows: an MDR investigation once it is published, and
+    another module's finding once it is confirmed or closed. The posture review is a
+    client draft, so it is built only from these."""
+    if f.get("_module") == "mdr":
+        return f.get("published") is True
+    return f.get("status") in CLIENT_VISIBLE_STATUSES
+
+
 def posture_review(db: Session, p: Proposal) -> dict:
     t = p.target
     client = _client(db, p)
     pid = client.get("id", "")
-    findings = [f for f in perception.findings(db) if (f.get("subject") or {}).get("platform_client_id") == pid]
+    findings = [f for f in perception.findings(db)
+                if (f.get("subject") or {}).get("platform_client_id") == pid and client_visible_finding(f)]
     cases = [c for c in perception.cases(db) if (c.get("client") or {}).get("platform_client_id") == pid]
     journey = perception.journey(db, pid) or []
     month = t.get("month") or utcnow().strftime("%Y-%m")
@@ -224,6 +238,7 @@ def suggest_suppression(db: Session, p: Proposal) -> dict:
     by = p.decided_by or "sabine"
     res = reach.post("mdr", t.get("path", "/api/suppressions"),
                      {"platform_client_id": t["platform_client_id"], "title_contains": t["title_contains"],
+                      "tool": t.get("tool") or "", "host": t.get("host") or "",
                       "reason": t.get("reason", "suggested by SABINE"), "days": int(t.get("days") or 30),
                       "created_by": f"sabine (approved by {by})" if p.decided_by else "sabine"}, timeout=20.0)
     if not res["ok"]:
