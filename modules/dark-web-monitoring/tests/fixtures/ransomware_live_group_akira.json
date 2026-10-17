@@ -1,0 +1,55 @@
+{
+  "client": "fixture@example.com",
+  "group": "akira",
+  "description": "Fixture group detail in the shape GET /groups/{name} returns.",
+  "victims": 1448,
+  "firstseen": "2023-04-12",
+  "lastseen": "2026-10-15",
+  "locations": [
+    {
+      "fqdn": "akiraexamplefixtureaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion",
+      "title": "",
+      "slug": "https://akiraexamplefixtureaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion",
+      "available": true,
+      "updated": "2026-10-16 08:01:10.609078",
+      "lastscrape": "2026-10-16 08:01:10.609078",
+      "type": "DLS",
+      "captcha": false,
+      "seized": false
+    },
+    {
+      "fqdn": "akiramirrorfixturecccccccccccccccccccccccccccccccccccccccccc.onion",
+      "title": "mirror",
+      "slug": "http://akiramirrorfixturecccccccccccccccccccccccccccccccccccccccccc.onion/",
+      "available": false,
+      "updated": "2026-09-01 08:01:10.609078",
+      "lastscrape": "2026-10-16 08:01:10.609078",
+      "type": "DLS",
+      "captcha": false,
+      "seized": false
+    },
+    {
+      "fqdn": "akirachatfixtureddddddddddddddddddddddddddddddddddddddddddddd.onion",
+      "title": "/",
+      "slug": "https://akirachatfixtureddddddddddddddddddddddddddddddddddddddddddddd.onion",
+      "available": true,
+      "updated": "2026-10-16 08:02:18.800461",
+      "lastscrape": "2026-10-16 08:02:18.800461",
+      "type": "Chat"
+    },
+    {
+      "fqdn": "akiraseizedfixtureeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.onion",
+      "title": "seized",
+      "slug": "http://akiraseizedfixtureeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.onion/",
+      "available": true,
+      "updated": "2026-10-10 08:02:18.800461",
+      "lastscrape": "2026-10-16 08:02:18.800461",
+      "type": "DLS",
+      "seized": true
+    }
+  ],
+  "profile": null,
+  "tools": {},
+  "ttps": [],
+  "url": "https://www.ransomware.live/group/akira"
+}

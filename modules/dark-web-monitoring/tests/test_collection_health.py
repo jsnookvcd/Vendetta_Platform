@@ -16,6 +16,13 @@ from app.db import CollectorRun, Item, RunRequest, SessionLocal, Source, User, u
 from app.pipeline import ingest
 
 
+@pytest.fixture(autouse=True)
+def _pro_key(monkeypatch):
+    """Since Phase 2 the ransomware.live connector is not configured without a PRO
+    key; these Phase 1 tests exercise it as a configured connector."""
+    monkeypatch.setattr(settings, "ransomware_live_api_key", "test-key")
+
+
 def _db():
     return SessionLocal()
 
@@ -69,9 +76,10 @@ def test_every_scheduled_job_has_a_next_run_time():
     for job in jobs:
         assert job.next_run_time is not None, f"{job.id} would never run"
     ids = {j.id for j in jobs}
-    assert {c.job_id for c in connectors.CONNECTORS} <= ids
-    assert {"heartbeat", "tor_check", "run_requests", "retention", "seed"} <= ids
-    assert {"ransomware_live", "ransomwatch"} <= ids
+    assert {c.job_id for c in connectors.CONNECTORS if c.scheduled} <= ids
+    assert {"heartbeat", "tor_check", "run_requests", "retention", "seed", "priority_refresh"} <= ids
+    assert "ransomware_live" in ids and "captures" in ids
+    assert "ransomwatch" not in ids  # archived: a one-time admin backfill, never scheduled
 
 
 def test_scheduler_uses_registry_intervals_and_starts_feeds_soon():
@@ -79,7 +87,8 @@ def test_scheduler_uses_registry_intervals_and_starts_feeds_soon():
     sched = worker.build_scheduler(now)
     by = {j.id: j for j in sched.get_jobs()}
     for c in connectors.CONNECTORS:
-        assert by[c.job_id].trigger.interval == dt.timedelta(minutes=c.interval_minutes)
+        if c.scheduled:
+            assert by[c.job_id].trigger.interval == dt.timedelta(minutes=c.interval_minutes)
     assert by["ransomware_live"].next_run_time - now < dt.timedelta(minutes=1)
     assert by["onion_crawl"].next_run_time - now == dt.timedelta(minutes=settings.onion_crawl_interval)
 
@@ -88,7 +97,7 @@ def test_registry_keys_are_unique_and_complete():
     keys = [c.key for c in connectors.CONNECTORS]
     assert len(keys) == len(set(keys))
     assert set(keys) == {"ransomware_live", "ransomwatch", "onion_crawl", "forum_crawl", "hibp",
-                         "ct_logs", "pastes", "telegram"}
+                         "ct_logs", "pastes", "telegram", "captures"}
 
 
 # ---------------------------------------------------------------- CollectorRun
@@ -130,8 +139,9 @@ def test_unconfigured_connector_is_skipped_on_schedule_and_fails_on_request(fres
 
 
 def test_ransomware_live_counts_items_through_mock_transport(fresh_db, monkeypatch):
-    payload = [{"victim": "Acme Credit Union", "group": "akira", "attackdate": "2026-10-15 08:00:00",
-                "website": "acmecu.org", "country": "US"}]
+    monkeypatch.setattr(settings, "ransomware_live_api_key", "test-key")
+    payload = {"victims": [{"victim": "Acme Credit Union", "group": "akira", "attackdate": "2026-10-15 08:00:00",
+                            "website": "acmecu.org", "country": "US"}]}
     _mock_http(monkeypatch, lambda req: httpx.Response(200, json=payload))
     run = worker.run_job("ransomware_live", leak_feeds.run_ransomware_live)
     assert run.ok is True and run.items_new == 1
@@ -139,6 +149,7 @@ def test_ransomware_live_counts_items_through_mock_transport(fresh_db, monkeypat
 
 
 def test_ransomware_live_http_error_is_a_failed_run(fresh_db, monkeypatch):
+    monkeypatch.setattr(settings, "ransomware_live_api_key", "test-key")
     _mock_http(monkeypatch, lambda req: httpx.Response(403, text="Forbidden"))
     run = worker.run_job("ransomware_live", leak_feeds.run_ransomware_live)
     assert run.ok is False and "403" in run.error
