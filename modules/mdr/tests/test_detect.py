@@ -52,6 +52,35 @@ def test_api_detect_run_409_unconfigured(client):
     assert client.post("/api/detect/run", headers=bearer()).status_code == 409
 
 
+def test_scheduler_idles_without_source_or_interval(monkeypatch):
+    import threading
+    started = []
+    monkeypatch.setattr(threading.Thread, "start", lambda self: started.append(self.name))
+    monkeypatch.setattr(settings, "managed_services_url", "")
+    monkeypatch.setattr(settings, "detect_interval_seconds", 120)
+    detect.start_scheduler(SessionLocal)
+    monkeypatch.setattr(settings, "managed_services_url", "http://managed-services:8000")
+    monkeypatch.setattr(settings, "detect_interval_seconds", 0)
+    detect.start_scheduler(SessionLocal)
+    assert started == []
+    monkeypatch.setattr(settings, "detect_interval_seconds", 120)
+    detect.start_scheduler(SessionLocal)
+    assert started == ["mdr-detect"]
+
+
+def test_api_calls_are_attributed_to_the_named_actor(client):
+    from app.db import AuditLog
+    make_client()
+    r = client.post("/api/suppressions", json={"platform_client_id": "plat-acme", "tool": "aws",
+                                               "reason": "pattern rejected 3 times", "days": 7},
+                    headers=bearer("sabine"))
+    assert r.status_code == 200
+    db = SessionLocal()
+    row = db.query(AuditLog).filter_by(action="suppression.add").one()
+    assert row.actor == "api:sabine"
+    assert db.get(Suppression, r.json()["id"]).created_by == "api:sabine"
+
+
 def test_open_then_attach_and_numbering(fresh_db, now):
     make_client()
     ingest([finding(fid="a1", at=now - dt.timedelta(minutes=3))], now=now)
