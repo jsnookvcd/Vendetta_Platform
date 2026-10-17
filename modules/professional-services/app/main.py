@@ -568,7 +568,7 @@ def healthz():
 def api_module(user: str = Depends(auth.api_user)):
     return {"module": "professional-services", "display_name": "Office of Special Projects",
             "platform": "Vendetta Platform", "enabled": settings.module_enabled,
-            "roles": ["admin", "analyst", "client"], "engagement_types": ENGAGEMENT_TYPES,
+            "roles": ["admin", "analyst", "viewer", "client"], "engagement_types": ENGAGEMENT_TYPES,
             "deliverable_statuses": DELIVERABLE_STATUSES, "readiness": readiness.block(),
             "endpoints": ["/api/module", "/api/engagements", "/api/clients/{id}/evidence/verify",
                           "/api/provision/sync"]}

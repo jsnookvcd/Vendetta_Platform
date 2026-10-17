@@ -520,7 +520,7 @@ def alert_page(aid: str, request: Request, user: str = auth.RequireUser, db: Ses
     a = _get_alert(db, aid)
     can_act, can_approve = _caps(db, user)
     approvers = db.execute(select(User).where(User.active.is_(True), User.role != "client")).scalars().all()
-    approvers = [u for u in approvers if u.role == "admin" or u.can_approve]
+    approvers = [u for u in approvers if u.role == "admin" or (u.can_approve and u.role != "viewer")]
     return render(request, "alert.html", user=user, a=a, hub_ready=bool(settings.platform_hub_url),
                   can_act=can_act, can_self_approve=can_approve and not settings.require_second_approver,
                   approvers=approvers, require_second=settings.require_second_approver,
@@ -634,6 +634,8 @@ def _caps(db: Session, email: str) -> tuple[bool, bool]:
         return False, False
     if u.role == "admin":
         return True, True
+    if u.role == "viewer":
+        return False, False
     return bool(u.can_act), bool(u.can_approve)
 
 
@@ -647,7 +649,7 @@ def _resolve_approver(db: Session, actor: str, can_approve: bool, form_approver:
             ok = True
         else:
             au = db.query(User).filter_by(email=form_approver).one_or_none()
-            ok = bool(au and au.active and (au.role == "admin" or au.can_approve))
+            ok = bool(au and au.active and (au.role == "admin" or (au.can_approve and au.role != "viewer")))
         if ok and not (settings.require_second_approver and form_approver == actor.lower()):
             return form_approver
         return ""
@@ -696,6 +698,8 @@ def team_caps(uid: str, can_act: bool = Form(False), can_approve: bool = Form(Fa
     u = db.get(User, uid)
     if not u or u.role == "client":
         raise HTTPException(404)
+    if u.role == "viewer":
+        return RedirectResponse("/team?err=" + quote("A viewer reads only; grant analyst on the platform Staff page first."), status_code=302)
     u.can_act, u.can_approve = bool(can_act), bool(can_approve)
     db.commit()
     _audit(db, user, "team.caps", f"{u.email} act={u.can_act} approve={u.can_approve}")

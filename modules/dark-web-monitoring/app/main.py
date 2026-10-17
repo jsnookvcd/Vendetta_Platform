@@ -676,7 +676,7 @@ def api_module(user: str = Depends(auth.api_user)):
         "display_name": "Dark Web Monitoring",
         "platform": "Vendetta Platform",
         "enabled": settings.module_enabled,
-        "roles": ["admin", "analyst", "client"],
+        "roles": ["admin", "analyst", "viewer", "client"],
         "finding_reasons": ["term", "credential", "iab"],
         "severities": ["low", "medium", "high", "critical"],
         "statuses": ["new", "reviewing", "confirmed", "false_positive", "closed"],

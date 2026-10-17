@@ -159,7 +159,7 @@ class Staff(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     title: Mapped[str] = mapped_column(String(120), default="")
-    platform_role: Mapped[str] = mapped_column(String(20), default="analyst")  # admin | analyst
+    platform_role: Mapped[str] = mapped_column(String(20), default="analyst")  # admin | analyst | viewer
     profile: Mapped[str] = mapped_column(String(40), default="custom")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -193,7 +193,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     name: Mapped[str] = mapped_column(String(200), default="")
     source: Mapped[str] = mapped_column(String(20), default="entra")
-    role: Mapped[str] = mapped_column(String(30), default="analyst")  # admin | analyst
+    role: Mapped[str] = mapped_column(String(30), default="analyst")  # admin | analyst | viewer
     client_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

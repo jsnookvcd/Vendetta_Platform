@@ -15,6 +15,7 @@
       <label class="field" style="margin-top:9px">Title<input name="title" value="{{ person.title }}" {{ '' if is_admin else 'disabled' }}></label>
       <label class="field" style="margin-top:9px">Platform role
         <select name="platform_role" {{ '' if is_admin else 'disabled' }}>
+          <option value="viewer" {{ 'selected' if person.platform_role == 'viewer' }}>viewer (reads everything, changes nothing)</option>
           <option value="analyst" {{ 'selected' if person.platform_role == 'analyst' }}>analyst (overview, clients, go-live)</option>
           <option value="admin" {{ 'selected' if person.platform_role == 'admin' }}>admin (also staff, connections, settings)</option>
         </select>
@@ -58,6 +59,7 @@
         <div class="ml-name"><b>{{ m.display_name }}</b> {{ statuschip(m.status) }}</div>
         <div class="ml-sub faint">
           {% if role == 'none' %}no access
+          {% elif role == 'viewer' %}viewer, reads everything and changes nothing
           {% elif m.key == 'managed-services' %}{{ role }}{% if g.config.get('can_approve') %}, runs and approves response actions{% elif g.config.get('can_act') %}, runs response actions (cannot approve destructive ones){% else %}, read and triage only{% endif %}
           {% else %}{{ role }}{% endif %}
           {% if role != 'none' and m.public_url %} · <a class="alink" href="{{ m.public_url }}" target="_blank" rel="noopener">open console</a>{% endif %}

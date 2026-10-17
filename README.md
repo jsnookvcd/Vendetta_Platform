@@ -29,7 +29,7 @@ Every module is a self-contained service under modules/<name>/ that:
 - can escalate a finding into an IR case in the hub, attached to the right workstream, from its UI and at POST /api/findings/{id}/escalate;
 - pulls its client roster from the control plane on a schedule and when the control plane pushes a change, and serves /clients/platform/{id} so the control plane can link straight to a client;
 - emits the shapes pinned in docs/contracts and validates them in its own tests;
-- honors the platform role families: internal staff (admin, analyst, granted per module on the control plane's Staff page and enforced at SSO sign-in), the client read-only role scoped to one client, and, where relevant, breach counsel and scoped partner or carrier access.
+- honors the platform role families: internal staff (admin, analyst, viewer, granted per module on the control plane's Staff page and enforced at SSO sign-in), the client read-only role scoped to one client, and, where relevant, breach counsel and scoped partner or carrier access.
 
 Dark Web Monitoring implements all of this today; treat its module.yaml, its /api/module manifest, its finding model mapping and its role-gated client portal as the pattern to copy.
 

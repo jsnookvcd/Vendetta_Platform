@@ -116,4 +116,4 @@ their platform ids (managed-services with the tool mappings synced).
   (managed-services stores it now; the others match by name as the IR hub does).
 - Centralizing tool secrets here rather than in managed-services, if that is ever
   wanted (today secrets stay with the module, only the mapping is central).
-- Per-tech RBAC beyond admin/analyst, and its own Terraform stack.
+- Per-tech RBAC beyond viewer/analyst/admin, and its own Terraform stack.

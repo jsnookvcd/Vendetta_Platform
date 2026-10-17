@@ -535,7 +535,7 @@ def healthz():
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user)):
     return {"module": "penetration-testing", "enabled": settings.module_enabled,
-            "roles": ["admin", "analyst", "client"], "finding_types": ["pentest-finding"],
+            "roles": ["admin", "analyst", "viewer", "client"], "finding_types": ["pentest-finding"],
             "engagement_types": ENGAGEMENT_TYPES, "readiness": readiness.block()}
 
 

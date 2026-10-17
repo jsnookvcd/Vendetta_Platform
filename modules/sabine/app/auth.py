@@ -16,16 +16,27 @@ from .config import settings
 COOKIE = "vcd_session"
 _signer = URLSafeTimedSerializer(settings.secret_key, salt="session")
 
+# Internal roles, lowest to highest. A viewer can open every staff page and read
+# every API but cannot change anything; the platform roster grants it.
+INTERNAL_ROLES = ("viewer", "analyst", "admin")
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+READ_ONLY_DETAIL = ("read-only access: your viewer grant lets you look at every page and read every API "
+                    "but not change anything. Ask a platform admin for analyst access if you need to act.")
+
 
 @dataclasses.dataclass
 class Identity:
     email: str
-    role: str  # admin | analyst | client
+    role: str  # admin | analyst | viewer | client
     client_id: str | None = None
 
     @property
     def is_internal(self) -> bool:
-        return self.role in ("admin", "analyst")
+        return self.role in INTERNAL_ROLES
+
+    @property
+    def is_viewer(self) -> bool:
+        return self.role == "viewer"
 
     @property
     def is_client(self) -> bool:
@@ -44,13 +55,23 @@ def make_session(username: str) -> str:
 
 def current_user(request: Request) -> str:
     """Identity for staff routes. A valid session that is not an internal user
-    (admin or analyst) is refused, so a client-portal session can never reach a
+    (admin, analyst or viewer) is refused, so a client-portal session can never reach a
     staff route or the service API even if the access gate is bypassed. This is the
     route-level half of the tenant boundary; the middleware gate is the other."""
     ident = require_identity(request)
     if not ident.is_internal:
         raise HTTPException(status_code=403, detail="internal access only")
+    require_write(request, ident)
     return ident.email
+
+
+def require_write(request: Request, ident: Identity) -> None:
+    """The one place the viewer level is enforced: a viewer may read (GET, HEAD,
+    OPTIONS) but every state-changing request, whether a form post, an action or
+    a settings save, is refused with 403 and a plain explanation. Gating by method
+    here covers every staff route and the service API without touching them."""
+    if ident.is_viewer and request.method.upper() not in _SAFE_METHODS:
+        raise HTTPException(status_code=403, detail=READ_ONLY_DETAIL)
 
 
 def _session_email(request: Request) -> str | None:

@@ -17,6 +17,7 @@ import logging
 import httpx
 from sqlalchemy.orm import Session
 
+from . import auth
 from .config import TOOLS, settings
 from .db import Client
 
@@ -213,7 +214,7 @@ def _apply_staff(db: Session, body: dict) -> dict:
     added = updated = 0
     for entry in roster:
         email = (entry.get("email") or "").strip().lower()
-        if not email or entry.get("role") not in ("admin", "analyst"):
+        if not email or entry.get("role") not in auth.INTERNAL_ROLES:
             continue
         seen.add(email)
         u = db.query(User).filter_by(email=email).one_or_none()
@@ -229,6 +230,9 @@ def _apply_staff(db: Session, body: dict) -> dict:
         u.client_id = None
         u.active = True
         cfg = entry.get("config") or {}
+        if u.role == "viewer":
+            # A viewer never acts or approves, whatever the grant's config says.
+            cfg = {"can_act": False, "can_approve": False}
         if hasattr(u, "can_act"):
             u.can_act = bool(cfg.get("can_act", True))
         if hasattr(u, "can_approve"):
@@ -296,7 +300,7 @@ def staff_decision(email: str, db: Session | None = None,
         if not body.get("governs"):
             return "unknown", "", {}
         for entry in body.get("staff") or []:
-            if (entry.get("email") or "").strip().lower() == email and entry.get("role") in ("admin", "analyst"):
+            if (entry.get("email") or "").strip().lower() == email and entry.get("role") in auth.INTERNAL_ROLES:
                 return "admit", entry["role"], dict(entry.get("config") or {})
         return "deny", "", {}
     # Offline fallback: the mirrored table.

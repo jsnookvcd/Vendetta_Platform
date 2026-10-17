@@ -128,7 +128,9 @@ Control plane, Staff: onboard yourself first with the Administrator profile, the
 everyone else with the profile that fits (Incident responder, SOC analyst,
 Offensive security, vCISO / advisory, Leadership). Each person signs in to every console with their
 Microsoft 365 account and gets exactly the level set here; nothing is configured
-per module. From the first onboarding onward, an internal account that is not on
+per module. Levels per module are none, viewer, analyst and admin. A viewer reads
+every page and API and cannot change anything; Leadership is viewer everywhere and
+analyst in SABINE. From the first onboarding onward, an internal account that is not on
 the roster for a module cannot sign in there, and deactivating someone on the
 Staff page locks them out everywhere within seconds. The admin emails configured
 for SSO stay admitted to the control plane as the break-glass path.

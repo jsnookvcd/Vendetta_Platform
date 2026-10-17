@@ -7,10 +7,13 @@ same way it pulls clients, so a module's SSO sign-in admits an internal user onl
 when the roster lists them for that module, with the role the roster says.
 Deactivating a person here locks them out of every module on the next push.
 
-Access levels, per module: none (cannot sign in there), analyst (full operational
-access), admin (also settings, SSO, connections and, on the platform, staff). In
-SABINE, analyst decides low and medium risk proposals; admin also decides
-high-risk hand-offs and sets the autonomy policy.
+Access levels, per module: none (cannot sign in there), viewer (opens every staff
+page and reads every API, changes nothing), analyst (full operational access),
+admin (also settings, SSO, connections and, on the platform, staff). The platform
+role has the same viewer, analyst and admin levels. In SABINE, analyst decides low
+and medium risk proposals; admin also decides high-risk hand-offs and sets the
+autonomy policy. A viewer is enforced once per module in its auth layer: every
+GET is served, every POST, PUT or DELETE answers 403.
 Managed services additionally carries two capabilities on the grant: can_act (may
 run response actions) and can_approve (may authorize a destructive action, the
 second-person control).
@@ -25,8 +28,8 @@ from sqlalchemy.orm import Session
 
 from .db import Staff, StaffGrant, utcnow
 
-PLATFORM_ROLES = ("admin", "analyst")
-MODULE_ROLES = ("none", "analyst", "admin")
+PLATFORM_ROLES = ("viewer", "analyst", "admin")
+MODULE_ROLES = ("none", "viewer", "analyst", "admin")
 
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
@@ -90,9 +93,10 @@ PROFILES = {
     ),
     "leadership": (
         "Leadership",
-        "The platform overview, the go-live screen, the Office of Special Projects and SABINE's briefs and queue; no other module access until granted.",
-        "analyst",
-        {**{m: ("none", {}) for m in GRANTABLE}, "professional-services": ("analyst", {}), "sabine": ("analyst", {})},
+        "Reads everything and changes nothing: viewer on the platform and in every module, analyst in SABINE for its briefs and queue.",
+        "viewer",
+        {**{m: ("viewer", {"can_act": False, "can_approve": False} if m == "managed-services" else {}) for m in GRANTABLE},
+         "sabine": ("analyst", {})},
     ),
 }
 
@@ -131,6 +135,9 @@ def set_grant(db: Session, person: Staff, module_key: str, role: str, config: di
     g.role = role
     if config is not None:
         g.config = dict(config)
+    if role == "viewer" and module_key == "managed-services":
+        # A viewer never runs or approves response actions, whatever was ticked.
+        g.config = {"can_act": False, "can_approve": False}
     person.profile = "custom"
     person.updated_at = utcnow()
     return g

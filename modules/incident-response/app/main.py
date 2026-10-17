@@ -751,7 +751,7 @@ def api_module(user: str = Depends(auth.api_user)):
     return {
         "module": "incident-response", "display_name": "Incident Response and Case Management",
         "platform": "Vendetta Platform", "enabled": settings.module_enabled, "role": "engagement-hub",
-        "roles": ["admin", "analyst", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
+        "roles": ["admin", "analyst", "viewer", "client"], "workstreams": WORKSTREAMS, "case_statuses": CASE_STATUSES,
         "card_statuses": board.TASK_STATUSES,
         "readiness": readiness_mod.block(),
         "endpoints": ["/api/ir-cases", "/api/ir-cases/declare", "/api/module"],
