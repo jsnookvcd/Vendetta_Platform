@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% block title %}Profile: {{ display }}{% endblock %}
+{% block body %}
+<p class="page-intro"><a href="/priority-groups">Priority Groups</a> / {{ display }}. State <span class="chip{{ ' stale-chip' if state == 'broken' }}">{{ state }}</span>{% if origin %} <span class="faint">loaded from the {{ origin }}</span>{% endif %}. Preview runs the selectors against the newest stored index page for this group and shows the victims they would extract. Nothing is fetched; the crawl stores a fresh page each time the index changes.</p>
+{% if saved %}<div class="health-banner info">Profile saved as a draft. It becomes working when the next onion crawl extracts entries with it.</div>{% endif %}
+<div class="detail-grid">
+  <div>
+    <div class="panel pad">
+      <form method="post" action="/priority-groups/{{ group_key }}/profile">
+        {% for f in fields %}
+        <label class="field" style="margin-bottom:10px">{{ f.replace('_', ' ') }}<input name="{{ f }}" class="mono" value="{{ selectors.get(f, '') }}"{% if not can_edit %} disabled{% endif %}></label>
+        {% endfor %}
+        <label class="field" style="margin-bottom:10px">max posts per run<input name="max_posts_per_run" type="number" min="0" max="200" value="{{ selectors.get('max_posts_per_run', 40) }}"{% if not can_edit %} disabled{% endif %}></label>
+        {% if can_edit %}
+        <label style="display:block;margin:6px 0 12px"><input type="checkbox" name="apply" checked> Use this profile on the group's {{ sources|length }} onion source{{ '' if sources|length == 1 else 's' }}</label>
+        <button class="btn" name="action" value="preview">Preview</button>
+        <button class="btn btn-primary" name="action" value="save">Save profile</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Preview</h2></div>
+    <div class="panel">
+      {% if not page %}<div class="empty"><p>No stored index page with HTML for this group yet. The onion crawl stores one the next time it reaches an enabled source for the group.</p></div>
+      {% else %}
+        <p class="faint" style="padding:10px 14px 0;margin:0">Page <span class="mono">{{ page.url }}</span>, stored {{ page.collected_at.strftime('%Y-%m-%d %H:%M') }} UTC.</p>
+        {% if preview %}
+          {% if preview.entries %}
+          <div class="table-wrap"><table>
+            <thead><tr><th>Victim</th><th>Date</th><th>Link</th></tr></thead><tbody>
+            {% for e in preview.entries %}<tr><td>{{ e.victim }}{% if e.desc %}<div class="faint trunc" style="max-width:360px">{{ e.desc }}</div>{% endif %}</td><td class="nowrap faint">{{ e.date }}</td><td class="mono trunc" style="max-width:240px">{{ e.link }}</td></tr>{% endfor %}
+            </tbody></table></div>
+          <p class="faint" style="padding:0 14px 10px">{{ preview.entries|length }} entries{% if preview.entries|length >= 50 %} (first 50 shown){% endif %}.</p>
+          {% else %}<div class="empty"><p>These selectors extract no entries from the stored page.</p></div>{% endif %}
+        {% else %}<div class="empty"><p>Enter selectors and press Preview.</p></div>{% endif %}
+      {% endif %}
+    </div>
+    {% if sources %}
+    <div class="section-head"><h2>Onion sources</h2></div>
+    <div class="panel"><div class="table-wrap"><table><tbody>
+      {% for s in sources %}<tr><td class="mono trunc" style="max-width:300px">{{ s.url }}</td><td>{{ 'enabled' if s.enabled else 'disabled' }}</td><td class="mono faint">{{ s.profile }}</td><td class="faint">{{ (s.meta or {}).get('profile_state', '') }}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

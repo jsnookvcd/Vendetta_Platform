@@ -16,16 +16,20 @@
   </div>
 </div>
 {% if queued %}<div class="health-banner info">Run queued for <b>{{ queued }}</b>. The worker picks it up within a minute; refresh to see the result.</div>{% endif %}
+{% for r in rows if r.broken_profiles %}<div class="health-banner amber">Broken parser profiles: {% for b in r.broken_profiles %}<b>{{ b.profile }}</b> ({{ b.group }}{% if b.since %}, since {{ b.since[:10] }}{% endif %}){{ ', ' if not loop.last }}{% endfor %}. They extracted victims before and extract none now; fix the selectors on <a href="/priority-groups">Priority Groups</a>.</div>{% endfor %}
 <p class="page-intro">Every collector the worker schedules, whether it is configured, when it last ran and succeeded, what it produced and its last error. A live feed is flagged stale when its newest published item is older than 7 days, even when the last request succeeded.</p>
 <div class="panel"><div class="table-wrap">
 <table>
   <thead><tr><th>Connector</th><th>Configured</th><th>Every</th><th>Last run</th><th>Last success</th><th class="num">24h</th><th class="num">7d</th><th>Newest published</th><th>Last error</th><th></th></tr></thead>
   <tbody>
   {% for r in rows %}<tr class="conn conn-{{ r.state }}">
-    <td class="nowrap"><span class="dot {{ {'ok':'ok','fail':'bad','stale':'warn','off':'','never':'warn','running':'ok'}[r.state] }}"></span> {{ r.name }} <span class="chip">{{ r.kind }}</span>{% if r.stale %} <span class="chip stale-chip">stale</span>{% endif %}</td>
+    <td class="nowrap"><span class="dot {{ {'ok':'ok','fail':'bad','stale':'warn','off':'','never':'warn','running':'ok','archived':''}[r.state] }}"></span> {{ r.name }} <span class="chip">{{ r.kind }}</span>{% if r.stale %} <span class="chip stale-chip">stale</span>{% endif %}{% if r.archived %} <span class="chip">archived</span>{% endif %}
+      {% if r.capture_queue_depth is defined %}<div class="faint" style="font-size:12px">queue {{ r.capture_queue_depth }}; success {% if r.capture_success_rate is none %}n/a{% else %}{{ (r.capture_success_rate * 100) | round | int }}%{% endif %} of {{ r.capture_finished_7d }} in 7d{% if r.capture_no_match_7d %}, {{ r.capture_no_match_7d }} index without the name{% endif %}</div>{% endif %}
+      {% if r.disabled_sources %}<div class="faint" style="font-size:12px">disabled: {% for code, n in r.disabled_sources.items() %}{{ n }} {{ code.replace('_', ' ') }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+    </td>
     <td>{% if r.configured %}<span class="ok-txt">yes</span>{% if r.reason %} <span class="faint">{{ r.reason }}</span>{% endif %}{% else %}<span class="bad-txt">no</span> <span class="faint">{{ r.reason }}</span>{% endif %}</td>
     <td class="nowrap faint">{{ r.interval_minutes }} min</td>
-    <td class="nowrap">{{ ago(r.last_run_at) }}{% if r.last_run_ok is sameas false %} <span class="bad-txt">failed</span>{% elif r.state == 'running' %} <span class="faint">running</span>{% endif %}{% if r.last_run_trigger == 'manual' %} <span class="chip">manual</span>{% endif %}</td>
+    <td class="nowrap">{% if not r.scheduled %}<span class="faint">not scheduled</span> {% endif %}{{ ago(r.last_run_at) }}{% if r.last_run_ok is sameas false %} <span class="bad-txt">failed</span>{% elif r.state == 'running' %} <span class="faint">running</span>{% endif %}{% if r.last_run_trigger == 'manual' %} <span class="chip">manual</span>{% endif %}</td>
     <td class="nowrap">{{ ago(r.last_ok) }}</td>
     <td class="num">{{ r.items_24h }}</td>
     <td class="num">{{ r.items_7d }}</td>
@@ -33,11 +37,12 @@
     <td class="faint trunc" style="max-width:280px" title="{{ r.error }}">{{ r.error }}</td>
     <td class="nowrap" style="text-align:right">
       {% if r.queued %}<span class="faint">{{ r.queued[0] }}</span>
+      {% elif not r.scheduled %}{% if backfill.done_at %}<span class="faint">backfilled {{ backfill.done_at.strftime('%Y-%m-%d') }}</span>{% elif is_admin %}<form class="inline" method="post" action="/connectors/{{ r.key }}/backfill"><button class="btn btn-sm btn-ghost" title="One-time historical import from the archive">Backfill</button></form>{% else %}<span class="faint">admin backfill</span>{% endif %}
       {% elif can_run %}<form class="inline" method="post" action="/connectors/{{ r.key }}/run"><button class="btn btn-sm btn-ghost">Run now</button></form>{% endif %}
     </td>
   </tr>{% endfor %}
   </tbody>
 </table>
 </div></div>
-<p class="page-intro" style="margin-top:14px">Run now queues the connector for the worker, which polls once a minute. The same table is printed by <span class="mono">python -m app.diagnose</span> inside the worker container, together with a live probe of each upstream.</p>
+<p class="page-intro" style="margin-top:14px">ransomwatch is archived upstream and never scheduled; an admin can import its history once with Backfill. The direct capture queue fetches the leak post or group index behind each hit over Tor and preserves it as evidence. Run now queues the connector for the worker, which polls once a minute. The same table is printed by <span class="mono">python -m app.diagnose</span> inside the worker container, together with a live probe of each upstream.</p>
 {% endblock %}

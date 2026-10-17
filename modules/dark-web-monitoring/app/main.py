@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import boot
 from . import auth, connectors, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
 from . import health, work_requests
+from . import captures, onion_sources, priority, profile_store
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, RunRequest, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -252,7 +253,8 @@ def connectors_page(request: Request, queued: str = "", user: str = auth.Require
     summary = connectors.health_summary(db)
     return render(request, "connectors.html", user=user, h=summary, rows=summary["connectors"],
                   can_run=bool(ident and not ident.is_viewer), queued=queued,
-                  stale_after=health.HEARTBEAT_STALE_SECONDS)
+                  stale_after=health.HEARTBEAT_STALE_SECONDS,
+                  is_admin=bool(ident and ident.role == "admin"), backfill=_ransomwatch_backfill_state(db))
 
 
 @app.post("/connectors/{key}/run")
@@ -262,6 +264,8 @@ def connector_run_now(key: str, user: str = auth.RequireUser, db: Session = Depe
     c = connectors.get(key)
     if c is None:
         raise HTTPException(404, "unknown connector")
+    if not c.scheduled:
+        raise HTTPException(400, "this connector is a one-time backfill; an admin starts it with Backfill")
     if not work_requests.pending(db, RunRequest, RunRequest.payload["connector"].as_string() == key):
         work_requests.enqueue(db, RunRequest, user, {"connector": key})
         _audit(db, user, "connector.run_now", key)
@@ -492,7 +496,7 @@ def hit_detail(hid: str, request: Request, user: str = auth.RequireUser, db: Ses
     if not h:
         raise HTTPException(404)
     ev = db.execute(select(Evidence).where(Evidence.item_id == h.item_id).order_by(desc(Evidence.captured_at))).scalars().all()
-    return render(request, "hit.html", user=user, hit=h, evidence=ev)
+    return render(request, "hit.html", user=user, hit=h, evidence=ev, capture=captures.for_hit(db, hid))
 
 
 @app.post("/hits/{hid}")
@@ -639,9 +643,9 @@ def set_cookie(sid: str, cookie: str = Form(""), user: str = auth.RequireUser, d
 def toggle_source(sid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     s = db.get(Source, sid)
     if s:
-        s.enabled = not s.enabled
-        s.fail_count = 0
+        onion_sources.set_enabled_by_person(s, not s.enabled, user)
         db.commit()
+        _audit(db, user, "source.toggle", f"{s.name} enabled={s.enabled}")
     return RedirectResponse("/sources", status_code=302)
 
 
@@ -840,3 +844,131 @@ def client_by_platform_id(pid: str, user: str = auth.RequireUser, db: Session = 
     if not c:
         raise HTTPException(404, "that client has not been provisioned into this module yet")
     return RedirectResponse(f"/clients/{c.id}", status_code=302)
+
+
+# ---------------------------------------------------------------- Phase 2: backfill, captures, priority groups
+def _require_admin(request: Request) -> None:
+    ident = auth.resolve_identity(request)
+    if not ident or ident.role != "admin":
+        raise HTTPException(403, "admin only")
+
+
+def _ransomwatch_backfill_state(db: Session) -> dict:
+    from .db import CollectorRun
+
+    done = db.execute(select(CollectorRun).where(CollectorRun.job_id == "ransomwatch", CollectorRun.ok.is_(True))
+                      .order_by(desc(CollectorRun.finished_at)).limit(1)).scalar_one_or_none()
+    queued = work_requests.pending(db, RunRequest, RunRequest.payload["connector"].as_string() == "ransomwatch")
+    return {"done_at": done.finished_at if done else None, "items": done.items_new if done else 0,
+            "queued": bool(queued)}
+
+
+@app.post("/connectors/ransomwatch/backfill")
+def ransomwatch_backfill(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Admin only. Queue the one-time historical backfill from the archived
+    ransomwatch posts.json. Refused once a backfill has succeeded."""
+    _require_admin(request)
+    st = _ransomwatch_backfill_state(db)
+    if st["done_at"] is not None:
+        raise HTTPException(409, "the ransomwatch backfill already ran")
+    if not st["queued"]:
+        work_requests.enqueue(db, RunRequest, user, {"connector": "ransomwatch"})
+        _audit(db, user, "connector.backfill", "ransomwatch")
+    return RedirectResponse("/connectors?queued=ransomwatch", status_code=302)
+
+
+@app.post("/hits/{hid}/capture")
+def hit_capture_now(hid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Queue a direct capture for the worker's next drain (within five minutes)."""
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    captures.request_now(db, h, user)
+    _audit(db, user, "capture.request", hid)
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+@app.get("/priority-groups", response_class=HTMLResponse)
+def priority_groups_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    return render(request, "priority_groups.html", user=user, rows=priority.page_rows(db),
+                  is_admin=bool(ident and ident.role == "admin"), can_edit=bool(ident and not ident.is_viewer),
+                  top=settings.priority_group_count, broken=profile_store.broken_profiles(db))
+
+
+@app.post("/priority-groups/recompute")
+def priority_recompute(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    _audit(db, user, "priority.recompute", str(priority.compute(db)))
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+@app.post("/priority-groups/add")
+def priority_add(request: Request, group: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    if group.strip():
+        priority.set_flags(db, group, user, pinned=True)
+        _audit(db, user, "priority.pin", group.strip())
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+@app.post("/priority-groups/{group}/flag/{action}")
+def priority_flag(group: str, action: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    flags = {"pin": {"pinned": True}, "unpin": {"pinned": False},
+             "exclude": {"excluded": True}, "include": {"excluded": False}}.get(action)
+    if flags is None:
+        raise HTTPException(404)
+    priority.set_flags(db, group, user, **flags)
+    _audit(db, user, f"priority.{action}", group)
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+def _profile_ctx(db: Session, group: str) -> dict:
+    from .db import PriorityGroup
+
+    key = group.strip().lower()
+    row = db.get(PriorityGroup, key)
+    srcs = [s for s in db.execute(select(Source).where(Source.kind == "onion")).scalars()
+            if (s.group_name or "").lower() == key]
+    display = (row.display_name if row else "") or (srcs[0].group_name if srcs else group)
+    stored = profile_store.for_group(db, key)
+    if stored is not None:
+        selectors, origin = dict(stored.selectors or {}), "database"
+    elif profile_store.yaml_for_group(key):
+        selectors, origin = dict(profile_store.yaml_for_group(key)), "yaml"
+    else:
+        selectors, origin = {}, ""
+    page = profile_store.latest_page(db, key)
+    return {"group_key": key, "display": display, "selectors": selectors, "origin": origin, "stored": stored,
+            "state": profile_store.state_for_group(db, key), "page": page, "sources": srcs,
+            "fields": profile_store.SELECTOR_FIELDS}
+
+
+@app.get("/priority-groups/{group}/profile", response_class=HTMLResponse)
+def profile_editor(group: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    ctx = _profile_ctx(db, group)
+    return render(request, "profile_editor.html", user=user, preview=None, saved=request.query_params.get("saved"),
+                  can_edit=bool(ident and not ident.is_viewer), **ctx)
+
+
+@app.post("/priority-groups/{group}/profile", response_class=HTMLResponse)
+async def profile_preview_or_save(group: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Preview runs the selectors against the newest stored index page for the
+    group (no network); Save stores the profile and points the group's onion
+    sources at it."""
+    form = await request.form()
+    selectors = profile_store.clean_selectors(dict(form))
+    ctx = _profile_ctx(db, group)
+    if form.get("action") == "save":
+        profile_store.save(db, ctx["group_key"], ctx["display"], selectors, user,
+                           apply_to_sources=form.get("apply") == "on")
+        _audit(db, user, "profile.save", f"{ctx['group_key']}: {profile_store.profile_name_for(ctx['group_key'])}")
+        return RedirectResponse(f"/priority-groups/{ctx['group_key']}/profile?saved=1", status_code=302)
+    page = ctx["page"]
+    entries = profile_store.extract((page.meta or {}).get("html", ""), selectors, base_url=page.url,
+                                    limit=profile_store.PREVIEW_LIMIT) if page else []
+    ctx["selectors"] = selectors
+    return render(request, "profile_editor.html", user=user, preview={"entries": entries, "has_page": bool(page)},
+                  saved=None, can_edit=True, **ctx)

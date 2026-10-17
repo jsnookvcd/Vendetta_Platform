@@ -17,7 +17,6 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from sqlalchemy import select
 
 from . import boot, connectors, health, pipeline, work_requests
-from .collectors import leak_feeds
 from .config import settings
 from .db import CollectorRun, RunRequest, SessionLocal, init_db, utcnow
 from .fetch import tor_check
@@ -160,9 +159,11 @@ def retention() -> None:
 
 
 def _seed() -> None:
+    """Daily: refresh priority groups, seed onion sources from ransomware.live PRO
+    group locations and apply the disable rules (app/onion_sources.py)."""
     db = SessionLocal()
     try:
-        leak_feeds.seed_onion_sources(db)
+        phase2_daily(db)
     finally:
         db.close()
 
@@ -189,6 +190,8 @@ def build_scheduler(now: dt.datetime | None = None) -> BlockingScheduler:
     soon = now + dt.timedelta(seconds=START_DELAY_SECONDS)
     sched = BlockingScheduler(timezone="UTC", job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600})
     for c in connectors.CONNECTORS:
+        if not c.scheduled:
+            continue  # one-time backfills (ransomwatch) run only when an admin asks
         first = soon if c.run_at_start else now + dt.timedelta(minutes=c.interval_minutes)
         sched.add_job(_wrap(c), "interval", minutes=c.interval_minutes, id=c.job_id, name=c.name, next_run_time=first)
     sched.add_job(heartbeat, "interval", minutes=HEARTBEAT_MINUTES, id="heartbeat", next_run_time=now)
@@ -197,12 +200,14 @@ def build_scheduler(now: dt.datetime | None = None) -> BlockingScheduler:
     sched.add_job(poll_requests, "interval", minutes=REQUEST_POLL_MINUTES, id="run_requests", next_run_time=soon)
     sched.add_job(retention, "interval", hours=24, id="retention", next_run_time=now + dt.timedelta(hours=1))
     sched.add_job(_seed, "interval", hours=24, id="seed", next_run_time=now + dt.timedelta(hours=24))
+    add_phase2_jobs(sched, now)
     return sched
 
 
 def main() -> None:
     boot.check()
     init_db()
+    phase2_startup()
     _recover()
     heartbeat()
     for _ in range(20):
@@ -221,3 +226,51 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------- Phase 2: victim sources and priority groups
+PRIORITY_REFRESH_HOURS = 24
+
+
+def phase2_daily(db) -> dict:
+    from . import onion_sources, priority
+
+    out: dict = {}
+    try:
+        out["priority"] = priority.compute(db)
+    except Exception as e:  # noqa: BLE001
+        log.exception("priority refresh failed")
+        db.rollback()
+        out["priority_error"] = str(e)
+    out["seed"] = onion_sources.seed(db)
+    if not out["seed"].get("ok") and "disabled" not in out["seed"]:
+        # No PRO key or the group list failed: still keep activity and the disable rules current.
+        onion_sources.update_feed_activity(db)
+        out["disabled"] = onion_sources.apply_disable_rules(db)
+    return out
+
+
+def priority_refresh() -> None:
+    from . import priority
+
+    db = SessionLocal()
+    try:
+        priority.compute(db)
+    finally:
+        db.close()
+
+
+def phase2_startup() -> None:
+    """Idempotent startup migration: disable the stale ransomwatch-seeded mirrors."""
+    from . import onion_sources
+
+    db = SessionLocal()
+    try:
+        onion_sources.migrate_ransomwatch_mirrors(db)
+    finally:
+        db.close()
+
+
+def add_phase2_jobs(sched: BlockingScheduler, now: dt.datetime) -> None:
+    sched.add_job(priority_refresh, "interval", hours=PRIORITY_REFRESH_HOURS, id="priority_refresh",
+                  next_run_time=now + dt.timedelta(minutes=30))

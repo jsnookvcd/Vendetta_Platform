@@ -44,6 +44,21 @@
         <div style="margin-top:12px"><button class="btn btn-primary">Save triage</button></div>
       </form>
     </div>
+    <div class="section-head"><h2>Direct capture</h2></div>
+    <div class="panel pad">
+      {% if capture %}
+      <dl class="kv">
+        <dt>Status</dt><dd><span class="chip capture-{{ capture.status }}">{{ capture.status.replace('_', ' ') }}</span>{% if capture.status == 'captured_index_no_match' %} <span class="faint">the group index was captured but the victim name is not in its text</span>{% endif %}</dd>
+        <dt>Target</dt><dd class="mono trunc" style="max-width:320px">{% if capture.target_url %}{{ capture.target_url }}{% else %}index of {{ capture.group_name or 'the group' }}{% endif %}</dd>
+        <dt>Attempts</dt><dd>{{ capture.attempts }} of 4{% if capture.next_attempt_at and capture.status == 'pending' %} <span class="faint">next {{ capture.next_attempt_at.strftime('%b %d %H:%M') }} UTC</span>{% endif %}</dd>
+        {% if capture.captured_url %}<dt>Captured</dt><dd class="mono trunc" style="max-width:320px">{{ capture.captured_url }}</dd>{% endif %}
+        {% if capture.evidence_id %}<dt>Evidence</dt><dd><a href="/evidence/{{ capture.evidence_id }}/download" class="mono">download</a> <a href="/evidence/{{ capture.evidence_id }}/verify" class="faint">verify</a></dd>{% endif %}
+        {% if capture.last_error and capture.status != 'captured' %}<dt>Last error</dt><dd class="faint trunc" style="max-width:320px" title="{{ capture.last_error }}">{{ capture.last_error }}</dd>{% endif %}
+      </dl>
+      {% else %}<p class="faint" style="margin:0">No direct capture is queued for this hit.</p>{% endif %}
+      <form class="inline" method="post" action="/hits/{{ hit.id }}/capture" style="margin-top:10px"><button class="btn btn-sm">Capture now</button></form>
+      <p class="faint" style="font-size:12px;margin:8px 0 0">The worker fetches the leak post, or the group's onion index, over Tor within five minutes and preserves it with its SHA-256.</p>
+    </div>
     <div class="section-head"><h2>Evidence captures</h2></div>
     <div class="panel">
     {% if evidence %}<div class="table-wrap"><table>

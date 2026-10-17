@@ -61,6 +61,8 @@ class Connector:
     run_at_start: bool = False
     probes: Callable[[], list[Probe]] = lambda: []
     extra: Callable[[Session], dict] | None = None
+    scheduled: bool = True   # False: never on the worker schedule (a one-time backfill)
+    archived: bool = False   # upstream is archived; never shown as a live, healthy feed
 
     @property
     def job_id(self) -> str:
@@ -97,12 +99,11 @@ def _term_count(db: Session, kinds: tuple[str, ...]) -> int:
 def _check_ransomware_live(db: Session) -> tuple[bool, str]:
     if settings.ransomware_live_api_key:
         return True, ""
-    return True, ("no RANSOMWARE_LIVE_API_KEY: using the public v2 tier, which is rate limited "
-                  "and not intended for business use")
+    return False, "needs a free PRO key from my.ransomware.live (RANSOMWARE_LIVE_API_KEY)"
 
 
 def _check_ransomwatch(db: Session) -> tuple[bool, str]:
-    return True, "archived upstream in mid-2025; it will not produce new victims"
+    return True, "archived upstream in mid-2025; one-time historical backfill only"
 
 
 def _check_onion(db: Session) -> tuple[bool, str]:
@@ -159,7 +160,9 @@ def _check_telegram(db: Session) -> tuple[bool, str]:
 
 # ---------------------------------------------------------------- probes (diagnose only)
 def _probe_rl() -> list[Probe]:
-    return [Probe("ransomware.live recent victims", f"{leak_feeds._rl_base()}/recentvictims", leak_feeds.rl_headers())]
+    if not settings.ransomware_live_api_key:
+        return []  # never call the public v2 tier
+    return [Probe("ransomware.live PRO recent victims", f"{leak_feeds._rl_base()}/victims/recent", leak_feeds.rl_headers())]
 
 
 def _probe_hibp() -> list[Probe]:
@@ -175,8 +178,8 @@ CONNECTORS: list[Connector] = [
               live_feed=True, run_at_start=True, probes=_probe_rl),
     Connector("ransomwatch", "ransomwatch posts (archive)", "feed", "leak_feed_interval",
               leak_feeds.run_ransomwatch_posts, _check_ransomwatch, "feed", "%ransomwatch%",
-              live_feed=True, run_at_start=True,
-              probes=lambda: [Probe("ransomwatch posts.json", leak_feeds.RANSOMWATCH_POSTS)]),
+              probes=lambda: [Probe("ransomwatch posts.json", leak_feeds.RANSOMWATCH_POSTS)],
+              scheduled=False, archived=True),
     Connector("onion_crawl", "Onion leak site crawl", "onion", "onion_crawl_interval",
               onion_crawl.run, _check_onion, "onion",
               probes=lambda: [Probe("Tor exit check", "https://check.torproject.org/api/ip", tor=True)]),
@@ -217,10 +220,12 @@ def connector_status(db: Session, c: Connector, now: dt.datetime | None = None) 
     items_7d = db.scalar(base.where(Item.collected_at >= now - dt.timedelta(days=7))) or 0
     newest = db.scalar(select(func.max(Item.published_at)).join(Source, Item.source_id == Source.id)
                        .where(c.source_filter()))
-    stale = bool(c.live_feed and configured and last_ok is not None
+    stale = bool(c.live_feed and not c.archived and configured and last_ok is not None
                  and (newest is None or newest < now - dt.timedelta(days=STALE_DAYS)))
     last_failed = bool(last is not None and last.ok is False)
-    if not configured:
+    if c.archived:
+        state = "archived"
+    elif not configured:
         state = "off"
     elif last_failed:
         state = "fail"
@@ -241,7 +246,7 @@ def connector_status(db: Session, c: Connector, now: dt.datetime | None = None) 
         "last_ok": last_ok,
         "items_24h": items_24h, "items_7d": items_7d, "newest_published": newest,
         "error": last.error if last_failed else "",
-        "stale": stale, "state": state,
+        "stale": stale, "state": state, "scheduled": c.scheduled, "archived": c.archived,
     }
     if c.extra is not None:
         row.update(c.extra(db))
@@ -280,6 +285,9 @@ def health_summary(db: Session, now: dt.datetime | None = None) -> dict:
     elif not tor.get("is_tor"):
         red.append("Tor is not exiting through Tor" + (f": {tor['error']}" if tor.get("error") else "."))
     failed = [r["name"] for r in rows if r["state"] == "fail"]
+    broken = sorted({b["profile"] for r in rows for b in (r.get("broken_profiles") or [])})
+    if broken:
+        amber.append("Parser profile extracts nothing now: " + ", ".join(broken) + ".")
     stale = [r["name"] for r in rows if r["state"] == "stale"]
     if failed:
         amber.append("Last run failed: " + ", ".join(failed) + ".")
@@ -288,3 +296,33 @@ def health_summary(db: Session, now: dt.datetime | None = None) -> dict:
     level = "red" if red else ("amber" if amber else "")
     return {"heartbeat_age_seconds": age, "tor": tor, "connectors": rows,
             "banner": {"level": level, "messages": red + amber}}
+
+
+# ---------------------------------------------------------------- Phase 2: capture queue and onion extras
+# Appended as its own block so later phases can add entries without touching it.
+from . import captures as _captures  # noqa: E402
+from . import profile_store as _profile_store  # noqa: E402
+
+
+def _check_captures(db: Session) -> tuple[bool, str]:
+    return True, "drains hit captures over Tor"
+
+
+def _capture_extra(db: Session) -> dict:
+    return _captures.stats(db)
+
+
+def _onion_extra(db: Session) -> dict:
+    disabled: dict[str, int] = {}
+    for meta in db.execute(select(Source.meta).where(Source.kind == "onion", Source.enabled.is_(False))).scalars():
+        code = ((meta or {}).get("disabled") or {}).get("code") or "unspecified"
+        disabled[code] = disabled.get(code, 0) + 1
+    return {"broken_profiles": _profile_store.broken_profiles(db), "disabled_sources": disabled}
+
+
+CONNECTORS[:] = [dataclasses.replace(c, extra=_onion_extra) if c.key == "onion_crawl" else c for c in CONNECTORS]
+CONNECTORS.append(
+    Connector("captures", "Direct capture queue", "capture", "capture_interval", _captures.drain, _check_captures,
+              "capture", extra=_capture_extra))
+_BY_KEY.clear()
+_BY_KEY.update({c.key: c for c in CONNECTORS})
