@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
@@ -324,6 +324,58 @@ def case_proof(cid: str, user: str = auth.RequireUser, db: Session = Depends(get
     _audit(db, user, "case.proof", case.number)
     return JSONResponse(proof, headers={
         "Content-Disposition": f'attachment; filename="chain_of_custody_{case.number}.json"'})
+
+
+def _case_export_records(db: Session, case: Case, *, client_view: bool) -> list[dict]:
+    """The case chain as export records. With client_view, internal entries are sealed
+    (fields withheld) the same way the portal proof seals them, so the client's package
+    still verifies linkage and signatures without revealing internal notes."""
+    from .db import case_chain_records
+
+    records = case_chain_records(db, case.id)
+    if not client_view:
+        return records
+    out = []
+    for r in records:
+        reveal = not r["fields"].get("internal_only")
+        out.append({"fields": r["fields"] if reveal else None, "prev_hash": r["prev_hash"],
+                    "content_hash": r["content_hash"], "signature": r["signature"],
+                    "chain_seq": r["chain_seq"], "sealed": not reveal})
+    return out
+
+
+def _build_evidence_export(db: Session, case: Case, *, client_view: bool = False) -> bytes:
+    """Assemble a sealed, self-verifying evidence export package for one case: the
+    signed timeline chain, the public key, a standalone verifier and, when a TSA is
+    configured, a trusted timestamp. Defensible for court, audit or expert testimony."""
+    from . import evidence
+    from .evidence_export import build_package
+
+    return build_package(
+        records=_case_export_records(db, case, client_view=client_view),
+        subject={"id": case.id, "number": case.number, "name": f"{case.number} {case.client.name}",
+                 "client": case.client.name, "title": case.title},
+        product="Vendetta Incident Response",
+        document="incident case timeline",
+        signer=evidence.sign_bytes,
+        public_key_hex=evidence.public_key_hex(),
+        key_id=evidence.key_id(),
+        scheme=evidence.SCHEME,
+        tsa_url=settings.tsa_url,
+    )
+
+
+def _export_response(data: bytes, number: str) -> Response:
+    return Response(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="vendetta_evidence_{number}.zip"'})
+
+
+@app.get("/cases/{cid}/evidence/export.zip")
+def case_evidence_export(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Download the sealed evidence package for the case (staff / expert witness)."""
+    case = _get_case(db, cid)
+    _audit(db, user, "case.evidence.export", case.number)
+    return _export_response(_build_evidence_export(db, case), case.number)
 
 
 @app.get("/api/cases/{cid}/chain/verify")
@@ -639,6 +691,16 @@ def portal_case(cid: str, request: Request, ident: auth.Identity = Depends(auth.
     return render(request, "portal_case.html", user=ident.email, portal=True, client=case.client, case=case,
                   updates=updates, lanes=board.lanes(case), exec_view=ident.is_executive,
                   milestones_only=milestones_only, chain=chain)
+
+
+@app.get("/portal/cases/{cid}/evidence/export.zip")
+def portal_case_evidence_export(cid: str, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    """The client's own sealed evidence package for a case. Internal entries are
+    sealed, as in the portal proof: integrity verifiable, content withheld."""
+    case = _get_case(db, cid)
+    auth.require_owned(ident, case)
+    _audit(db, ident.email, "portal.evidence.export", case.number)
+    return _export_response(_build_evidence_export(db, case, client_view=True), case.number)
 
 
 @app.get("/portal/cases/{cid}/proof.json")

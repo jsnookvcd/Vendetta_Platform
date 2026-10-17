@@ -48,6 +48,14 @@ The tech console
   tenancy.
 - Triage separate from the tools: acknowledge, resolve on this console only,
   reopen, and escalate to an IR case in the engagement hub.
+- Chain of custody: every action row is hash-chained and Ed25519-signed per
+  client as it is written, with the approver of a destructive action inside the
+  signed record. The client page verifies the chain and downloads the proof, and
+  Download sealed evidence package builds a self-verifying zip from the shared
+  evidence-export library (vendored into app/evidence_export): signed manifest,
+  the chain as proof.json, the public key, the standalone verifier and a README.
+  The portal offers the same package for the client's own tenant. TSA_URL adds an
+  RFC 3161 time anchor; blank still seals the package.
 
 The client portal
 - Enabled per client with allowed email domains; client users sign in with

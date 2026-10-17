@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # still verify its own chain; set a dedicated key in production so it can be
     # backed up and rotated independently of the session secret.
     evidence_signing_key: str = ""
+    # Optional RFC 3161 Time-Stamp Authority for court-admissible evidence exports. When
+    # set, a sealed case export anchors its manifest hash to this authority; when blank,
+    # the export is still sealed and chain-verifiable, just without a third-party time
+    # anchor.
+    tsa_url: str = ""
     # Fernet key (urlsafe base64 of 32 bytes) encrypting stored secrets such as the
     # SSO client secret. Blank derives a key from secret_key; set a dedicated key in
     # production so it can be rotated independently.

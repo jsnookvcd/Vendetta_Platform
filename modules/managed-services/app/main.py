@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select, text
@@ -330,6 +330,39 @@ def client_actions_proof(cid: str, user: str = auth.RequireUser, db: Session = D
     _audit(db, user, "actions.proof", c.name)
     return JSONResponse(build_action_proof(db, c), headers={
         "Content-Disposition": f'attachment; filename="response_actions_{c.id}.json"'})
+
+
+def _build_evidence_export(db: Session, c: Client) -> bytes:
+    """Assemble a sealed, self-verifying evidence export package for a client: the
+    signed response-action chain, the public key, a standalone verifier and, when a
+    TSA is configured, a trusted timestamp. Defensible for court or audit."""
+    from . import evidence
+    from .db import client_chain_records
+    from .evidence_export import build_package
+
+    return build_package(
+        records=client_chain_records(db, c.id),
+        subject={"id": c.id, "name": c.name},
+        product="Vendetta Managed Services",
+        document="response action",
+        signer=evidence.sign_bytes,
+        public_key_hex=evidence.public_key_hex(),
+        key_id=evidence.key_id(),
+        scheme=evidence.SCHEME,
+        tsa_url=settings.tsa_url,
+    )
+
+
+def _export_response(data: bytes, cid: str) -> Response:
+    return Response(data, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="vendetta_evidence_{cid}.zip"'})
+
+
+@app.get("/clients/{cid}/evidence/export.zip")
+def client_evidence_export(cid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    c = _get_client(db, cid)
+    _audit(db, user, "evidence.export", c.name)
+    return _export_response(_build_evidence_export(db, c), c.id)
 
 
 @app.get("/api/clients/{cid}/actions/verify")
@@ -811,6 +844,15 @@ def portal_action_proof(ident: auth.Identity = Depends(auth.require_client), db:
     _audit(db, ident.email, "portal.action_proof", c.name)
     return JSONResponse(build_action_proof(db, c), headers={
         "Content-Disposition": f'attachment; filename="response_actions_{c.id}.json"'})
+
+
+@app.get("/portal/evidence/export.zip")
+def portal_evidence_export(ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
+    """The client's sealed, self-verifying package of every response action taken on
+    their systems."""
+    c = _portal_client(db, ident)
+    _audit(db, ident.email, "portal.evidence.export", c.name)
+    return _export_response(_build_evidence_export(db, c), c.id)
 
 
 @app.get("/portal/alerts/{aid}", response_class=HTMLResponse)

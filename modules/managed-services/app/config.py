@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # custody. Blank derives a stable key from secret_key; set a dedicated key in
     # production so it can be backed up and rotated independently.
     evidence_signing_key: str = ""
+    # Optional RFC 3161 Time-Stamp Authority for court-admissible evidence exports. When
+    # set, a sealed per-client export anchors its manifest hash to this authority; when
+    # blank, the export is still sealed and chain-verifiable, just without a third-party
+    # time anchor.
+    tsa_url: str = ""
     # Fernet key (urlsafe base64 of 32 bytes) encrypting tool credentials stored in
     # the database. Blank derives a key from secret_key; set a dedicated key in
     # production so it can be rotated independently.

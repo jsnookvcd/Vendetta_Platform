@@ -79,7 +79,7 @@
         {% if chain %}<span class="grow"></span><span class="coc-badge coc-{{ 'ok' if chain.ok else 'broken' }}">{{ 'VERIFIED' if chain.ok else 'CHECK FAILED' }}</span>{% endif %}
       </div>
       {% if chain and chain.length %}
-      <p class="faint" style="font-size:12px; margin:0 2px 8px">{% if chain.ok %}Every action on your systems is hash-chained and signed as it is taken. {{ chain.length }} on record, verifiable and tamper-evident.{% else %}The action record did not verify at position {{ chain.broken_at }}. Contact your Vendetta team.{% endif %} <a href="/portal/actions/proof.json">Download proof</a></p>
+      <p class="faint" style="font-size:12px; margin:0 2px 8px">{% if chain.ok %}Every action on your systems is hash-chained and signed as it is taken. {{ chain.length }} on record, verifiable and tamper-evident.{% else %}The action record did not verify at position {{ chain.broken_at }}. Contact your Vendetta team.{% endif %} <a href="/portal/actions/proof.json">Download proof</a> · <a href="/portal/evidence/export.zip">Download sealed evidence package</a></p>
       {% endif %}
       <div class="panel">
         <ul class="feed">

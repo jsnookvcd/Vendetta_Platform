@@ -134,3 +134,10 @@ def verify_chain(records: list[dict], pub_hex: str | None = None) -> dict:
         prev = r["content_hash"]
     return {"ok": True, "length": len(records), "verified": len(records), "sealed": sealed,
             "broken_at": None, "reason": "intact", "key_id": _key_id_for(pub_hex), "public_key": pub_hex}
+
+
+def sign_bytes(data: bytes) -> str:
+    """Sign arbitrary bytes with the chain signing key, returning a hex signature. Used
+    to seal an evidence export package's manifest with the same key that signed the
+    chain, so the two verify together."""
+    return _private_key().sign(data).hex()

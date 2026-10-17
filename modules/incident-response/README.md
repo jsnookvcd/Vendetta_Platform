@@ -57,6 +57,10 @@ Escalation payload
 ```
 Response: `{"case_id": "VCD-IR-2026-784", "id": "<uuid>", "linked": false}`.
 
+Chain of custody and evidence export
+- Every timeline entry is hash-chained and Ed25519-signed per case as it is written. Staff verify the chain at /cases/{id}/chain/verify and download the proof at /cases/{id}/proof.json; the client sees the verification result on the portal and downloads their own proof, with internal-only entries sealed.
+- Download sealed evidence package, on the case page and the portal case page, builds a self-verifying zip from the shared evidence-export library (vendored into app/evidence_export with verify_evidence.py beside it): a signed manifest, the chain as proof.json, the public key, the standalone verifier and a plain-language README. The client's package seals internal-only entries and still verifies. Set TSA_URL to anchor each package to an RFC 3161 time authority; blank still seals the package, without the third-party time anchor. EVIDENCE_SIGNING_KEY is the dedicated chain key; blank derives one from SECRET_KEY with a warning.
+
 Sign-in and roles
 - Microsoft 365 / Entra ID single sign-on, same setup as the dark web module (see its README for the app registration). Users from INTERNAL_EMAIL_DOMAINS are staff; ADMIN_EMAILS are admins; users from a client's portal domains are client users scoped to that client. The local admin account is the break-glass path.
 - Security headers, a strict CSP, login throttling and secure cookies under TLS, as in the dark web module.

@@ -51,6 +51,15 @@ Modules vendor this package into `app/evidence_export/` (with `verify_evidence.p
 
 `modules/professional-services` (Office of Special Projects) is the reference wiring, exposing the export at `/clients/{id}/evidence/export.zip` and, for clients, `/portal/evidence/export.zip`.
 
+## Adoption
+
+- professional-services (Office of Special Projects): the deliverable sign-off chain, per client, at `/clients/{id}/evidence/export.zip` and `/portal/evidence/export.zip`. Reference wiring.
+- incident-response: the case timeline chain, per case, at `/cases/{id}/evidence/export.zip` for staff and `/portal/cases/{id}/evidence/export.zip` for the client. The client's package seals internal-only entries the same way the portal proof does: their hash, signature and position stay in the chain, their content is withheld, and the package still verifies.
+- managed-services: the response-action chain, per client, at `/clients/{id}/evidence/export.zip` and `/portal/evidence/export.zip`.
+- Not yet adopted: dark-web-monitoring, vulnerability-management, penetration-testing.
+
+Each adopting module adds `sign_bytes` to its `app/evidence.py`, a `tsa_url` setting (`TSA_URL` in `.env.example`), `asn1crypto` to its requirements, and a "Download sealed evidence package" control beside its existing verify and proof links.
+
 ## Tests
 
 `pytest -q` from the module directory. Needs only `cryptography`; no database.

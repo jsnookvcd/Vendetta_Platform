@@ -142,7 +142,12 @@
     </div>
   </div>
   <div>
-    <div class="section-head"><h2>Recent actions</h2></div>
+    <div class="section-head"><h2>Recent actions</h2>
+      <span class="grow"></span>
+      <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/actions/verify" target="_blank" rel="noopener">Verify chain</a>
+      <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/actions/proof.json">Download proof</a>
+      <a class="btn btn-sm btn-primary" href="/clients/{{ client.id }}/evidence/export.zip">Download sealed evidence package</a>
+    </div>
     <div class="panel">
       <ul class="feed">
       {% for x in recent_actions %}<li class="{{ 'failed' if x.result == 'failed' }}">
