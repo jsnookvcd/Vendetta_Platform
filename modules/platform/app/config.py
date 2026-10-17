@@ -78,6 +78,18 @@ class Settings(BaseSettings):
     # Seconds the cross-module overview caches each module probe before re-fetching.
     probe_cache_seconds: int = 45
 
+    # The onboarding note (app/notify.py). Blank SMTP_HOST logs the note instead of
+    # sending it; onboarding never fails on mail. SMTP_FROM is the sender address,
+    # shown as "SABINE at Vendetta Cyber <address>".
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+    # The voice the note signs off in, the same value SABINE reads: "sabine" or "plain".
+    persona: str = "sabine"
+
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.entra_tenant_id and self.entra_client_id and self.entra_client_secret)

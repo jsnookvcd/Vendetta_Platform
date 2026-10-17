@@ -135,6 +135,12 @@ the roster for a module cannot sign in there, and deactivating someone on the
 Staff page locks them out everywhere within seconds. The admin emails configured
 for SSO stay admitted to the control plane as the break-glass path.
 
+Each onboarding sends the person a welcome note from SABINE with the console links
+they were granted. To deliver it, add `<prefix>/platform/SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USER`, `SMTP_PASSWORD` (SecureString) and `SMTP_FROM` to SSM and redeploy;
+until then the note is written to the control plane's log and onboarding proceeds.
+The attempt is recorded as staff.invite in the platform audit log either way.
+
 ## 4. Confirm the modules are wired
 
 SABINE is on the Connections page too (`http://sabine:8000`, host `sabine.`). Open

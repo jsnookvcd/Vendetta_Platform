@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import boot
-from . import aggregate, auth, directory, oidc, readiness as readiness_mod, sso, staff as staff_mod
+from . import aggregate, auth, directory, notify, oidc, readiness as readiness_mod, sso, staff as staff_mod
 from .config import TOOL_HINTS, TOOL_NAMES, TOOLS, settings
 from .db import (AuditLog, Client, ClientModule, ClientTool, Module, SessionLocal, Staff, ToolConnection,
                  User, get_client_module, init_db, slugify, utcnow)
@@ -456,6 +456,23 @@ def _get_staff(db: Session, sid: str) -> Staff:
     return p
 
 
+def _welcome(db: Session, person: Staff, actor: str, *, reactivated: bool = False) -> None:
+    """Send the onboarding note with a console link for every module the person
+    was granted, and record the attempt in the audit log. Never raises."""
+    consoles: list[tuple[str, str, str]] = []
+    if settings.public_url:
+        consoles.append(("Vendetta Platform", person.platform_role, settings.public_url.rstrip("/")))
+    grants = staff_mod.grant_map(person)
+    for m in _modules(db):
+        g = grants.get(m.key)
+        if g and g.role != "none" and m.public_url:
+            consoles.append((m.display_name, g.role, m.public_url.rstrip("/")))
+    subject, body = notify.welcome_message(person, consoles, reactivated=reactivated)
+    ok, detail = notify.send(person.email, subject, body)
+    _audit(db, actor, "staff.invite", f"{person.email} {'sent' if ok else 'not sent'} ({detail}); "
+           f"consoles={','.join(c[0] for c in consoles) or 'none'}")
+
+
 def _staff_pushed(db: Session, person: Staff) -> None:
     """A staff change reaches the modules the same way a client change does."""
     directory.push_sync(db, keys=staff_mod.modules_affected(person) or None)
@@ -496,7 +513,9 @@ def staff_add(email: str = Form(...), name: str = Form(""), title: str = Form(""
     db.commit()
     _audit(db, user, "staff.add", f"{email} profile={profile}")
     _staff_pushed(db, p)
-    return RedirectResponse(f"/staff/{p.id}?msg={quote('Onboarded. Modules are being told.')}", status_code=302)
+    _welcome(db, p, user)
+    return RedirectResponse(f"/staff/{p.id}?msg={quote('Onboarded. Modules are being told and a welcome note is on its way.')}",
+                            status_code=302)
 
 
 @app.get("/staff/{sid}", response_class=HTMLResponse)
@@ -561,6 +580,8 @@ def staff_active(sid: str, active: bool = Form(False), user: str = RequireAdmin,
     db.commit()
     _audit(db, user, "staff.active", f"{p.email} {'reactivated' if active else 'deactivated'}")
     _staff_pushed(db, p)
+    if active:
+        _welcome(db, p, user, reactivated=True)
     return _back(f"/staff/{sid}", True, "Reactivated. Modules are being told." if active
                  else "Deactivated. Every module is being told; sessions end on their next request.")
 

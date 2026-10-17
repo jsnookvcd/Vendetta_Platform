@@ -89,6 +89,14 @@ IR hub 8100, managed services 8200, control plane 8300).
 The control plane is staff-only; clients never sign in here, they use each module's
 own portal.
 
+Onboarding a person on the Staff page (or reactivating one) sends them a plain-text
+welcome from "SABINE at Vendetta Cyber" with the console link for every module they
+were granted and the instruction to sign in with their Microsoft 365 account
+(app/notify.py). Delivery is SMTP: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
+and SMTP_FROM. With no SMTP_HOST the note is logged and nothing is sent, and a mail
+failure never fails the onboarding; every attempt is a staff.invite row in the
+audit log. PERSONA ("sabine" or "plain") picks the sign-off.
+
 ## Tests
 
 ```bash
