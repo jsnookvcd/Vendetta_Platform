@@ -299,11 +299,19 @@ resource "aws_ssm_parameter" "api_token" {
   value    = random_password.api_token[each.key].result
 }
 
+# The encryption key and the evidence signing key are written once and never
+# rotated by Terraform. Replacing the encryption key makes every stored secret
+# unreadable; replacing the signing key breaks verification of every chain already
+# signed. A key that already exists in SSM (set by hand before Terraform managed it)
+# is imported and kept as it is.
 resource "aws_ssm_parameter" "encryption_key" {
   for_each = local.deployed
   name     = "${var.ssm_prefix}/${each.key}/ENCRYPTION_KEY"
   type     = "SecureString"
   value    = replace(replace(random_bytes.encryption_key[each.key].base64, "+", "-"), "/", "_")
+  lifecycle {
+    ignore_changes = [value]
+  }
 }
 
 resource "aws_ssm_parameter" "evidence_signing_key" {
@@ -311,6 +319,9 @@ resource "aws_ssm_parameter" "evidence_signing_key" {
   name     = "${var.ssm_prefix}/${each.key}/EVIDENCE_SIGNING_KEY"
   type     = "SecureString"
   value    = each.value.hex
+  lifecycle {
+    ignore_changes = [value]
+  }
 }
 
 resource "aws_ssm_parameter" "admin_password" {
