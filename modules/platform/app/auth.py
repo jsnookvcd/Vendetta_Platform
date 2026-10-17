@@ -29,6 +29,7 @@ class Identity:
     email: str
     role: str  # admin | analyst | viewer | client
     client_id: str | None = None
+    view: str = "technical"  # client portal view: executive | technical
 
     @property
     def is_internal(self) -> bool:
@@ -41,6 +42,10 @@ class Identity:
     @property
     def is_client(self) -> bool:
         return self.role == "client"
+
+    @property
+    def is_executive(self) -> bool:
+        return self.role == "client" and self.view == "executive"
 
 
 def check_password(password: str) -> bool:
@@ -98,10 +103,17 @@ def resolve_identity(request: Request) -> Identity | None:
     try:
         from sqlalchemy import select
 
+        from .db import Client
+
         u = db.execute(select(User).where(User.email == email, User.active.is_(True))).scalar_one_or_none()
         if not u:
             return None
-        return Identity(email=u.email, role=u.role, client_id=u.client_id)
+        view = "technical"
+        if u.role == "client" and u.client_id:
+            c = db.get(Client, u.client_id)
+            if c and u.email.lower() in c.executive_set():
+                view = "executive"
+        return Identity(email=u.email, role=u.role, client_id=u.client_id, view=view)
     finally:
         db.close()
 
