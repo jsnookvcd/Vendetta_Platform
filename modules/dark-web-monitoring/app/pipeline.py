@@ -1,4 +1,6 @@
-"""Ingest -> dedupe -> match -> alert -> preserve. Every collector calls ingest()."""
+"""Ingest -> dedupe -> match -> alert -> queue capture. Every collector calls ingest().
+Preservation of the page a hit points at happens in the worker's capture queue
+(app/captures.py), never inline."""
 from __future__ import annotations
 
 import contextvars
@@ -9,7 +11,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import alerts, evidence, iab
+from . import alerts, captures, iab
 from .db import Hit, Item, Source
 from .matcher import match_item
 from .redact import redact_for_kind
@@ -82,12 +84,14 @@ def ingest(
     if hits:
         log.info("%d hit(s) on %s item %s", len(hits), kind, item.title[:80])
         alerts.dispatch(db, hits)
-        if preserve_on_hit and url and kind in ("victim", "page", "paste"):
-            for hit in hits:
-                try:
-                    evidence.preserve(db, url, client_id=hit.client_id, item_id=item.id, note=f"auto: hit {hit.id}")
-                except Exception as e:  # noqa: BLE001
-                    log.error("evidence preserve failed for %s: %s", url, e)
+        if preserve_on_hit:
+            # Never fetch inline: a hit queues a direct capture the worker drains
+            # over Tor (app/captures.py), so a feed job never blocks on Tor.
+            try:
+                captures.queue_for_hits(db, item, hits)
+            except Exception as e:  # noqa: BLE001
+                db.rollback()
+                log.error("capture queue failed for item %s: %s", item.id, e)
     return item, hits
 
 

@@ -71,9 +71,12 @@ class Settings(BaseSettings):
 
     # External APIs (all optional)
     hibp_api_key: str = ""
-    ransomware_live_api_key: str = ""  # free PRO key from my.ransomware.live; required for business use
+    # Free PRO key from my.ransomware.live. Required: without it the connector is
+    # not configured and never calls the public v2 tier. See app/ransomware_live.py.
+    ransomware_live_api_key: str = ""
     ransomware_live_api_header: str = "X-API-KEY"
-    ransomware_live_base: str = ""  # override; defaults to api-pro with a key, public v2 without
+    ransomware_live_base: str = "https://api-pro.ransomware.live"
+    ransomware_live_user_agent: str = "VendettaCyber-DarkWebMonitoring/2 (+https://vendettacd.io)"
     telegram_api_id: str = ""
     telegram_api_hash: str = ""
     telegram_channels: str = ""  # comma separated public channel usernames
@@ -101,6 +104,20 @@ class Settings(BaseSettings):
     # Seconds between automatic roster pulls from the control plane (0 disables).
     provision_interval_seconds: int = 300
     platform_token: str = ""
+
+    # ---------------------------------------------------------------- Phase 2: victim sources
+    # Onion crawl: a run stops at this wall-clock budget as well as at its count cap.
+    onion_crawl_budget_minutes: int = 45
+    # Groups whose ransomware.live detail (and so onion locations) is fetched per daily seed.
+    onion_seed_group_limit: int = 40
+    # Onion sources are disabled after this long without feed activity for their group,
+    # or after this many consecutive failed crawls.
+    onion_inactive_days: int = 180
+    onion_max_consecutive_failures: int = 10
+    # Direct capture queue drain cadence (minutes).
+    capture_interval: int = 5
+    # Number of computed priority groups.
+    priority_group_count: int = 25
 
 
 settings = Settings()
