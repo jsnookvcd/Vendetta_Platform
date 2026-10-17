@@ -9,7 +9,7 @@ The Vendetta Platform is the hosted system of record for Vendetta Cyber Defense 
 - vulnerability-management: scan ingest (POST /api/scans), findings deduped across scans, a client portal with an exposure trend over time and click-through remediation steps, and escalation to the hub. Built, tested and deployed. See modules/vulnerability-management.
 - penetration-testing: engagements and findings with a retest loop, the report rendered from findings at close, a client portal with a cross-engagement trend and click-through remediation, and escalation to the hub. Built, tested and deployed. See modules/penetration-testing.
 - incident-response: IR cases and retainers; the engagement hub spine, with the five-workstream case template, one-button incident declaration, a client portal and the escalation API. Built; first deploy pending.
-- professional-services (Office of Special Projects): vCISO retainers, implementation projects, tabletop exercises, assessments and advisory, run as engagements with deliverables the client accepts (signs off) on the portal, every delivery and sign-off bound into a signed, hash-chained chain of custody with a downloadable proof, and escalation to the hub for live risk. Built and tested. See modules/professional-services.
+- professional-services (Office of Special Projects): vCISO retainers, implementation projects, tabletop exercises, assessments and advisory, run as engagements with deliverables the client accepts (signs off) on the portal, every delivery and sign-off bound into a signed, hash-chained chain of custody with a downloadable proof, and escalation to the hub for live risk. Built, tested, containerized and deployed (host osp., port 8700). See modules/professional-services.
 - evidence-export: shared library that turns any module's signed chain of custody into a court-admissible, self-verifying export package (sealed manifest, embedded standalone verifier, optional RFC 3161 trusted timestamp), with an independent verifier that confirms a package offline with no access to the platform. professional-services is the reference wiring. Built and tested. See modules/evidence-export.
 - ai-triage: shared evidence-grounded triage copilot for the finding-bearing modules. Proposes a verdict with a calibrated confidence and a written rationale, with a deterministic rules fallback that always runs and grounds any LLM output; a human accepts or rejects, a second approver is required for high-stakes or low-confidence verdicts, and both the proposal and the decision are written to the signed evidence chain. Built and tested. See modules/ai-triage.
 - managed-services: a console over every tool a managed client has deployed (SuperOps, SentinelOne, CrowdStrike, Huntress, Acronis), with a client portal for alerts, actions taken and messaging the SOC, NOC and helpdesk. Built; live credentials pending. See modules/managed-services.
@@ -57,7 +57,7 @@ modules/
   managed-services/      console over the client's deployed tools (built)
   vulnerability-management/
   penetration-testing/
-  professional-services/ Office of Special Projects (built and tested)
+  professional-services/ Office of Special Projects (built, deployed)
   evidence-export/       shared court-admissible export + standalone verifier (built and tested)
   ai-triage/             shared evidence-grounded triage copilot (built and tested)
   mdr/

@@ -29,6 +29,8 @@ FINDING_PATH = {
     "penetration-testing": "/findings/{id}",
 }
 SEV_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+# The Office of Special Projects serves engagements, not findings.
+SERVICES_MODULES = ["professional-services"]
 
 
 def _snap(db: Session, source: str, res: dict) -> None:
@@ -69,6 +71,10 @@ def observe(db: Session) -> dict:
             res = reach.get(key, "/api/ir-cases", params={"status": "active"}, timeout=20.0)
             _snap(db, f"cases:{key}", res)
             seen[f"cases:{key}"] = res["ok"]
+        if key in SERVICES_MODULES:
+            res = reach.get(key, "/api/engagements", params={"status": "open"}, timeout=20.0)
+            _snap(db, f"engagements:{key}", res)
+            seen[f"engagements:{key}"] = res["ok"]
     db.commit()
     return seen
 
@@ -96,6 +102,18 @@ def findings(db: Session) -> list[dict]:
 def cases(db: Session) -> list[dict]:
     rows = snapshot(db, "cases:incident-response")
     return list(rows) if isinstance(rows, list) else []
+
+
+def engagements(db: Session) -> list[dict]:
+    """Open professional-services engagements with their deliverables."""
+    out = []
+    for key in SERVICES_MODULES:
+        rows = snapshot(db, f"engagements:{key}")
+        for e in (rows if isinstance(rows, list) else []):
+            e = dict(e)
+            e["_module"] = key
+            out.append(e)
+    return out
 
 
 def clients(db: Session) -> list[dict]:
@@ -222,6 +240,55 @@ def build_queue(db: Session) -> dict:
                         due_at=now - dt.timedelta(days=age - sla), payload={"finding_id": f["id"], "age_days": age, "sla_days": sla})
                 observed.add(key)
                 counts["services"] += 1
+
+    # Professional services: a deliverable the client has not accepted past the
+    # nudge window, and an engagement still open past its planned end date.
+    for e in engagements(db):
+        mod = e["_module"]
+        subj = e.get("subject") or {}
+        pub = reach.public_url(mod)
+        link = f"{pub}/engagements/{e['id']}" if pub else ""
+        common = dict(source=mod, domain="services", client=subj.get("client", ""),
+                      platform_client_id=subj.get("platform_client_id") or "", link=link)
+        for d in e.get("deliverables") or []:
+            if d.get("status") != "delivered":
+                continue
+            delivered = d.get("delivered_at")
+            try:
+                at = dt.datetime.fromisoformat(delivered) if delivered else None
+            except ValueError:
+                at = None
+            if at is not None and at.tzinfo is None:
+                at = at.replace(tzinfo=dt.timezone.utc)
+            age = (now - at).days if at is not None else 0
+            if age <= settings.acceptance_nudge_days:
+                continue
+            key = f"acceptance:{mod}:{d['id']}"
+            _upsert(db, key, kind="acceptance", severity="low",
+                    title=f"Awaiting client acceptance {age}d: {d.get('title', '')} ({e.get('name', '')})"[:400],
+                    due_at=now - dt.timedelta(days=age - settings.acceptance_nudge_days),
+                    payload={"engagement_id": e["id"], "engagement": e.get("name"), "deliverable_id": d["id"],
+                             "deliverable": d.get("title"), "delivered_at": delivered, "age_days": age,
+                             "nudge_days": settings.acceptance_nudge_days, "lead": e.get("lead")}, **common)
+            observed.add(key)
+            counts["services"] += 1
+        ends = e.get("ends_on")
+        try:
+            end_at = dt.datetime.fromisoformat(ends) if ends else None
+        except ValueError:
+            end_at = None
+        if end_at is not None and end_at.tzinfo is None:
+            end_at = end_at.replace(tzinfo=dt.timezone.utc)
+        if end_at is not None and end_at < now and e.get("status") in ("scoping", "active", "on_hold"):
+            over = (now - end_at).days
+            key = f"engagement_overdue:{mod}:{e['id']}"
+            _upsert(db, key, kind="engagement_overdue", severity="medium",
+                    title=f"Engagement {over}d past planned end: {e.get('name', '')}"[:400], due_at=end_at,
+                    payload={"engagement_id": e["id"], "engagement": e.get("name"), "kind": e.get("kind"),
+                             "status": e.get("status"), "ends_on": ends, "days_over": over, "lead": e.get("lead"),
+                             "progress": e.get("progress")}, **common)
+            observed.add(key)
+            counts["services"] += 1
 
     # Anything observed before but not now has been handled in its module.
     gone = 0

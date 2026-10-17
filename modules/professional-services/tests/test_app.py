@@ -106,3 +106,29 @@ def test_api_module_shape(admin):
     out = admin.get("/api/module", headers={"Authorization": f"Bearer {auth.api_token()}"}).json()
     assert out["module"] == "professional-services" and "vciso" in out["engagement_types"]
     assert "readiness" in out
+
+
+def test_api_engagements_lists_open_with_deliverables_and_dates(admin):
+    c = _client()
+    eid = _engagement(admin, c.id)
+    did = _deliverable(admin, eid)
+    admin.post(f"/deliverables/{did}/edit", data={"status": "delivered", "kind": "policy", "title": "ISP v1"})
+    admin.post(f"/engagements/{eid}/edit", data={"status": "active", "starts_on": "2026-01-05", "ends_on": "2026-03-31"})
+    closed = _engagement(admin, c.id, name="Done project", kind="implementation")
+    admin.post(f"/engagements/{closed}/edit", data={"status": "closed"})
+    bearer = {"Authorization": f"Bearer {auth.api_token()}"}
+    rows = admin.get("/api/engagements", headers=bearer).json()
+    assert [r["id"] for r in rows] == [eid]
+    e = rows[0]
+    assert e["subject"]["platform_client_id"] == "plat-acme" and e["subject"]["client"] == "Acme Corp"
+    assert e["status"] == "active" and e["open"] is True and e["overdue"] is True
+    assert e["starts_on"].startswith("2026-01-05") and e["ends_on"].startswith("2026-03-31")
+    assert e["deliverables"][0]["status"] == "delivered" and e["deliverables"][0]["delivered_at"]
+    assert len(admin.get("/api/engagements?status=all", headers=bearer).json()) == 2
+    assert [r["id"] for r in admin.get("/api/engagements?status=closed", headers=bearer).json()] == [closed]
+    assert admin.get("/api/engagements?platform_client_id=plat-acme", headers=bearer).json()[0]["id"] == eid
+    assert admin.get("/api/engagements?platform_client_id=nope", headers=bearer).json() == []
+    assert admin.get("/api/engagements?status=bogus", headers=bearer).status_code == 400
+    # a blank planned end clears it and the engagement is no longer overdue
+    admin.post(f"/engagements/{eid}/edit", data={"status": "active", "ends_on": ""})
+    assert admin.get("/api/engagements", headers=bearer).json()[0]["overdue"] is False

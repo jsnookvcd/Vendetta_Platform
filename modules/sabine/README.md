@@ -8,12 +8,14 @@ can do nothing a module's service API does not allow.
 ## What it does on each cycle
 
 1. Perceive. Reads the control plane (clients, staff, readiness, directory) and
-   every module (manifest, active findings, open cases) through their APIs,
+   every module (manifest, active findings, open cases, open engagements in the
+   Office of Special Projects) through their APIs,
    presenting each module's own token and naming itself in `X-Vendetta-Actor`, so
    every module's audit log shows `api:sabine`.
 2. Queue. Rebuilds the operator queue: every high-severity finding, open case,
-   red readiness item, retest waiting and remediation past SLA, across every
-   module, with a severity, a client and a link to where the work is done.
+   red readiness item, retest waiting, remediation past SLA, deliverable awaiting
+   client acceptance and engagement past its planned end, across every module,
+   with a severity, a client and a link to where the work is done.
 3. Reason. Runs deterministic rules per domain. Each proposal carries the facts
    it rests on, a written rationale, a confidence and a risk tier.
 4. Act. Proposals whose action is set to `auto` are carried out at once; the
@@ -35,8 +37,11 @@ readiness item with the fix; flag staff with no grants, modules nobody is grante
 too many admins; raise a module that stops answering.
 
 Professional services: nudge a quiet IR case; queue retests waiting; flag
-remediation past the SLA for its severity; write a posture brief per client with
-active work; write the daily summary.
+remediation past the SLA for its severity; note a deliverable the client has not
+accepted within seven days of delivery (`acceptance_nudge_days`) and an Office of
+Special Projects engagement still open past its planned end, both to the
+engagement lead with nothing sent to the client; write a posture brief per client
+with active work; write the daily summary.
 
 ## Autonomy
 

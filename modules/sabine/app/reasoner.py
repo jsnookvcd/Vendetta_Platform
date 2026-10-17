@@ -10,7 +10,8 @@ Domains:
 - soc: unescalated high-severity findings, cross-module correlation for one
   client, hosts that need a response action.
 - admin: red readiness items, failed roster pulls, staff hygiene.
-- services: quiet IR cases, retests waiting, remediation past SLA, client briefs.
+- services: quiet IR cases, retests waiting, remediation past SLA, deliverables
+  awaiting client acceptance, engagements past their planned end, client briefs.
 """
 from __future__ import annotations
 
@@ -260,6 +261,25 @@ def services_rules(db: Session) -> list[Proposal]:
         p = propose(db, action, f"{action}:{w.key}", w.title,
                     (f"{w.client}: {w.title}. " + ("A retest is waiting on the engagement owner." if w.kind == "retest"
                      else f"Past the {w.payload.get('sla_days')}-day SLA for its severity by {w.payload.get('age_days', 0) - w.payload.get('sla_days', 0)} days; the client should hear about it.")),
+                    {"work_item": w.key, **w.payload}, {"kind": "nudge", "severity": w.severity, "client": w.client,
+                                                         "platform_client_id": w.platform_client_id, "link": w.link}, 0.85, work_item=w)
+        if p:
+            out.append(p)
+
+    # Office of Special Projects: a deliverable the client has not accepted, and an
+    # engagement past its planned end. Both are notes to the engagement lead; nothing
+    # goes to the client.
+    for w in db.execute(select(WorkItem).where(WorkItem.kind.in_(("acceptance", "engagement_overdue")), WorkItem.state == "open")).scalars().all():
+        action = "deliverable_acceptance_nudge" if w.kind == "acceptance" else "engagement_overdue"
+        if w.kind == "acceptance":
+            why = (f"\"{w.payload.get('deliverable')}\" was delivered {w.payload.get('age_days', 0)} days ago and the client has not "
+                   f"accepted it on the portal (window {w.payload.get('nudge_days')} days). The engagement lead "
+                   f"({w.payload.get('lead') or 'unassigned'}) should follow up with the sponsor; nothing has been sent to the client.")
+        else:
+            why = (f"\"{w.payload.get('engagement')}\" ({w.payload.get('kind')}) is {w.payload.get('status')} and "
+                   f"{w.payload.get('days_over', 0)} days past its planned end, {w.payload.get('progress', 0)}% of deliverables accepted. "
+                   f"The lead ({w.payload.get('lead') or 'unassigned'}) should close it, extend it, or say what is blocking.")
+        p = propose(db, action, f"{action}:{w.key}", w.title, f"{w.client}: {why}",
                     {"work_item": w.key, **w.payload}, {"kind": "nudge", "severity": w.severity, "client": w.client,
                                                          "platform_client_id": w.platform_client_id, "link": w.link}, 0.85, work_item=w)
         if p:

@@ -22,6 +22,7 @@ DIRECTORY = {
     "managed-services": {"base_url": "http://managed-services:8000", "token": "mstok", "public_url": "https://msp.example"},
     "dark-web-monitoring": {"base_url": "http://dark-web-monitoring:8000", "token": "dwtok", "public_url": "https://darkweb.example"},
     "vulnerability-management": {"base_url": "http://vulnerability-management:8000", "token": "vtok", "public_url": "https://vuln.example"},
+    "professional-services": {"base_url": "http://professional-services:8000", "token": "osptok", "public_url": "https://osp.example"},
 }
 
 
@@ -59,6 +60,23 @@ class World:
                        "client": {"id": "h", "name": "Harbor Point", "platform_client_id": "plat-hp"}, "lead": "Dan",
                        "opened_at": (NOW - dt.timedelta(days=10)).isoformat(), "last_update_at": (NOW - dt.timedelta(days=8)).isoformat(),
                        "board": {"open": 3}, "workstreams": []}]
+        # Office of Special Projects: one vCISO retainer with a deliverable the client has
+        # not accepted for 12 days and one past its planned end; one fresh delivery.
+        self.engagements = [
+            {"id": "e1", "module": "professional-services", "name": "vCISO Retainer", "kind": "vciso", "status": "active",
+             "lead": "Jordan", "progress": 50, "published": True, "ends_on": None, "created_at": OLD,
+             "subject": {"client_id": "x", "platform_client_id": "plat-rb", "client": "Riverbend Credit Union"},
+             "deliverables": [
+                 {"id": "d1", "title": "Information Security Policy v1", "kind": "policy", "status": "delivered",
+                  "delivered_at": (NOW - dt.timedelta(days=12)).isoformat(), "accepted_at": None},
+                 {"id": "d2", "title": "IR Playbook", "kind": "playbook", "status": "delivered",
+                  "delivered_at": (NOW - dt.timedelta(days=2)).isoformat(), "accepted_at": None},
+                 {"id": "d3", "title": "Kickoff", "kind": "session", "status": "accepted",
+                  "delivered_at": OLD, "accepted_at": OLD}]},
+            {"id": "e2", "module": "professional-services", "name": "Tabletop 2026", "kind": "tabletop", "status": "active",
+             "lead": "", "progress": 0, "published": False, "ends_on": (NOW - dt.timedelta(days=9)).isoformat(), "created_at": OLD,
+             "subject": {"client_id": "y", "platform_client_id": "plat-hp", "client": "Harbor Point"}, "deliverables": []},
+        ]
         self.escalations = []
 
     def handler(self, req: httpx.Request) -> httpx.Response:
@@ -79,6 +97,9 @@ class World:
             return httpx.Response(200, json=self.findings.get(host, []))
         if path == "/api/ir-cases":
             return httpx.Response(200, json=self.cases)
+        if path == "/api/engagements":
+            assert req.url.params["status"] == "open"
+            return httpx.Response(200, json=self.engagements)
         if path.startswith("/api/findings/") and path.endswith("/escalate"):
             fid = path.split("/")[3]
             self.escalations.append((host, fid))
@@ -144,6 +165,40 @@ def test_cycle_builds_queue_proposes_and_acts_by_policy(world):
     # the chain verifies and carries proposals, actions and the cycle
     v = ledger.verify(db)
     assert v["ok"] and v["length"] > 5
+
+
+def test_office_of_special_projects_rules(world):
+    """OSP engagements are perceived through /api/engagements: a deliverable awaiting
+    acceptance past the window and an engagement past its planned end become queue
+    items and low-risk automatic proposals; a fresh delivery does not."""
+    db = SessionLocal()
+    summary = brain.cycle(db)
+    assert summary["seen"]["engagements:professional-services"] is True
+    assert ("professional-services", "GET", "/api/engagements", "Bearer osptok", "sabine") in world.calls
+    items = {w.key: w for w in db.query(WorkItem).all()}
+    a = items["acceptance:professional-services:d1"]
+    assert a.kind == "acceptance" and a.domain == "services" and a.client == "Riverbend Credit Union"
+    assert a.link == "https://osp.example/engagements/e1" and a.payload["age_days"] == 12 and "12d" in a.title
+    assert "acceptance:professional-services:d2" not in items  # 2 days: inside the window
+    assert "acceptance:professional-services:d3" not in items  # already accepted
+    o = items["engagement_overdue:professional-services:e2"]
+    assert o.kind == "engagement_overdue" and o.platform_client_id == "plat-hp" and o.payload["days_over"] == 9
+    props = {p.key: p for p in db.query(Proposal).all()}
+    n = props["deliverable_acceptance_nudge:acceptance:professional-services:d1"]
+    assert n.status == "executed" and n.risk == "low" and n.autonomy == "auto" and n.action == "deliverable_acceptance_nudge"
+    assert "Information Security Policy v1" in n.rationale and "nothing has been sent to the client" in n.rationale
+    ov = props["engagement_overdue:engagement_overdue:professional-services:e2"]
+    assert ov.status == "executed" and "9 days past its planned end" in ov.rationale and "unassigned" in ov.rationale
+    # both land as SABINE-owned notes in the queue; nothing was posted to the module
+    assert db.query(WorkItem).filter(WorkItem.source == "sabine", WorkItem.kind == "nudge").count() >= 2
+    assert not any(c[0] == "professional-services" and c[1] == "POST" for c in world.calls)
+    # the client accepts and the engagement closes: both items leave the queue
+    world.engagements[0]["deliverables"][0]["status"] = "accepted"
+    world.engagements.pop(1)
+    brain.cycle(db)
+    assert db.query(WorkItem).filter_by(key="acceptance:professional-services:d1").one().state == "gone"
+    assert db.query(WorkItem).filter_by(key="engagement_overdue:professional-services:e2").one().state == "gone"
+    assert ledger.verify(db)["ok"]
 
 
 def test_second_cycle_is_idempotent_and_marks_gone(world):

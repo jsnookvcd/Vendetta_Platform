@@ -4,7 +4,7 @@
 <div class="title-row"><h1 style="font-size:19px">{{ e.name }}</h1>
   {{ estate(e.status) }}{% if e.published %}<span class="chip ok">shared with client</span>{% endif %}
 </div>
-<p class="faint" style="margin:2px 0 14px">{{ TYPE_NAMES.get(e.kind, e.kind) }} · {{ e.cadence }}{% if e.lead %} · lead {{ e.lead }}{% endif %}{% if e.sponsor %} · sponsor {{ e.sponsor }}{% endif %}</p>
+<p class="faint" style="margin:2px 0 14px">{{ TYPE_NAMES.get(e.kind, e.kind) }} · {{ e.cadence }}{% if e.lead %} · lead {{ e.lead }}{% endif %}{% if e.sponsor %} · sponsor {{ e.sponsor }}{% endif %}{% if e.ends_on %} · planned end {{ e.ends_on.strftime('%b %d, %Y') }}{% if e.is_overdue %} <span class="chip bad">overdue</span>{% endif %}{% endif %}</p>
 
 <div class="detail-grid">
   <div>
@@ -62,6 +62,10 @@
         <label class="field chk" style="margin-top:10px"><input type="checkbox" name="published" value="true" {{ 'checked' if e.published }}> Share with client portal</label>
         <label class="field" style="margin-top:8px">Lead<input name="lead" value="{{ e.lead }}"></label>
         <label class="field" style="margin-top:8px">Sponsor<input name="sponsor" value="{{ e.sponsor }}"></label>
+        <div class="row" style="gap:8px; margin-top:8px">
+          <label class="field" style="flex:1">Starts<input type="date" name="starts_on" value="{{ e.starts_on.strftime('%Y-%m-%d') if e.starts_on else '' }}"></label>
+          <label class="field" style="flex:1">Planned end<input type="date" name="ends_on" value="{{ e.ends_on.strftime('%Y-%m-%d') if e.ends_on else '' }}"></label>
+        </div>
         <label class="field" style="margin-top:8px">Scope<textarea name="scope">{{ e.scope }}</textarea></label>
         <label class="field" style="margin-top:8px">Executive summary (report)<textarea name="summary">{{ e.summary }}</textarea></label>
         <div style="margin-top:10px"><button class="btn btn-primary">Save</button></div>

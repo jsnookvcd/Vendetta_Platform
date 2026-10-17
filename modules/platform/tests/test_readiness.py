@@ -75,3 +75,29 @@ def test_readiness_screen_and_api_render(admin):
     body = admin.get("/api/platform/readiness",
                      headers={"Authorization": f"Bearer {__import__('app.auth', fromlist=['api_token']).api_token()}"}).json()
     assert "summary" in body and "control_plane" in body and "modules" in body
+
+
+def test_office_of_special_projects_is_probed_by_engagements(monkeypatch):
+    """The OSP serves engagements rather than findings; the probe reads its count
+    from /api/engagements so the readiness screen can mark it reachable."""
+    import httpx
+
+    from app import aggregate
+
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(req.url.path)
+        if req.url.path == "/api/module":
+            return httpx.Response(200, json={"module": "professional-services", "enabled": True, "readiness": {}})
+        if req.url.path == "/api/engagements":
+            return httpx.Response(200, json=[{"id": "e1", "status": "active"}, {"id": "e2", "status": "scoping"}])
+        return httpx.Response(404)
+    m = SimpleNamespace(key="professional-services", display_name="Office of Special Projects",
+                        status="in-progress", base_url="http://professional-services:8000", api_token="t")
+    res = aggregate.probe_module(m, transport=httpx.MockTransport(handler), force=True)
+    assert res["reachable"] and res["open"] == 2 and res["critical"] == 0 and res["label"] == "open engagements"
+    assert "/api/engagements" in calls
+    monkeypatch.setattr(settings, "secret_key", "a-real-secret")
+    rep = readiness.assess([m], {"professional-services": res})
+    assert any(c["label"] == "Reachable" and c["state"] == "ok" for c in rep["modules"][0]["checks"])

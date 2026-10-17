@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import boot
 from . import auth, oidc, platform as platform_mod, provision, readiness, sso
 from .config import (CADENCES, DELIVERABLE_KINDS, DELIVERABLE_KIND_NAMES, DELIVERABLE_STATUS_NAMES,
                      DELIVERABLE_STATUSES, ENGAGEMENT_STATE_NAMES, ENGAGEMENT_STATES, ENGAGEMENT_TYPE_NAMES,
@@ -35,7 +36,9 @@ app.include_router(oidc.router)
 
 @app.on_event("startup")
 def _startup():
+    boot.check()
     init_db()
+    provision.start_scheduler(SessionLocal)
 
 
 _DISABLED_HTML = (
@@ -373,6 +376,18 @@ def client_evidence_export(cid: str, user: str = auth.RequireUser, db: Session =
 
 
 # ---------------------------------------------------------------- engagements
+def _parse_date(value: str):
+    """A YYYY-MM-DD form value as a UTC datetime, or None when blank or malformed."""
+    import datetime as _dt
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return _dt.datetime.fromisoformat(value[:10]).replace(tzinfo=_dt.timezone.utc)
+    except ValueError:
+        return None
+
+
 @app.get("/engagements/{eid}", response_class=HTMLResponse)
 def engagement_page(eid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     e = _get_engagement(db, eid)
@@ -384,10 +399,12 @@ def engagement_page(eid: str, request: Request, user: str = auth.RequireUser, db
 @app.post("/engagements/{eid}/edit")
 def engagement_edit(eid: str, status: str = Form(...), kind: str = Form(""), cadence: str = Form(""),
                     published: bool = Form(False), scope: str = Form(""), lead: str = Form(""),
-                    sponsor: str = Form(""), summary: str = Form(""), user: str = auth.RequireUser,
-                    db: Session = Depends(get_db)):
+                    sponsor: str = Form(""), summary: str = Form(""), starts_on: str = Form(""),
+                    ends_on: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     e = _get_engagement(db, eid)
     was_published, prev_status = e.published, e.status
+    e.starts_on = _parse_date(starts_on)
+    e.ends_on = _parse_date(ends_on)
     if status in ENGAGEMENT_STATES:
         if status == "closed" and e.status != "closed":
             e.closed_at = utcnow()
@@ -553,4 +570,72 @@ def api_module(user: str = Depends(auth.api_user)):
             "platform": "Vendetta Platform", "enabled": settings.module_enabled,
             "roles": ["admin", "analyst", "client"], "engagement_types": ENGAGEMENT_TYPES,
             "deliverable_statuses": DELIVERABLE_STATUSES, "readiness": readiness.block(),
-            "endpoints": ["/api/module", "/api/clients/{id}/evidence/verify"]}
+            "endpoints": ["/api/module", "/api/engagements", "/api/clients/{id}/evidence/verify",
+                          "/api/provision/sync"]}
+
+
+def _iso(value) -> str | None:
+    return value.isoformat() if value else None
+
+
+def engagement_dict(e: Engagement) -> dict:
+    """The engagement as the platform and SABINE read it: the delivery state plus
+    the shared client identity, no detection semantics."""
+    c = e.client
+    return {
+        "id": e.id, "module": "professional-services", "platform": "Vendetta Platform",
+        "subject": {"client_id": c.id, "platform_client_id": c.platform_client_id or "", "client": c.name},
+        "name": e.name, "kind": e.kind, "status": e.status, "cadence": e.cadence, "lead": e.lead,
+        "sponsor": e.sponsor, "published": e.published, "open": e.is_open, "overdue": e.is_overdue,
+        "starts_on": _iso(e.starts_on), "ends_on": _iso(e.ends_on), "closed_at": _iso(e.closed_at),
+        "created_at": _iso(e.created_at), "progress": e.progress(),
+        "deliverables": [{"id": d.id, "title": d.title, "kind": d.kind, "status": d.status,
+                          "due_on": _iso(d.due_on), "delivered_at": _iso(d.delivered_at),
+                          "accepted_at": _iso(d.accepted_at), "accepted_by": d.accepted_by}
+                         for d in e.deliverables],
+    }
+
+
+@app.get("/api/engagements")
+def api_engagements(status: str = Query("open"), platform_client_id: str = Query(""), client: str = Query(""),
+                    user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Engagements with their deliverables. `status` is open (the default, with
+    active as a synonym), all, or a literal engagement state. The Office of Special
+    Projects does not serve the finding model; this is what the control plane and
+    SABINE read instead."""
+    q = select(Engagement).options(selectinload(Engagement.client), selectinload(Engagement.deliverables))
+    if status in ("open", "active"):
+        q = q.where(Engagement.status.in_(tuple(OPEN_STATES)))
+    elif status in ENGAGEMENT_STATES:
+        q = q.where(Engagement.status == status)
+    elif status != "all":
+        raise HTTPException(400, "unknown status")
+    if platform_client_id:
+        q = q.join(Engagement.client).where(Client.platform_client_id == platform_client_id)
+    elif client:
+        q = q.join(Engagement.client).where(Client.name.ilike(f"%{client}%"))
+    rows = db.execute(q.order_by(Engagement.created_at.desc()).limit(1000)).scalars().all()
+    return [engagement_dict(e) for e in rows]
+
+
+# ---------------------------------------------------------------- platform link
+@app.post("/api/provision/sync")
+def api_provision_sync(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The control plane calls this right after a client changes there, so a roster
+    edit lands here within seconds instead of at the next scheduled pull."""
+    if not provision.configured():
+        return JSONResponse({"ok": False, "detail": "PLATFORM_URL not set"}, status_code=409)
+    try:
+        return {"ok": True, **provision.pull(db)}
+    except provision.ProvisionError as e:
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=502)
+
+
+@app.get("/clients/platform/{pid}")
+def client_by_platform_id(pid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Deep link from the control plane: open this module's page for the client that
+    carries the given platform client id."""
+    c = db.query(Client).filter_by(platform_client_id=pid).first()
+    if not c:
+        raise HTTPException(404, "that client has not been provisioned into this module yet")
+    return RedirectResponse(f"/clients/{c.id}", status_code=302)

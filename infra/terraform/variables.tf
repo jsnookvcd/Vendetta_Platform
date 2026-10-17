@@ -9,7 +9,7 @@ variable "name_prefix" {
 }
 
 variable "instance_type" {
-  description = "One host runs all four module stacks (web + Postgres each) plus Tor. t4g.large (2 vCPU, 8 GB) is the comfortable default; t4g.medium works for a light client load with Postgres tuned down."
+  description = "One host runs every module stack (web + Postgres each) plus Tor. t4g.large (2 vCPU, 8 GB) is the comfortable default; t4g.medium works for a light client load with Postgres tuned down."
   type        = string
   default     = "t4g.large"
 }
@@ -77,6 +77,11 @@ variable "modules" {
       port   = 8600
       deploy = true
     }
+    professional-services = {
+      subdir = "modules/professional-services"
+      port   = 8700
+      deploy = true
+    }
   }
 }
 
@@ -91,6 +96,7 @@ variable "listener_priorities" {
     vulnerability-management = 140
     penetration-testing      = 150
     sabine                   = 155
+    professional-services    = 157
     mdr                      = 160
     network-operations       = 170
   }
@@ -151,6 +157,7 @@ variable "module_hosts" {
     vulnerability-management = "vuln"
     penetration-testing      = "pentest"
     sabine                   = "sabine"
+    professional-services    = "osp"
   }
 }
 

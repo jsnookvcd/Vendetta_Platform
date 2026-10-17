@@ -1,8 +1,8 @@
 # Platform infrastructure
 
 Stands up the whole Vendetta Platform on one AWS host: the control plane, the IR
-hub, managed services, dark web, vulnerability management and penetration testing,
-each as its own container stack on its own port, joined to one docker network so
+hub, managed services, dark web, vulnerability management, penetration testing,
+SABINE and the Office of Special Projects, each as its own container stack on its own port, joined to one docker network so
 they reach each other by name, behind one load balancer that routes by hostname. This is the platform-wide stack;
 the dark web module also keeps its own single-module stack under
 modules/dark-web-monitoring/infra for running that module alone.
@@ -13,11 +13,11 @@ modules/dark-web-monitoring/infra for running that module alone.
   first boot and brings up every deployed module with `docker compose`, each a
   separate project on its own port (control plane 8300, IR hub 8100, managed
   services 8200, dark web 8000, vulnerability management 8400, penetration
-  testing 8500, SABINE 8600), all on one shared docker network ("vendetta") where each module
+  testing 8500, SABINE 8600, Office of Special Projects 8700), all on one shared docker network ("vendetta") where each module
   answers at `http://<module-key>:8000`.
 - One ALB (optional, off by default) routing each module by hostname:
   platform.<domain>, ir.<domain>, msp.<domain>, darkweb.<domain>, vuln.<domain>,
-  pentest.<domain>, sabine.<domain>, with an ACM certificate covering all of them and Route53
+  pentest.<domain>, sabine.<domain>, osp.<domain>, with an ACM certificate covering all of them and Route53
   records. Listener priorities are fixed per module (`listener_priorities`) so
   adding one never reshuffles the rest. The instance has no inbound rules except
   the module ports from the ALB security group.
@@ -44,7 +44,8 @@ and stores as SSM SecureStrings under `<ssm_prefix>/<module>/`:
 
 It also writes the cross-module wiring so nothing is typed in after boot:
 `PLATFORM_TOKEN` (the control plane's API token) into every client module,
-`PLATFORM_HUB_TOKEN` (the hub's) into every finding module, and `MODULE_DIRECTORY`
+`PLATFORM_HUB_TOKEN` (the hub's) into every module that escalates (the finding
+modules and the Office of Special Projects), and `MODULE_DIRECTORY`
 (each module's service URL, token and public URL) into the control plane. The
 non-secret defaults, including the service URLs, the bind address, `COOKIE_SECURE`,
 `PUBLIC_URL` and managed services' `ACTIONS_READONLY=true`, go under
@@ -91,7 +92,7 @@ terraform apply \
 ```
 
 This fronts the control plane at platform.vendettacyber.com, with ir., msp.,
-darkweb., vuln. and pentest. under the same domain and one certificate. Run
+darkweb., vuln., pentest., sabine. and osp. under the same domain and one certificate. Run
 `infra/redeploy.sh` afterwards so the modules pick up the bind address, secure
 cookies and public URLs. The alert address stays on
 the vendettacd.io corporate mailbox; only the hostnames use vendettacyber.com.
@@ -107,5 +108,5 @@ account before the first apply.
   setting `deploy = false` here and standing it up separately, or move Postgres to
   RDS; the module's entry in `_defaults` and the control plane's `MODULE_DIRECTORY`
   then point at the new host.
-- t4g.large (8 GB) runs six web stacks, six Postgres and Tor; watch memory once
+- t4g.large (8 GB) runs eight web stacks, eight Postgres and Tor; watch memory once
   real sync volume lands and step up to t4g.xlarge if Postgres starts swapping.

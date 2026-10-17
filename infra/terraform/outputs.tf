@@ -20,7 +20,7 @@ output "module_urls" {
   description = "Per-module URL once the ALB and DNS are up."
   value = var.enable_alb && var.base_domain != "" ? {
     for k, m in local.deployed : k => "https://${lookup(var.module_hosts, k, k)}.${var.base_domain}"
-  } : { note = "ALB disabled; reach modules over SSM port forwarding (platform 8300, ir 8100, msp 8200, darkweb 8000, vuln 8400, pentest 8500)" }
+  } : { note = "ALB disabled; reach modules over SSM port forwarding (platform 8300, ir 8100, msp 8200, darkweb 8000, vuln 8400, pentest 8500, sabine 8600, osp 8700)" }
 }
 
 output "ssm_prefix" {

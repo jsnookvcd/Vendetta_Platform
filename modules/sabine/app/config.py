@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     stale_case_days: int = 5               # an open IR case with no update this long
     stale_engagement_days: int = 30        # a pentest engagement open this long with no findings
     remediation_sla_days: dict = {"critical": 7, "high": 30, "medium": 90, "low": 180}
+    acceptance_nudge_days: int = 7         # an OSP deliverable delivered and not yet accepted this long
 
     @property
     def oidc_enabled(self) -> bool:

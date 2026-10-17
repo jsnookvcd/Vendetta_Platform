@@ -75,6 +75,18 @@ ACTIONS = {
         "description": "A finding still remediating past the SLA for its severity is raised, grouped by client, with a draft client note.",
         "executor": "raise_work_item",
     },
+    "deliverable_acceptance_nudge": {
+        "label": "Nudge a deliverable the client has not accepted",
+        "domain": "services", "risk": "low", "default": "auto",
+        "description": "A deliverable delivered in the Office of Special Projects and not accepted on the portal within the window is queued to the engagement lead with a note; nothing is sent to the client.",
+        "executor": "raise_work_item",
+    },
+    "engagement_overdue": {
+        "label": "Flag a professional-services engagement past its planned end",
+        "domain": "services", "risk": "low", "default": "auto",
+        "description": "An engagement still open past its planned end date is raised to its lead with what is still outstanding.",
+        "executor": "raise_work_item",
+    },
     "client_brief": {
         "label": "Write a client brief",
         "domain": "services", "risk": "low", "default": "auto",

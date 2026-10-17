@@ -65,6 +65,7 @@ class Engagement(Base):
     status: Mapped[str] = mapped_column(String(20), default="scoping")  # scoping|active|on_hold|delivered|closed
     summary: Mapped[str] = mapped_column(Text, default="")  # executive summary, shown to the client
     starts_on: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_on: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # planned end
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published: Mapped[bool] = mapped_column(Boolean, default=False)  # visible to the client portal
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -76,6 +77,11 @@ class Engagement(Base):
     @property
     def is_open(self) -> bool:
         return self.status in OPEN_STATES
+
+    @property
+    def is_overdue(self) -> bool:
+        """Still open past its planned end date."""
+        return bool(self.is_open and self.ends_on and self.ends_on < utcnow())
 
     def counts(self) -> dict:
         c = {s: 0 for s in DELIVERABLE_STATUSES}
@@ -271,3 +277,10 @@ def _evidence_before_flush(session, flush_context, instances):  # noqa: ANN001
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    from sqlalchemy import text as _text
+
+    with engine.begin() as conn:
+        have = conn.execute(_text("SELECT 1 FROM information_schema.columns "
+                                  "WHERE table_name = 'engagements' AND column_name = 'ends_on'")).first()
+        if not have:
+            conn.execute(_text("ALTER TABLE engagements ADD COLUMN ends_on TIMESTAMP WITH TIME ZONE"))

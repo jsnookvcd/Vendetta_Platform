@@ -80,14 +80,15 @@ modules:
     status: in-progress
     enablement: MODULE_ENABLED
     manifest: /api/module
+    engagements: /api/engagements
     evidence: /api/clients/{id}/evidence/verify
     escalation: /api/ir-cases
     notes: >-
       vCISO retainers, implementation projects, tabletop exercises, assessments and
       advisory, each run as an engagement with deliverables the client accepts on the
       portal. Every delivery and sign-off is bound into a signed, hash-chained chain
-      of custody with a downloadable proof. Escalates live risk to the IR hub. Built
-      and tested.
+      of custody with a downloadable proof. Escalates live risk to the IR hub. Built,
+      tested, containerized and deployed (host osp., port 8700).
 
   - name: evidence-export
     display_name: Evidence Export

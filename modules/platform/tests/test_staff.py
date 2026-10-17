@@ -120,3 +120,22 @@ def test_cannot_deactivate_yourself(admin):
     r = admin.post(f"/staff/{me.id}/active", data={"active": "false"}, follow_redirects=False)
     assert "err=" in r.headers["location"]
     assert SessionLocal().get(Staff, me.id).active is True
+
+
+def test_office_of_special_projects_grants(admin):
+    """OSP is grantable: the vCISO / advisory profile opens it (and SABINE) only;
+    Administrator and Leadership reach it; the SOC and offensive profiles do not."""
+    assert "professional-services" in staff.GRANTABLE
+    v = _onboard(admin, "vciso@vendettacd.io", "Virtual CISO", "vciso-advisory")
+    g = {x.module_key: x for x in v.grants}
+    assert g["professional-services"].role == "analyst" and g["sabine"].role == "analyst"
+    assert g["incident-response"].role == "none" and g["penetration-testing"].role == "none"
+    lead = _onboard(admin, "lead@vendettacd.io", "Leader", "leadership")
+    assert {x.module_key: x for x in lead.grants}["professional-services"].role == "analyst"
+    boss = _onboard(admin, "boss@vendettacd.io", "Boss", "administrator")
+    assert {x.module_key: x for x in boss.grants}["professional-services"].role == "admin"
+    _onboard(admin, "soc@vendettacd.io", "SOC", "soc-analyst")
+    _onboard(admin, "red@vendettacd.io", "Red", "offensive-security")
+    osp = admin.get("/api/platform/staff", params={"module": "professional-services"}, headers=_bearer()).json()
+    assert {s["email"]: s["role"] for s in osp["staff"]} == {
+        "vciso@vendettacd.io": "analyst", "lead@vendettacd.io": "analyst", "boss@vendettacd.io": "admin"}

@@ -13,7 +13,9 @@
 <div class="panel pad">
   <p class="muted" style="margin:0 0 10px">The Office of Special Projects exposes its chain-of-custody verification for external audit. Authenticate with the bearer token below.</p>
   <pre class="body" style="max-height:none">GET /api/module
+GET /api/engagements?status=open
 GET /api/clients/{client_id}/evidence/verify
+POST /api/provision/sync
 Authorization: Bearer {{ api_token }}</pre>
   <p class="faint" style="margin:8px 0 0">Engagements and deliverables are managed in the console; acceptance sign-off is a client action in the portal. Every delivery and acceptance is written to a signed, hash-chained record that verifies against Vendetta's public key.</p>
 </div>

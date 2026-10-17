@@ -245,9 +245,12 @@ resource "random_password" "admin" {
 }
 
 locals {
-  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine"]
+  signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine", "professional-services"]
   finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing"]
-  client_modules  = [for k in keys(local.deployed) : k if k != "platform"]
+  # Modules that escalate into the IR hub: the finding modules, plus the Office of
+  # Special Projects, which opens a case from an engagement without serving findings.
+  hub_modules    = concat(local.finding_modules, ["professional-services"])
+  client_modules = [for k in keys(local.deployed) : k if k != "platform"]
   # Modules that serve findings or clients, as the control plane's directory lists
   # them (SABINE is an agent over the platform, not a module the platform pushes to).
   directory_modules = [for k in local.client_modules : k if k != "sabine"]
@@ -322,7 +325,7 @@ resource "aws_ssm_parameter" "admin_password_hash" {
 }
 
 # Each client module authenticates to the control plane with the platform's token,
-# and finding modules authenticate to the hub with the hub's token.
+# and modules that escalate authenticate to the hub with the hub's token.
 resource "aws_ssm_parameter" "platform_token" {
   for_each = toset(local.client_modules)
   name     = "${var.ssm_prefix}/${each.key}/PLATFORM_TOKEN"
@@ -331,7 +334,7 @@ resource "aws_ssm_parameter" "platform_token" {
 }
 
 resource "aws_ssm_parameter" "hub_token" {
-  for_each = toset([for k in local.finding_modules : k if contains(keys(local.deployed), k) && contains(keys(local.deployed), "incident-response")])
+  for_each = toset([for k in local.hub_modules : k if contains(keys(local.deployed), k) && contains(keys(local.deployed), "incident-response")])
   name     = "${var.ssm_prefix}/${each.key}/PLATFORM_HUB_TOKEN"
   type     = "SecureString"
   value    = random_password.api_token["incident-response"].result
@@ -406,8 +409,8 @@ resource "aws_ssm_parameter" "common" {
       { PLATFORM_URL = local.service_url["platform"] },
       local.public_url["platform"] != "" ? { PLATFORM_PUBLIC_URL = local.public_url["platform"] } : {}
     ) : {},
-    # Finding modules escalate into the hub by service name.
-    contains(local.finding_modules, each.key) && contains(keys(local.deployed), "incident-response") ? {
+    # Finding modules and the Office of Special Projects escalate into the hub by service name.
+    contains(local.hub_modules, each.key) && contains(keys(local.deployed), "incident-response") ? {
       PLATFORM_HUB_URL = local.service_url["incident-response"]
     } : {},
     # Managed services starts read-only: no tool action can fire until an operator

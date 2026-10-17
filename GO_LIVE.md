@@ -54,7 +54,7 @@ Rotating either needs a plan (keep prior public keys to verify old proofs; re-en
 stored secrets under the new key), so treat them as permanent:
 
 ```bash
-for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing; do
+for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing sabine professional-services; do
   for k in ENCRYPTION_KEY EVIDENCE_SIGNING_KEY; do
     aws ssm get-parameter --with-decryption --name /vendetta/$m/$k --query Parameter.Value --output text 2>/dev/null \
       | sed "s|^|$m $k |"
@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -126,7 +126,7 @@ REGION=... to target a specific host, or GIT_REF=... to deploy a branch or tag.
 
 Control plane, Staff: onboard yourself first with the Administrator profile, then
 everyone else with the profile that fits (Incident responder, SOC analyst,
-Offensive security, Leadership). Each person signs in to every console with their
+Offensive security, vCISO / advisory, Leadership). Each person signs in to every console with their
 Microsoft 365 account and gets exactly the level set here; nothing is configured
 per module. From the first onboarding onward, an internal account that is not on
 the roster for a module cannot sign in there, and deactivating someone on the
@@ -159,6 +159,14 @@ available by setting `TTS_PROVIDER=elevenlabs` with its key and voice id.
 Open Connections on the control plane (`localhost:8300`). Every built module should
 already show a base URL (`http://<module>:8000`), a token, and a last roster push.
 Nothing to type here; if a row is blank, click **Apply deployment directory**.
+
+The Office of Special Projects (`http://professional-services:8000`, host `osp.`,
+port 8700) is on the list as a client module: it pulls the client and staff
+rosters, takes the roster push, and the client page links into it. It serves
+engagements rather than findings, so the hub does not list it as a finding source;
+it escalates into the hub from an engagement instead, and SABINE reads its open
+engagements to queue deliverables awaiting client acceptance and engagements past
+their planned end.
 
 This directory is also how the IR hub discovers its finding sources: the hub pulls
 findings from every connected finding module into its per-client view and /findings
@@ -232,7 +240,7 @@ infra/redeploy.sh
 ```
 
 This brings every module up under the domain (platform., ir., msp., darkweb.,
-vuln. and pentest.) and, on the redeploy, switches each module to bind for the
+vuln., pentest., sabine. and osp.) and, on the redeploy, switches each module to bind for the
 load balancer, turns on secure cookies, and sets each module's public URL so the
 control plane's client page links straight into the right client in each module
 and each module links back.

@@ -18,7 +18,7 @@ DEFAULT_MODULES = [
     ("vulnerability-management", "Vulnerability Management", "managed-security", "in-progress", True, 40),
     ("penetration-testing", "Penetration Testing", "offensive-security", "in-progress", True, 50),
     ("sabine", "SABINE", "agent", "in-progress", False, 55),
-    ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 55),
+    ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 57),
     ("mdr", "Managed Detection and Response", "managed-security", "planned", False, 60),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
@@ -78,6 +78,13 @@ PROBE = {
         "manifest": "/api/module",
         "items": "/api/queue",
         "label": "open work",
+        "severity_key": "severity",
+    },
+    # Engagements carry no severity; the count is what the overview shows.
+    "professional-services": {
+        "manifest": "/api/module",
+        "items": "/api/engagements",
+        "label": "open engagements",
         "severity_key": "severity",
     },
 }

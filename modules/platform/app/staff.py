@@ -30,7 +30,7 @@ MODULE_ROLES = ("none", "analyst", "admin")
 
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
-             "vulnerability-management", "penetration-testing", "sabine"]
+             "vulnerability-management", "penetration-testing", "professional-services", "sabine"]
 
 # profile key -> (label, description, platform role, {module: (role, config)})
 PROFILES = {
@@ -50,6 +50,7 @@ PROFILES = {
             "dark-web-monitoring": ("analyst", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("analyst", {}),
+            "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
         },
     ),
@@ -63,6 +64,7 @@ PROFILES = {
             "dark-web-monitoring": ("analyst", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("none", {}),
+            "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
         },
     ),
@@ -76,14 +78,21 @@ PROFILES = {
             "dark-web-monitoring": ("none", {}),
             "vulnerability-management": ("analyst", {}),
             "penetration-testing": ("analyst", {}),
+            "professional-services": ("none", {}),
             "sabine": ("none", {}),
         },
     ),
+    "vciso-advisory": (
+        "vCISO / advisory",
+        "The Office of Special Projects (engagements and deliverables) and SABINE's briefs and queue; no SOC or offensive tooling.",
+        "analyst",
+        {**{m: ("none", {}) for m in GRANTABLE}, "professional-services": ("analyst", {}), "sabine": ("analyst", {})},
+    ),
     "leadership": (
         "Leadership",
-        "The platform overview, the go-live screen and SABINE's briefs and queue; no other module access until granted.",
+        "The platform overview, the go-live screen, the Office of Special Projects and SABINE's briefs and queue; no other module access until granted.",
         "analyst",
-        {**{m: ("none", {}) for m in GRANTABLE}, "sabine": ("analyst", {})},
+        {**{m: ("none", {}) for m in GRANTABLE}, "professional-services": ("analyst", {}), "sabine": ("analyst", {})},
     ),
 }
 
