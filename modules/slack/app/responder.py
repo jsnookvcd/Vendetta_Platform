@@ -174,6 +174,9 @@ def _case_ref(db, ctx: Ctx, args: list[str]) -> tuple[str, list[str]]:
 
 
 def _need(person: Person, module: str = IR) -> None:
+    if identity.stale(module):
+        raise Refused("I cannot reach the staff roster on the platform and my copy is more than 15 minutes old, "
+                      "so I can show you things but not change them. Use the IR hub directly until it is back.")
     if not person.can_write(module):
         what = "work cases" if module == IR else "ask SABINE or decide her proposals"
         raise Refused(f"Your access lets you read but not {what}. Ask a platform admin for analyst access.")
@@ -246,8 +249,8 @@ def open_war_room(db, case: dict, person: Person, *, origin_channel: str = "") -
     db.add(room)
     db.commit()
     invites = [person.slack_id] + _standing_invites()
-    lead = case.get("lead") or ""
-    if "@" in lead:
+    lead = (case.get("lead") or "").strip().lower()
+    if "@" in lead and identity.role_for(lead, IR):
         invites.append(identity.lookup_by_email(lead))
     _invite(ch, invites)
     slack.try_call("conversations.setTopic", channel=ch, topic=topic_for(case))
@@ -301,8 +304,9 @@ def cmd_sitrep(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     case["link"] = ir_link(case)
     room = room_for_case(db, case["number"])
     in_room = bool(room and room.channel_id == ctx.channel)
+    # A counsel-directed case is read privately, even in its own war room.
     ctx.reply(f"Sitrep {case['number']}", blocks.sitrep(case, in_room=in_room, room=room.channel_name if room else ""),
-              public=in_room)
+              public=in_room and not case.get("privileged"))
 
 
 def cmd_note(db, ctx: Ctx, person: Person, args: list[str]) -> None:
@@ -360,10 +364,11 @@ def cmd_lead(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     elif m:
         who_id = m.group(1)
         try:
-            u = identity.slack_user(db, who_id)
+            who = identity.resolve(db, who_id, (IR,))
         except Refused:
-            raise Refused("I could not look that person up in Slack.")
-        who = Person(slack_id=who_id, email=u.email, name=u.name, roles={})
+            # The lead is invited into the war room, so they must be staff with IR access.
+            raise Refused("That person is not on the platform staff roster with incident-response access, "
+                          "so I will not make them lead or invite them into the war room.")
     else:
         raise Refused(f"Who leads? `{settings.slack_command} lead @dan` or `{settings.slack_command} lead me`")
     lead = who.name or who.email
@@ -450,9 +455,18 @@ def cmd_link(db, ctx: Ctx, person: Person, args: list[str]) -> None:
     case = fetch_case(args[0].upper(), person.email)
     info = slack.try_call("conversations.info", channel=ctx.channel)
     chan = (info or {}).get("channel") or {}
-    if chan and not chan.get("is_member"):
-        if chan.get("is_private") or slack.try_call("conversations.join", channel=ctx.channel) is None:
-            raise Refused(f"Add me to this channel first (`/invite @SABINE`), then run link again.")
+    if not chan:
+        raise Refused("I could not read this channel's settings, so I will not bind a case to it. "
+                      "Add me to it first (`/invite @SABINE`).")
+    if chan.get("is_im") or chan.get("is_mpim"):
+        raise Refused("A case goes in a channel, not a direct message.")
+    if not chan.get("is_private"):
+        raise Refused("Case detail stays in private channels. Use a private channel, or "
+                      f"`{settings.slack_command} room {case['number']}` to have me make one.")
+    if chan.get("is_ext_shared") or chan.get("is_shared") or chan.get("is_org_shared") or chan.get("is_pending_ext_shared"):
+        raise Refused("This channel is shared outside Vendetta's workspace. Case detail does not go there.")
+    if not chan.get("is_member"):
+        raise Refused("Add me to this channel first (`/invite @SABINE`), then run link again.")
     for old in db.execute(select(WarRoom).where(WarRoom.channel_id == ctx.channel, WarRoom.active.is_(True))).scalars():
         old.active = False
     room = WarRoom(channel_id=ctx.channel, channel_name=chan.get("name", ""), case_id=case["id"],
@@ -497,11 +511,12 @@ def cmd_ask(db, ctx: Ctx, person: Person, args: list[str]) -> None:
         raise Refused(f"SABINE did not answer: {r['detail']}")
     data = r["data"] or {}
     out = [blocks.md(blocks.esc(data.get("reply") or ""))]
+    fallback = blocks.esc((data.get("reply") or "SABINE answered.")[:300])
     p = data.get("proposal")
     if p and p.get("status") == "pending":
         out += blocks.proposal_card(p, console_url=_sabine_url(p["id"]))
     audit(db, "sabine.ask", question[:300], slack_user=person.slack_id, actor=person.email)
-    ctx.reply(data.get("reply") or "SABINE answered.", out)
+    ctx.reply(fallback, out)
 
 
 COMMANDS: dict[str, tuple[Callable, tuple[str, ...]]] = {
@@ -525,6 +540,7 @@ COMMANDS: dict[str, tuple[Callable, tuple[str, ...]]] = {
     "unlink": (cmd_unlink, (IR,)),
     "ask": (cmd_ask, (SABINE, IR)),
 }
+MENTION_READS = {"help", "cases", "sitrep", "tasks", "cards"}
 # Shorthand: "/ir contained" sets the status.
 for _s in ("contained", "eradicated", "recovered", "closed"):
     COMMANDS[_s] = (lambda db, ctx, p, a, _s=_s: cmd_status(db, ctx, p, [*a[:1], _s] if a and CASE_REF.match(a[0]) else [_s]), (IR,))
@@ -675,8 +691,12 @@ def _open_declare(ctx: Ctx, preset: str = "") -> dict | None:
         except Refused as e:
             audit(db, "refused.declare", str(e), slack_user=ctx.user, ok=False)
             return _ephemeral(str(e))
+        clients = _ir_clients()
+        if not clients:
+            return _ephemeral("I cannot load the client list from the platform right now, so I will not open a case "
+                              "on a name I cannot check. Declare in the IR hub, or try again in a minute.")
         try:
-            slack.call("views.open", trigger_id=ctx.trigger_id, view=blocks.declare_modal(_ir_clients(), ctx.channel, preset))
+            slack.call("views.open", trigger_id=ctx.trigger_id, view=blocks.declare_modal(clients, ctx.channel, preset))
         except slack.SlackError as e:
             return _ephemeral(f"Slack would not open the form ({e.error}). "
                               f"Try `{settings.slack_command} declare critical <client>: <what is happening>`.")
@@ -790,13 +810,13 @@ def _decide(db, ctx: Ctx, person: Person, args: list) -> None:
     p = data.get("proposal") or {}
     verb = "approved" if approve else "rejected"
     if r["status"] == 409:
-        decided = f"Already {p.get('status') or 'decided'}" + (f" by {p.get('decided_by')}" if p.get("decided_by") else "") + "."
+        decided = blocks.esc(f"Already {p.get('status') or 'decided'}" + (f" by {p.get('decided_by')}" if p.get("decided_by") else "") + ".")
     else:
         res = data.get("result") or p.get("result") or {}
         outcome = ""
         if approve and isinstance(res, dict) and "ok" in res:
             outcome = "  Carried out." if res.get("ok") else f"  It did not go through: {res.get('detail') or 'see SABINE'}."
-        decided = f"{':white_check_mark:' if approve else ':x:'} {verb.capitalize()} by {person.name or person.email} in Slack.{outcome}"
+        decided = f"{':white_check_mark:' if approve else ':x:'} {verb.capitalize()} by {blocks.esc(person.name or person.email)} in Slack.{blocks.esc(outcome)}"
     audit(db, f"sabine.{verb}", f"{pid} {decided}", slack_user=person.slack_id, actor=person.email, ok=r["ok"])
     row = db.execute(select(Posted).where(Posted.kind == "proposal", Posted.ref == pid)).scalar_one_or_none()
     channel, ts = (row.channel, row.ts) if row and row.ts else (ctx.channel, msg_ts)
@@ -816,9 +836,9 @@ def _view_submission(payload: dict, user: str) -> dict | None:
     cb = view.get("callback_id")
     if cb == "declare":
         client_id = _val(state, "client", "select")
-        client_name = _val(state, "client_name")
+        client_name = ""  # the form only offers platform clients; a typed name could create a phantom client
         desc = _val(state, "desc")
-        if not (client_id or client_name):
+        if not client_id:
             return {"response_action": "errors", "errors": {"client": "Choose the client."}}
         if not desc:
             return {"response_action": "errors", "errors": {"desc": "Say what is happening, even one line."}}
@@ -972,7 +992,9 @@ def _mention(event: dict) -> None:
               thread_ts=event.get("thread_ts") or event.get("ts", ""))
     parts = text.split()
     sub = parts[0].lower() if parts else "help"
-    if sub in COMMANDS and sub != "ask":
+    # A mention is conversation, so it only ever reads. "@SABINE contained the host
+    # yet?" is a question, never a status change; changes take the slash command.
+    if sub in MENTION_READS:
         run(ctx, sub, parts[1:])
     else:
         run(ctx, "ask", parts)
@@ -1013,7 +1035,7 @@ def _announce_case(db, case: dict, warroom: WarRoom | None, declared_by: Person 
     db.commit()
     if not settings.slack_ir_channel:
         return
-    head = (f":rotating_light: *New case* declared in Slack by {declared_by.name or declared_by.email}" if declared_by
+    head = (f":rotating_light: *New case* declared in Slack by {blocks.esc(declared_by.name or declared_by.email)}" if declared_by
             else f":rotating_light: *New case* ({blocks.esc(case.get('origin') or 'manual')}"
                  + (f" from {blocks.esc(case.get('source_module'))}" if case.get("source_module") else "") + ")")
     out = [blocks.md(head)] + blocks.case_card({**case, "link": ir_link(case)}, in_room=False,

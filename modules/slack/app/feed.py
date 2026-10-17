@@ -73,7 +73,7 @@ def cases(db) -> int:
         if changes:
             responder.refresh_room(db, room, c)
             slack.try_call("chat.postMessage", channel=room.channel_id,
-                           text=f":arrows_counterclockwise: {c['number']} changed in the IR hub: " + "; ".join(changes) + ".")
+                           text=blocks.esc(f"{c['number']} changed in the IR hub: " + "; ".join(changes) + "."))
     return posted
 
 
@@ -96,7 +96,7 @@ def proposals(db) -> int:
         if seed:
             continue
         res = slack.try_call("chat.postMessage", channel=settings.slack_sabine_channel,
-                             text=f"SABINE proposes: {p.get('title')}",
+                             text=f"SABINE proposes: {blocks.esc(str(p.get('title') or ''))[:300]}",
                              blocks=blocks.proposal_card(p, console_url=responder._sabine_url(p["id"])))
         if res:
             row.ts = res.get("ts", "")
@@ -114,7 +114,7 @@ def proposals(db) -> int:
             if p is None or p.get("status") == "pending":
                 continue
             who = f" by {p['decided_by']}" if p.get("decided_by") else ""
-            decided = f"{p['status'].capitalize()}{who}."
+            decided = blocks.esc(f"{p['status'].capitalize()}{who}.")
             slack.try_call("chat.update", channel=row.channel, ts=row.ts, text=decided,
                            blocks=blocks.proposal_card(p, console_url=responder._sabine_url(p["id"]), decided=decided))
             row.state = p["status"]

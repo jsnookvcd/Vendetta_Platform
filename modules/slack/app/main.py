@@ -66,8 +66,18 @@ def _disabled() -> Response | None:
     return None
 
 
+MAX_BODY = 1024 * 1024  # Slack payloads are a few KB; refuse anything near a megabyte unread
+
+
 async def _verified(request: Request) -> bytes | None:
+    try:
+        if int(request.headers.get("content-length") or 0) > MAX_BODY:
+            return None
+    except ValueError:
+        return None
     body = await request.body()
+    if len(body) > MAX_BODY:
+        return None
     return body if slack.verify(request.headers, body) else None
 
 

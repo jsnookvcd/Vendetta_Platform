@@ -1,15 +1,36 @@
 """Case operations a chat bridge (the Slack responder) drives through the service
-API. The bridge sends its own bearer token and names the person it acts for in
-X-Vendetta-On-Behalf-Of; every entry must carry that person, and the header must
-mean nothing without the token."""
+API. The bridge presents its own token (BRIDGE_TOKEN) and names the person it acts
+for in X-Vendetta-On-Behalf-Of; every entry must carry that person, the person must
+be on the mirrored staff roster with write access, and the header must mean nothing
+under any other credential."""
+import pytest
+
 from app import auth
-from app.db import AuditLog, Case, CaseUpdate, Client, SessionLocal
+from app.config import settings
+from app.db import AuditLog, Case, CaseUpdate, Client, SessionLocal, User
 
 PERSON = "dan@vendettacd.io"
+BRIDGE = "bridge-token-for-slack"
 
 
-def _h(person: str = PERSON, actor: str = "slack"):
-    h = {"Authorization": f"Bearer {auth.api_token()}", "X-Vendetta-Actor": actor}
+@pytest.fixture(autouse=True)
+def _bridge(monkeypatch):
+    monkeypatch.setattr(settings, "bridge_token", BRIDGE)
+
+
+@pytest.fixture()
+def client(client):  # noqa: F811  (the conftest client, plus the mirrored roster)
+    db = SessionLocal()
+    db.add_all([User(email=PERSON, role="analyst", source="platform"),
+                User(email="vic@vendettacd.io", role="viewer", source="platform"),
+                User(email="gone@vendettacd.io", role="analyst", source="platform", active=False),
+                User(email="old@vendettacd.io", role="analyst", source="entra")])
+    db.commit()
+    return client
+
+
+def _h(person: str = PERSON, actor: str = "slack", token: str = BRIDGE):
+    h = {"Authorization": f"Bearer {token}", "X-Vendetta-Actor": actor}
     if person:
         h["X-Vendetta-On-Behalf-Of"] = person
     return h
@@ -63,12 +84,30 @@ def test_on_behalf_header_means_nothing_without_the_token(client):
     assert r.status_code in (401, 403)
 
 
-def test_garbage_on_behalf_falls_back_to_the_bridge(client):
+def test_bridge_writes_need_a_rostered_writer(client):
     out = _declare(client)
-    r = client.post(f"/api/ir-cases/{out['case_id']}/updates", headers=_h(person="not an email <script>"),
-                    json={"note": "x"})
+    url = f"/api/ir-cases/{out['case_id']}/updates"
+    for who in ("not an email <script>", "", "vic@vendettacd.io", "gone@vendettacd.io", "old@vendettacd.io",
+                "stranger@vendettacd.io"):
+        assert client.post(url, headers=_h(person=who), json={"note": "x"}).status_code == 403, who
+    # reads through the bridge need no person
+    assert client.get(f"/api/ir-cases/{out['case_id']}", headers=_h(person="")).status_code == 200
+
+
+def test_module_token_cannot_name_a_person(client):
+    out = _declare(client)
+    r = client.post(f"/api/ir-cases/{out['case_id']}/updates",
+                    headers=_h(person="jordan@vendettacd.io", actor="slack", token=auth.api_token()), json={"note": "x"})
     u = SessionLocal().query(CaseUpdate).filter_by(id=r.json()["update_id"]).one()
-    assert u.actor == "api:slack"
+    assert u.actor == "api:slack"  # the module is its own actor; nobody's name is borrowed
+
+
+def test_page_through_the_bridge_is_attributed(client, monkeypatch):
+    monkeypatch.setattr(settings, "teams_webhook_url", "")
+    monkeypatch.setattr(settings, "sns_topic_arn", "")
+    r = client.post("/api/oncall/page", headers=_h(), json={"title": "x", "source_module": "slack", "source_ref": "c"})
+    assert r.status_code == 200
+    assert SessionLocal().query(AuditLog).filter_by(action="oncall.page").one().actor == f"{PERSON} via slack"
 
 
 def test_status_details_tasks_and_moves(client):
@@ -104,10 +143,6 @@ def test_status_details_tasks_and_moves(client):
 def test_viewer_session_cannot_write_through_the_bridge_routes(client):
     from app import auth as a
     out = _declare(client)
-    from app.db import User
-    db = SessionLocal()
-    db.add(User(email="v@vendettacd.io", role="viewer"))
-    db.commit()
-    client.cookies.set(a.COOKIE, a.make_session("v@vendettacd.io"))
+    client.cookies.set(a.COOKIE, a.make_session("vic@vendettacd.io"))
     r = client.post(f"/api/ir-cases/{out['case_id']}/updates", json={"note": "x"})
     assert r.status_code == 403

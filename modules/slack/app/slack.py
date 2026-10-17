@@ -129,5 +129,10 @@ def whoami() -> dict:
 
 
 def allowed_team(team_id: str) -> bool:
+    """Only the workspace the bot belongs to (or SLACK_TEAM_ID). Until that is
+    known nothing is accepted: an unknown workspace is a refusal, never a pass."""
     want = (settings.slack_team_id or IDENTITY.get("team_id") or "").strip()
-    return not want or team_id == want
+    if not want and configured() and IDENTITY.get("detail") != "ok":
+        whoami()  # the bot token may have been fixed since boot
+        want = (IDENTITY.get("team_id") or "").strip()
+    return bool(want) and team_id == want

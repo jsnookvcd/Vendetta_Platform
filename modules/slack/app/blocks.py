@@ -73,6 +73,14 @@ def case_line(c: dict) -> str:
             f"{STATUS_ICON.get(c.get('status'), '')} {c.get('status', '')}  lead: {esc(c.get('lead') or 'unassigned')}")
 
 
+PRIVILEGED_TITLE = "Privileged and confidential: details in the IR hub"
+
+
+def title_of(c: dict) -> str:
+    """A counsel-directed case never puts its title into Slack."""
+    return PRIVILEGED_TITLE if c.get("privileged") else (c.get("title") or "")
+
+
 def case_card(c: dict, *, in_room: bool = False, room: str = "") -> list[dict]:
     fields = [
         {"type": "mrkdwn", "text": f"*Severity*\n{SEV_ICON.get(c.get('severity'), '')} {c.get('severity')}"},
@@ -88,7 +96,7 @@ def case_card(c: dict, *, in_room: bool = False, room: str = "") -> list[dict]:
             progress.append(f"{WS_SHORT.get(w['name'], w['name'])} {cards.get('done', 0)}/{total}")
     out = [
         {"type": "header", "text": {"type": "plain_text", "text": f"{c['number']}  {c['client']['name']}"[:150]}},
-        md(f"*{esc(c.get('title') or '')}*"),
+        md(f"*{esc(title_of(c))}*"),
         {"type": "section", "fields": fields},
     ]
     if progress:
@@ -99,6 +107,8 @@ def case_card(c: dict, *, in_room: bool = False, room: str = "") -> list[dict]:
     if c.get("link"):
         acts.append(button("Open in IR hub", "open_ir", url=c["link"]))
     out.append({"type": "actions", "elements": acts})
+    if c.get("privileged"):
+        out.append(ctx(":lock: Counsel-directed. Keep analysis out of Slack; record it in the IR hub."))
     return out
 
 
@@ -111,7 +121,7 @@ def sitrep(c: dict, *, in_room: bool = False, room: str = "") -> list[dict]:
                  for t in open_tasks[:15]]
         more = f"\n_and {len(open_tasks) - 15} more_" if len(open_tasks) > 15 else ""
         out.append(md("*Open cards*\n" + "\n".join(lines) + more))
-    ups = [u for u in c.get("updates") or [] if u.get("kind") in ("note", "status", "system", "finding")][:6]
+    ups = [] if c.get("privileged") else [u for u in c.get("updates") or [] if u.get("kind") in ("note", "status", "system", "finding")][:6]
     if ups:
         lines = [f"`{_ago(u['at'])}` {esc(u['actor'])}: {esc(u['note'][:240])}" for u in ups]
         out.append(md("*Latest on the timeline*\n" + "\n".join(lines)))

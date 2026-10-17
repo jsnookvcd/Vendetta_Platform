@@ -5,23 +5,29 @@ bridge cannot decide a high-risk proposal."""
 import pytest
 
 from app import auth, perception
-from app.db import Ledger, Proposal, SessionLocal
+from app.config import settings
+from app.db import Ledger, Proposal, SessionLocal, User
 
 from test_brain import world  # noqa: F401  (fixture: mock platform and modules)
 
 PERSON = "dan@vendettacd.io"
+BRIDGE = "bridge-token-for-slack"
 
 
-def _h(person: str = PERSON):
-    h = {"Authorization": f"Bearer {auth.api_token()}", "X-Vendetta-Actor": "slack"}
+def _h(person: str = PERSON, token: str = BRIDGE):
+    h = {"Authorization": f"Bearer {token}", "X-Vendetta-Actor": "slack"}
     if person:
         h["X-Vendetta-On-Behalf-Of"] = person
     return h
 
 
 @pytest.fixture()
-def seen(world, client):  # noqa: F811
+def seen(world, client, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(settings, "bridge_token", BRIDGE)
     db = SessionLocal()
+    db.add_all([User(email=PERSON, role="analyst", source="platform"),
+                User(email="vic@vendettacd.io", role="viewer", source="platform")])
+    db.commit()
     perception.observe(db)
     perception.build_queue(db)
     return client
@@ -53,6 +59,15 @@ def test_decision_through_the_bridge_names_the_person(seen):
     r = seen.post(f"/api/proposals/{p['id']}/decide", headers=_h(), json={"approve": False, "note": "dupe"})
     assert r.status_code == 200, r.text
     assert SessionLocal().get(Proposal, p["id"]).decided_by == f"{PERSON} via slack"
+
+
+def test_bridge_must_name_a_rostered_writer_and_module_token_cannot_name_anyone(seen):
+    for who in ("", "vic@vendettacd.io", "stranger@vendettacd.io"):
+        assert seen.post("/api/ask", headers=_h(person=who), json={"question": "hi"}).status_code == 403, who
+    r = seen.post("/api/ask", headers=_h(person="jordan@vendettacd.io", token=auth.api_token()), json={"question": "hi"})
+    assert r.status_code == 200
+    row = SessionLocal().query(Ledger).filter(Ledger.kind == "observation").order_by(Ledger.id.desc()).first()
+    assert row.actor == "api:slack"
 
 
 def test_empty_question_and_no_token(seen):

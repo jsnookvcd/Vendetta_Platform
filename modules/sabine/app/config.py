@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://sabine:sabine@db:5432/sabine"
     secret_key: str = "change-me"
     api_token: str = ""
+    # The Slack responder's own token: the only credential under which
+    # X-Vendetta-On-Behalf-Of is honored (see auth.acting_person).
+    bridge_token: str = ""
     allow_insecure_defaults: bool = False
     # Ed25519 seed (32 bytes hex) signing SABINE's own chain of observations,
     # proposals, decisions and actions. Blank derives from secret_key with a warning.

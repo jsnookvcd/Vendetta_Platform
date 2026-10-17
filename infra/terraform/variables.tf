@@ -174,6 +174,12 @@ variable "module_hosts" {
   }
 }
 
+variable "private_modules" {
+  description = "Deployed modules that get no ALB host, target group or DNS record; their consoles are reached over SSM port forwarding only. The Slack responder runs in Socket Mode and needs no inbound path, so its break-glass console stays off the internet."
+  type        = list(string)
+  default     = ["slack"]
+}
+
 variable "hosted_zone_id" {
   description = "Route53 zone id for base_domain; used to validate the cert and create the alias records. Leave blank to bring your own cert and manage DNS yourself."
   type        = string

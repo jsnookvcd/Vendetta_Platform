@@ -388,3 +388,115 @@ def test_first_declare_before_any_feed_run_does_not_flood(world):
     assert len(ir_posts) == 1 and old["number"] not in ir_posts[0]["text"]
     feed.cycle()
     assert len([p for p in world.slack("chat.postMessage") if p.get("channel") == "C_IR"]) == 1
+
+
+# ---------------------------------------------------------------- review hardening
+def test_a_mention_never_changes_a_case(world):
+    case, room = _room(world)
+    n_status, n_page = len(world.ir("/status")), len(world.ir("/api/oncall/page"))
+    for text in ("<@U_BOT> contained the host yet?", "<@U_BOT> closed it out, thanks", "<@U_BOT> page me when FS01 is imaged"):
+        responder.handle_event({"team_id": "T_VCD", "event": {"type": "app_mention", "user": "U_DAN",
+                                                              "channel": room.channel_id, "ts": "9.9", "text": text}})
+    assert len(world.ir("/status")) == n_status and len(world.ir("/api/oncall/page")) == n_page
+    assert len([c for c in world.sabine_calls if c["path"] == "/api/ask"]) == 3
+    responder.handle_event({"team_id": "T_VCD", "event": {"type": "app_mention", "user": "U_DAN",
+                                                          "channel": room.channel_id, "ts": "9.9", "text": "<@U_BOT> sitrep"}})
+    assert world.ir(f"/api/ir-cases/{case['number']}")
+
+
+def test_lead_must_be_rostered_staff(world):
+    case, room = _room(world)
+    invites = len(world.slack("conversations.invite"))
+    responder.handle_command(cmd("lead <@U_NOBODY>", channel=room.channel_id))
+    assert any("not on the platform staff roster" in m for m in _ephemerals(world))
+    assert len(world.slack("conversations.invite")) == invites and not world.ir("/details")
+
+
+def test_link_only_binds_private_unshared_channels(world, monkeypatch):
+    case = world.add_case()
+    real = world._slack
+
+    def info(chan):
+        def handler(req):
+            if req.url.path.endswith("conversations.info"):
+                world.slack_calls.append(("conversations.info", {}))
+                import httpx
+                return httpx.Response(200, json={"ok": True, "channel": chan}) if chan else \
+                    httpx.Response(200, json={"ok": False, "error": "channel_not_found"})
+            return real(req)
+        monkeypatch.setattr(world, "_slack", handler)
+
+    for chan, why in (({"id": "C1", "is_private": False, "is_member": True}, "private channels"),
+                      ({"id": "C1", "is_private": True, "is_member": True, "is_ext_shared": True}, "shared outside"),
+                      (None, "could not read"),
+                      ({"id": "C1", "is_private": True, "is_member": False}, "Add me")):
+        info(chan)
+        world.responses.clear()
+        responder.handle_command(cmd(f"link {case['number']}", channel="C1"))
+        assert any(why in m for m in _ephemerals(world)), why
+        assert SessionLocal().query(WarRoom).count() == 0
+    info({"id": "C1", "name": "ir-private", "is_private": True, "is_member": True})
+    responder.handle_command(cmd(f"link {case['number']}", channel="C1"))
+    assert SessionLocal().query(WarRoom).filter_by(channel_id="C1").one().case_number == case["number"]
+
+
+def test_privileged_case_keeps_its_title_and_timeline_out_of_slack(world):
+    feed.cycle()  # seed
+    case = world.add_case()
+    case["privileged"] = True
+    case["updates"] = [{"at": "2026-10-17T18:05:00+00:00", "actor": "x", "kind": "note", "note": "counsel analysis", "internal_only": True}]
+    feed.cycle()
+    post = [p for p in world.slack("chat.postMessage") if p.get("channel") == "C_IR"][-1]
+    dump = json.dumps(post)
+    assert case["title"] not in dump and "Privileged" in dump
+    responder.handle_command(cmd(f"room {case['number']}"))
+    room = SessionLocal().query(WarRoom).one()
+    n_public = len([p for p in world.slack("chat.postMessage") if p.get("channel") == room.channel_id])
+    responder.handle_command(cmd("sitrep", channel=room.channel_id))
+    assert len([p for p in world.slack("chat.postMessage") if p.get("channel") == room.channel_id]) == n_public
+    assert "counsel analysis" not in json.dumps(world.responses[-1])
+
+
+def test_stale_roster_allows_reads_but_not_changes(world):
+    case, room = _room(world)
+    world.platform_up = False
+    for m in identity._ROSTER.values():
+        m["at"] = m["good_at"] = 0
+    world.responses.clear()
+    responder.handle_command(cmd("tasks", channel=room.channel_id))
+    assert not any("cannot reach" in m for m in _ephemerals(world))
+    n = len(world.ir("/updates"))
+    responder.handle_command(cmd("note should not land", channel=room.channel_id))
+    assert len(world.ir("/updates")) == n and any("more than 15 minutes old" in m for m in _ephemerals(world))
+
+
+def test_unknown_workspace_is_refused_when_auth_failed(world):
+    slack.IDENTITY.update(team_id="", detail="invalid_auth")
+    world_auth = world._slack
+
+    def bad_auth(req):
+        import httpx
+        if req.url.path.endswith("auth.test"):
+            return httpx.Response(200, json={"ok": False, "error": "invalid_auth"})
+        return world_auth(req)
+    world._slack = bad_auth
+    ack = responder.handle_command(cmd("cases"))
+    assert "another workspace" in ack["text"]
+
+
+def test_oversized_slack_request_is_refused_unread(client, world):
+    body = b"x" * (1024 * 1024 + 1)
+    assert client.post("/slack/commands", content=body, headers=_sign(body)).status_code == 401
+
+
+def test_declare_form_needs_the_platform_client_list(world):
+    world.clients = []
+    ack = responder.handle_command(cmd("declare"))
+    assert "cannot load the client list" in ack["text"] and not world.slack("views.open")
+    sub = {"type": "view_submission", "team": {"id": "T_VCD"}, "user": {"id": "U_DAN"},
+           "view": {"callback_id": "declare", "private_metadata": "C1", "state": {"values": {
+               "client_name": {"v": {"value": "Typo Credit Unoin"}},
+               "severity": {"v": {"selected_option": {"value": "high"}}},
+               "desc": {"v": {"value": "x"}}}}}}
+    assert responder.handle_interaction(sub)["response_action"] == "errors"
+    assert not world.ir("/api/ir-cases/declare")

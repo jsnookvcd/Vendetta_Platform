@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # service API. Set by the deployment (Terraform generates one per module); when
     # blank the token is derived from secret_key for backward compatibility.
     api_token: str = ""
+    # A chat bridge (the Slack responder) gets its own token. It reaches the same
+    # service API, and it is the only credential under which X-Vendetta-On-Behalf-Of
+    # is honored: a module holding API_TOKEN can never put a person's name on the record.
+    bridge_token: str = ""
     # Refuse to start on placeholder secrets. Only a local developer should set this
     # true; the deployed stack never does.
     allow_insecure_defaults: bool = False

@@ -983,6 +983,7 @@ async def api_oncall_page(request: Request, user: str = Depends(auth.api_user), 
         raise HTTPException(400, "JSON body required")
     if not isinstance(payload, dict):
         raise HTTPException(400, "JSON object required")
+    user = auth.api_person(request) if auth.is_bridge(request) else user
     title = str(payload.get("title") or "").strip()
     if not title:
         raise HTTPException(400, "title required")

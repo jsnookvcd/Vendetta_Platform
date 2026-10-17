@@ -158,39 +158,74 @@ def api_token() -> str:
     return hmac.new(settings.secret_key.encode(), b"api-token-v1", hashlib.sha256).hexdigest()
 
 
+def _bearer(request: Request) -> str:
+    h = request.headers.get("authorization", "")
+    return h[7:] if h.startswith("Bearer ") else ""
+
+
+def _actor_name(request: Request, default: str = "") -> str:
+    return "".join(ch for ch in request.headers.get("x-vendetta-actor", "") if ch.isalnum() or ch in "-_.")[:40] or default
+
+
+def is_bridge(request: Request) -> bool:
+    """True when the caller presented the bridge token (BRIDGE_TOKEN)."""
+    tok, want = _bearer(request), (settings.bridge_token or "").strip()
+    return bool(tok and want and hmac.compare_digest(tok, want))
+
+
 def api_user(request: Request) -> str:
-    """Service API: the shared bearer token, or an internal staff session. A
-    client-portal session is refused (current_user enforces the internal role), so
-    the API can never return another tenant's data to a client."""
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], api_token()):
+    """Service API: the shared bearer token, the bridge token, or an internal staff
+    session. A client-portal session is refused (current_user enforces the internal
+    role), so the API can never return another tenant's data to a client."""
+    tok = _bearer(request)
+    if tok and hmac.compare_digest(tok, api_token()):
         # A caller may name itself (SABINE does) so audit entries read api:<actor>.
-        actor = "".join(ch for ch in request.headers.get("x-vendetta-actor", "") if ch.isalnum() or ch in "-_.")[:40]
+        actor = _actor_name(request)
         return f"api:{actor}" if actor else "api"
+    if is_bridge(request):
+        return f"api:{_actor_name(request, 'bridge')}"
     return current_user(request)
 
 
 def _clean_email(raw: str) -> str:
-    e = "".join(ch for ch in (raw or "").strip().lower() if ch.isalnum() or ch in "@.-_+'")[:320]
+    e = "".join(ch for ch in (raw or "").strip().lower() if ch.isalnum() or ch in "@.-_+'")[:254]
     return e if e.count("@") == 1 and not e.startswith("@") and "." in e.split("@")[1] else ""
 
 
-def api_person(request: Request) -> str:
-    """The actor a timeline entry should carry for a service-API call. A bridge that
-    acts for a named member of staff (the Slack responder does) sends the person in
-    X-Vendetta-On-Behalf-Of alongside its own bearer token; the entry then reads
-    "dan@vendettacd.io via slack" so the record names the human who acted. The
-    header is honored only with the bearer token: a browser session is always
-    its own person. The bridge, which holds the token, is the party that checked
-    the person's grant on the platform roster before it called."""
+def api_person(request: Request, *, write: bool = True) -> str:
+    """The actor a timeline entry should carry for a service-API call.
+
+    A bridge that acts for a named member of staff (the Slack responder) presents
+    BRIDGE_TOKEN and names the person in X-Vendetta-On-Behalf-Of; the entry then
+    reads "dan@vendettacd.io via slack". The header is honored with the bridge
+    token and nothing else: a module holding API_TOKEN, or a browser session, is
+    always its own actor. A bridge call must name a person, and that person must be
+    an active member of staff mirrored here from the platform roster, with analyst
+    or admin for a change, so a deactivated person or a viewer cannot be named on a
+    write even if the bridge got it wrong."""
     caller = api_user(request)
-    if not caller.startswith("api"):
+    if not is_bridge(request):
         return caller
     person = _clean_email(request.headers.get("x-vendetta-on-behalf-of", ""))
     if not person:
-        return caller
-    via = caller.split(":", 1)[1] if ":" in caller else "api"
-    return f"{person} via {via}"
+        raise HTTPException(status_code=403, detail="a bridge call must name the person it acts for")
+    from .db import SessionLocal, User  # local import to avoid a cycle
+
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.email == person, User.active.is_(True)).one_or_none()
+        # Once the platform roster governs (it has mirrored anyone here), only people
+        # it lists count; an older SSO row for someone since removed does not.
+        if u is not None and u.source != "platform" and db.query(User).filter(User.source == "platform").count():
+            u = None
+    finally:
+        db.close()
+    allowed = ("analyst", "admin") if write else INTERNAL_ROLES
+    if u is None or u.role not in allowed:
+        raise HTTPException(status_code=403, detail=f"{person} is not on this module's staff roster with "
+                                                    f"{'analyst or admin' if write else 'any'} access")
+    via = caller.split(":", 1)[1] if ":" in caller else "bridge"
+    return f"{person} via {via}"[:320]
 
 
 RequireUser = Depends(current_user)

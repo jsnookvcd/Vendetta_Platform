@@ -7,8 +7,10 @@ locals {
   alb_on    = var.enable_alb ? 1 : 0
   make_cert = var.enable_alb && var.acm_certificate_arn == "" && var.hosted_zone_id != "" ? 1 : 0
   cert_arn  = var.acm_certificate_arn != "" ? var.acm_certificate_arn : (local.make_cert == 1 ? aws_acm_certificate_validation.alb[0].certificate_arn : "")
-  # Full hostname per deployed module, e.g. { platform = "platform.vendettacyber.com" }.
-  hosts = { for k, m in local.deployed : k => "${lookup(var.module_hosts, k, k)}.${var.base_domain}" }
+  # Modules the ALB fronts: every deployed module except the private ones.
+  alb_modules = { for k, m in local.deployed : k => m if !contains(var.private_modules, k) }
+  # Full hostname per fronted module, e.g. { platform = "platform.vendettacyber.com" }.
+  hosts = { for k, m in local.alb_modules : k => "${lookup(var.module_hosts, k, k)}.${var.base_domain}" }
 }
 
 resource "aws_security_group" "alb" {
@@ -46,9 +48,9 @@ resource "aws_lb" "this" {
   subnets            = data.aws_subnets.default.ids
 }
 
-# One target group per deployed module, health-checked on /healthz.
+# One target group per fronted module, health-checked on /healthz.
 resource "aws_lb_target_group" "mod" {
-  for_each = var.enable_alb ? local.deployed : {}
+  for_each = var.enable_alb ? local.alb_modules : {}
   name     = substr("${var.name_prefix}-${each.key}", 0, 32)
   port     = each.value.port
   protocol = "HTTP"
@@ -65,7 +67,7 @@ resource "aws_lb_target_group" "mod" {
 }
 
 resource "aws_lb_target_group_attachment" "mod" {
-  for_each         = var.enable_alb ? local.deployed : {}
+  for_each         = var.enable_alb ? local.alb_modules : {}
   target_group_arn = aws_lb_target_group.mod[each.key].arn
   target_id        = aws_instance.host.id
   port             = each.value.port
@@ -107,7 +109,7 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_lb_listener_rule" "host" {
-  for_each     = var.enable_alb ? local.deployed : {}
+  for_each     = var.enable_alb ? local.alb_modules : {}
   listener_arn = aws_lb_listener.https[0].arn
   priority     = lookup(var.listener_priorities, each.key, 500 + index(keys(local.deployed), each.key))
 

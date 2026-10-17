@@ -89,7 +89,7 @@ def roster(module: str) -> dict | None:
         return cached["body"]
     r = reach.get("platform", "/api/platform/staff", params={"module": module}, timeout=6.0)
     if r["ok"] and isinstance(r["data"], dict):
-        _ROSTER[module] = {"at": time.time(), "body": r["data"], "ok": True, "detail": "ok"}
+        _ROSTER[module] = {"at": time.time(), "good_at": time.time(), "body": r["data"], "ok": True, "detail": "ok"}
         return r["data"]
     log.warning("staff roster for %s unavailable: %s", module, r["detail"])
     if cached and cached.get("body") is not None:
@@ -97,6 +97,18 @@ def roster(module: str) -> dict | None:
         return cached["body"]
     _ROSTER[module] = {"at": time.time(), "body": None, "ok": False, "detail": r["detail"]}
     return None
+
+
+STALE_WRITES_AFTER = 15 * 60
+
+
+def stale(module: str) -> bool:
+    """True when the roster for a module is a last-good copy older than fifteen
+    minutes: reads continue through a control-plane outage, changes stop, so a
+    person removed during the outage cannot keep acting on cases."""
+    cached = _ROSTER.get(module)
+    return bool(cached and not cached.get("ok") and cached.get("good_at") is not None
+                and time.time() - cached["good_at"] > STALE_WRITES_AFTER)
 
 
 def roster_state() -> dict:

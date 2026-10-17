@@ -65,9 +65,9 @@ resource "aws_security_group" "instance" {
   }
 }
 
-# Each deployed module's port is reachable only from the ALB security group.
+# Each fronted module's port is reachable only from the ALB security group.
 resource "aws_security_group_rule" "from_alb" {
-  for_each                 = var.enable_alb ? local.deployed : {}
+  for_each                 = var.enable_alb ? local.alb_modules : {}
   type                     = "ingress"
   security_group_id        = aws_security_group.instance.id
   from_port                = each.value.port
@@ -270,7 +270,7 @@ locals {
   # Service addresses on the shared docker network ("vendetta"): each module's web
   # container is reachable by its module key on port 8000 from any other container.
   service_url = { for k, m in local.deployed : k => "http://${k}:8000" }
-  public_url  = { for k, m in local.deployed : k => (var.enable_alb && var.base_domain != "" ? "https://${lookup(var.module_hosts, k, k)}.${var.base_domain}" : "") }
+  public_url  = { for k, m in local.deployed : k => (var.enable_alb && var.base_domain != "" && !contains(var.private_modules, k) ? "https://${lookup(var.module_hosts, k, k)}.${var.base_domain}" : "") }
 
   # What the control plane needs to wire every module without hand entry.
   module_directory = {
@@ -412,8 +412,25 @@ resource "aws_ssm_parameter" "sabine_directory" {
   })
 }
 
-# The Slack responder's reach: the IR hub, SABINE and the control plane, each with
-# its own token. The Slack tokens themselves (SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
+# The Slack responder's own credential into the IR hub and into SABINE. It is the
+# only token under which those modules honor X-Vendetta-On-Behalf-Of, so no other
+# module that holds their API token can put a person's name on the record.
+resource "random_password" "bridge" {
+  for_each = contains(keys(local.deployed), "slack") ? toset([for k in ["incident-response", "sabine"] : k if contains(keys(local.deployed), k)]) : toset([])
+  length   = 48
+  special  = false
+}
+
+resource "aws_ssm_parameter" "bridge_token" {
+  for_each = random_password.bridge
+  name     = "${var.ssm_prefix}/${each.key}/BRIDGE_TOKEN"
+  type     = "SecureString"
+  value    = each.value.result
+}
+
+# The Slack responder's reach: the IR hub and SABINE with the bridge tokens above,
+# and the control plane with its API token (the staff roster and client list).
+# The Slack tokens themselves (SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
 # SLACK_SIGNING_SECRET) and the channel ids are added by an operator in SSM under
 # <prefix>/slack/ once the Slack app exists; see modules/slack/README.md.
 resource "aws_ssm_parameter" "slack_directory" {
@@ -424,7 +441,7 @@ resource "aws_ssm_parameter" "slack_directory" {
   value = jsonencode({
     for k in local.slack_reach : k => {
       base_url   = local.service_url[k]
-      token      = random_password.api_token[k].result
+      token      = k == "platform" ? random_password.api_token[k].result : random_password.bridge[k].result
       public_url = local.public_url[k]
     }
   })
