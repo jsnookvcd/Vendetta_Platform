@@ -383,7 +383,7 @@ def build(db: Session, intent: Intent, user: str) -> dict:
                     target={"module": "incident-response", "path": "/api/oncall/page", "platform_client_id": cid, "client": client_name,
                             "link": link, "body": {"title": concierge.page_title(title), "body": body, "link": link,
                                                    "severity": f.get("severity"), "platform_client_id": cid, "client": client_name,
-                                                   "source_module": mod, "source_ref": ref}},
+                                                   "source_module": mod, "source_ref": f["id"]}},
                     confidence=0.9)
     if s.key == "suggest_suppression":
         sig = memory.signature(f.get("title") or "")
