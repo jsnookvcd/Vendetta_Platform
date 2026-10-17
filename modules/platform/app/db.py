@@ -20,6 +20,7 @@ import uuid
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -68,6 +69,16 @@ class Client(Base):
     executive_emails: Mapped[str] = mapped_column(String(1000), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Service tier and the relationship owner. The response commitments default
+    # from the tier (journey.TIER_DEFAULTS); a non-null column overrides the default
+    # for this client only.
+    tier: Mapped[str] = mapped_column(String(20), default="core")
+    account_lead: Mapped[str] = mapped_column(String(320), default="")
+    critical_ack_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    critical_contain_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The client portal on the control plane. Off until an operator turns it on;
+    # sign-in maps a user here by portal domain only while it is on.
+    portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     modules: Mapped[list[ClientModule]] = relationship(back_populates="client", cascade="all, delete-orphan")
     tools: Mapped[list[ClientTool]] = relationship(back_populates="client", cascade="all, delete-orphan")
@@ -77,6 +88,18 @@ class Client(Base):
 
     def tool_map(self) -> dict[str, str]:
         return {t.tool_key: t.tenancy for t in self.tools if t.enabled and t.tenancy}
+
+    def commitments(self) -> dict[str, int]:
+        from .journey import TIER_DEFAULTS
+
+        base = TIER_DEFAULTS.get(self.tier or "core", TIER_DEFAULTS["core"])
+        return {
+            "critical_ack_minutes": self.critical_ack_minutes or base["critical_ack_minutes"],
+            "critical_contain_minutes": self.critical_contain_minutes or base["critical_contain_minutes"],
+        }
+
+    def executive_set(self) -> set[str]:
+        return {e.strip().lower() for e in (self.executive_emails or "").split(",") if e.strip()}
 
 
 class Module(Base):
@@ -222,6 +245,55 @@ class SsoConfig(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class JourneyItem(Base):
+    """One step on a client's Security Journey: a proposed or agreed improvement,
+    who raised it (a person or SABINE), and where it stands. Only a person moves a
+    proposal to planned; automation may then report progress on it."""
+
+    __tablename__ = "journey_items"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    area: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20), default="proposed")
+    due_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="staff")
+    source_ref: Mapped[str] = mapped_column(String(300), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_by: Mapped[str] = mapped_column(String(320), default="")
+
+    __table_args__ = (Index("ix_journey_source_ref", "client_id", "source_ref", unique=True,
+                            postgresql_where=text("source_ref <> ''")),)
+
+
+class Communication(Base):
+    """A posture review or outreach note to a client. Drafted by SABINE or staff,
+    approved by one person (the account lead or a platform admin), then published
+    to the client portal and emailed to the client's executives."""
+
+    __tablename__ = "communications"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(30), default="outreach")
+    title: Mapped[str] = mapped_column(String(300))
+    subject: Mapped[str] = mapped_column(String(300), default="")
+    body_md: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    source: Mapped[str] = mapped_column(String(20), default="staff")
+    source_ref: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_by: Mapped[str] = mapped_column(String(320), default="")
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_detail: Mapped[str] = mapped_column(Text, default="")
+    published: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (Index("ix_communications_source_ref", "client_id", "source_ref", unique=True,
+                            postgresql_where=text("source_ref <> ''")),)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -260,6 +332,16 @@ def init_db() -> None:
         )).first()
         if not have:
             conn.execute(_text("ALTER TABLE modules ADD COLUMN public_url VARCHAR(300) DEFAULT ''"))
+        for col, ddl in (("tier", "VARCHAR(20) DEFAULT 'core'"),
+                         ("account_lead", "VARCHAR(320) DEFAULT ''"),
+                         ("critical_ack_minutes", "INTEGER"),
+                         ("critical_contain_minutes", "INTEGER"),
+                         ("portal_enabled", "BOOLEAN DEFAULT FALSE")):
+            have = conn.execute(_text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name = 'clients' AND column_name = :c"
+            ), {"c": col}).first()
+            if not have:
+                conn.execute(_text(f"ALTER TABLE clients ADD COLUMN {col} {ddl}"))
     from .registry import seed_registry
 
     from .directory import apply_env_directory

@@ -40,6 +40,12 @@ def configured() -> bool:
     return bool((settings.smtp_host or "").strip())
 
 
+def can_send() -> bool:
+    """True when a note would actually leave: SMTP is configured or a transport has
+    been installed. Approved client communications are emailed only then."""
+    return _sender is not None or configured()
+
+
 def from_address() -> str:
     """SMTP_FROM, shown as "SABINE at Vendetta Cyber <addr>". A bare address gets
     the display name; a full "Name <addr>" is kept as entered."""
@@ -94,14 +100,15 @@ def _smtp_send(to: str, subject: str, body: str) -> str:
 
 
 def send(to: str, subject: str, body: str) -> tuple[bool, str]:
-    """Deliver one note. Returns (sent, detail) and never raises."""
+    """Deliver one note (a welcome or an approved client communication). Returns
+    (sent, detail) and never raises."""
     try:
         if _sender is not None:
             return True, _sender(to, subject, body) or "sent"
         if not configured():
-            log.info("notify: SMTP_HOST unset; welcome note for %s logged only:\n%s", to, body)
+            log.info("notify: SMTP_HOST unset; note for %s logged only:\n%s", to, body)
             return False, "SMTP_HOST unset; logged only"
         return True, _smtp_send(to, subject, body)
     except Exception as e:  # noqa: BLE001
-        log.error("notify: welcome note to %s failed: %s", to, e)
+        log.error("notify: note to %s failed: %s", to, e)
         return False, f"failed: {type(e).__name__}: {str(e)[:200]}"
