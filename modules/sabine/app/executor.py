@@ -6,12 +6,13 @@ the skill's `executor` name in the catalog (skills.py).
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import metrics, narrative, perception, reach, skills
+from . import metrics, narrative, perception, reach, redact, skills
 from .db import Brief, Proposal, WorkItem, utcnow
 
 log = logging.getLogger(__name__)
@@ -61,12 +62,40 @@ def handoff(db: Session, p: Proposal) -> dict:
     return r
 
 
+def client_actions(db: Session, client: dict, days: int | None = None, exclude: tuple[str, ...] = ("client_brief", "daily_summary")) -> list[dict]:
+    """Every action carried out for one client inside the brief window, each with
+    the skill's title and a one-line rationale, redacted for the client's eyes."""
+    from .config import settings
+
+    pid, name = client.get("id", ""), client.get("name", "")
+    since = utcnow() - dt.timedelta(days=days or settings.client_brief_window_days)
+    rows = db.execute(select(Proposal).where(Proposal.status == "executed", Proposal.executed_at >= since)
+                      .order_by(Proposal.executed_at.desc())).scalars().all()
+    out = []
+    for p in rows:
+        if p.action in exclude:
+            continue
+        f, t = p.facts or {}, p.target or {}
+        mine = pid and pid in (f.get("platform_client_id"), t.get("platform_client_id"))
+        mine = mine or (name and name in (f.get("client"), t.get("client")))
+        if not mine:
+            continue
+        why = (p.rationale or "").strip().split(". ")[0].strip().rstrip(".")
+        if len(why) > 200:
+            why = why[:200].rsplit(" ", 1)[0] + " ..."
+        out.append({"at": p.executed_at.date().isoformat(), "what": skills.get(p.action).title,
+                    "why": (why + "." if why and not why.endswith("...") else why), "by": "a Vendetta responder" if p.decided_by else "SABINE"})
+    ctx = redact.client_context(db, client)
+    return redact.redact_actions(out, client, ctx)
+
+
 def client_brief(db: Session, p: Proposal) -> dict:
     pid = p.target.get("platform_client_id", "")
     client = next((c for c in perception.clients(db) if c["id"] == pid), {"name": p.target.get("client", ""), "id": pid})
     findings = [f for f in perception.findings(db) if (f.get("subject") or {}).get("platform_client_id") == pid]
     cases = [c for c in perception.cases(db) if (c.get("client") or {}).get("platform_client_id") == pid]
-    body, source = narrative.client_brief(client, findings, cases)
+    body, source = narrative.client_brief(client, findings, cases, client_actions(db, client))
+    body = redact.redact_for_client(body, client, redact.client_context(db, client))
     b = Brief(kind="client-brief", client=client.get("name", ""), platform_client_id=pid,
               title=f"{client.get('name', '')} brief, {utcnow().date().isoformat()}", body_md=body, source=source)
     db.add(b)

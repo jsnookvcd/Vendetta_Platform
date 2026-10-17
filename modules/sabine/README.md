@@ -121,6 +121,21 @@ closed without a person. `compute()` is a pure function over ledger rows;
 numbers show as a block on the Overview, a tile on the board, a sentence at the
 end of the daily summary, and at `GET /api/metrics`.
 
+## Why, for clients
+
+Every client brief ends with "What SABINE did on your account": each action
+carried out for that client inside `CLIENT_BRIEF_WINDOW_DAYS` (7), with the
+skill's title and the first sentence of its rationale, whether SABINE did it
+herself or a responder approved it. Briefs and the daily summary are not
+listed. Every line goes through `redact_for_client` (`app/redact.py`): other
+clients become "another client", Vendetta's people (roster names and first
+names, internal addresses, the leads named on cases and engagements) become
+"your Vendetta team", hostnames that are not the client's own become "[host]",
+console links become "[link]", and anything that looks like a token is cut.
+The whole brief body is scrubbed the same way on its way out, templated or
+written by the model, and the model is handed the redacted section as a fact it
+may not add to and no case lead at all.
+
 ## Voice
 
 To Vendetta's own people SABINE is a she: warm, confident, quick, with a dry wit,

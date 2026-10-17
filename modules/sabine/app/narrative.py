@@ -67,8 +67,11 @@ def _complete(prompt: str, max_tokens: int = 900, audience: str = "internal", sy
         return None
 
 
-def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple[str, str]:
-    """Returns (markdown, source)."""
+def client_brief(client: dict, findings: list[dict], cases: list[dict], actions: list[dict] | None = None) -> tuple[str, str]:
+    """Returns (markdown, source). `actions` is what SABINE did on the account in
+    the brief window, already redacted for the client; it is rendered as its own
+    section and handed to the model as a fact it may not add to."""
+    actions = actions or []
     name = client.get("name", "the client")
     today = dt.date.today().isoformat()
     by_sev: dict[str, int] = {}
@@ -80,11 +83,14 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple
                              "status": f.get("status"), "since": f.get("created_at")} for f in findings[:40]],
         "severity_counts": by_sev,
         "open_cases": [{"number": c.get("number"), "title": c.get("title"), "severity": c.get("severity"),
-                        "opened": c.get("opened_at"), "lead": c.get("lead")} for c in cases],
+                        "opened": c.get("opened_at")} for c in cases],
+        "what_sabine_did": [{"date": a.get("at"), "action": a.get("what"), "why": a.get("why"), "by": a.get("by")} for a in actions[:20]],
     }
     text = _complete(
         "Write a one-page posture brief for the client's leadership from these facts. Open with where they "
-        "stand in two sentences, then what is being handled, then what they should do this week. "
+        "stand in two sentences, then what is being handled, then what they should do this week, then a section "
+        "titled \"What SABINE did on your account\" listing each entry of what_sabine_did as one line with its date, the action "
+        "and the reason, exactly as given; if the list is empty say nothing was needed. Never name a person. "
         f"Facts (JSON): {facts}", audience="client")
     if text:
         return f"# {name}: security posture brief\n\n_{today}, prepared by SABINE_\n\n" + text, "llm"
@@ -97,7 +103,7 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple
     if cases:
         lines += ["", "## Being handled", ""]
         for c in cases:
-            lines.append(f"{c.get('number')}: {c.get('title')} ({c.get('severity')}), lead {c.get('lead') or 'Vendetta IR'}.")
+            lines.append(f"{c.get('number')}: {c.get('title')} ({c.get('severity')}), handled by Vendetta incident response.")
     top = sorted(findings, key=lambda f: -perception_rank(f.get("severity", "low")))[:8]
     if top:
         lines += ["", "## Open findings", ""]
@@ -106,6 +112,12 @@ def client_brief(client: dict, findings: list[dict], cases: list[dict]) -> tuple
     lines += ["", "## This week", "",
               "Your Vendetta account owner will walk through the items above and the remediation owed on each. "
               "Anything marked critical is being worked now."]
+    lines += ["", "## What SABINE did on your account", ""]
+    if actions:
+        for a in actions[:20]:
+            lines.append(f"{a.get('at')}: {a.get('what')}. {a.get('why')}".rstrip())
+    else:
+        lines.append("Nothing needed doing on your account this week beyond routine monitoring.")
     return "\n".join(lines), "rules"
 
 
