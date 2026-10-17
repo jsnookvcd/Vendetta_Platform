@@ -100,10 +100,13 @@ Verify the client's domain in HIBP (DNS TXT record or email) so the breached-dom
 ## Operations
 
 Logs: `docker compose logs -f worker` on the instance, or CloudWatch group /darkweb/containers.
+Collector health: Connectors page (/connectors). It lists every connector the worker schedules with whether it is configured (and the reason when it is not), its last run, last success, items collected in the last 24 hours and 7 days, the newest published date of its items and its last error. A live feed whose newest published item is older than 7 days is flagged stale. The worker heartbeat age and the latest Tor check sit at the top. Admins and analysts can press Run now, which queues the connector for the worker; the worker polls the queue every minute and the web container never runs a collector itself. The dashboard shows a red banner when the worker heartbeat is older than 5 minutes or Tor is not exiting through Tor, and an amber banner when a configured connector failed its last run or is stale. The same health is reported to the control plane readiness screen.
+Diagnose: inside the worker container, `python -m app.diagnose` prints the heartbeat, the Tor status, the Connectors table and a live probe of each upstream (HTTP status and byte count only; keys and cookies are never printed). Add `--no-probe` to read the database only. It exits 1 when the worker or Tor is down or a configured connector failed.
+Run history: every collector run is a row in collector_runs (job, start, finish, ok, new items, new hits, error) kept for 30 days. The worker also writes worker_state (heartbeat every minute, Tor check every 10 minutes).
 Source health: Sources page. Leak sites go down constantly; a mirror with ten failures and a last OK of three weeks ago is normal and will be retried.
 Backups: nightly pg_dump to the evidence bucket under backups/, plus daily EBS snapshots with seven retained.
 Updates: `git pull` then `scripts/deploy.sh`.
-Tor exit check: /research/torcheck.
+Tor exit check: the Connectors page shows the worker's latest check; /research/torcheck runs one from the web container.
 
 ## Operational security
 
@@ -118,7 +121,11 @@ Tor exit check: /research/torcheck.
 ```
 app/
   main.py          console and API
-  worker.py        scheduler
+  worker.py        scheduler, built from the connector registry; heartbeat, Tor check, Run now queue
+  connectors.py    connector registry: every collector, its interval, configured() check and status
+  health.py        worker heartbeat, Tor status and run retention
+  work_requests.py worker-polled request tables (run_requests now, reusable for later queues)
+  diagnose.py      python -m app.diagnose
   collectors/      leak_feeds, onion_crawl, forum_crawl, hibp, ct_logs, pastes, telegram
   profiles/        per-site YAML selector profiles (leak and forum), with examples
   matcher.py       watch term matching

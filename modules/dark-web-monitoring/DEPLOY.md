@@ -91,6 +91,13 @@ sudo docker compose exec worker python -c "from app.fetch import tor_check;print
 # expect IsTor: true and an exit IP
 ```
 
+Or run the full diagnosis, which also covers steps 3 and 4:
+```
+sudo docker compose exec worker python -m app.diagnose
+# heartbeat age under a minute, tor is_tor=True, a row per connector, and a status code and byte count per upstream
+```
+The same health is on the console's Connectors page and in the dashboard banner.
+
 3. Clearnet feeds populated the dashboard. The worker runs the feeds on boot; after a minute the dashboard shows victim posts and the onion source count is in the hundreds.
 
 4. One onion source actually crawls:
