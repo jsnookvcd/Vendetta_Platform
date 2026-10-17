@@ -102,6 +102,16 @@ class Settings(BaseSettings):
     provision_interval_seconds: int = 300
     platform_token: str = ""
 
+    # ------------------------------------------------------------ Phase 4: optional connectors
+    # Telegram session created once by scripts/telegram_login.py; the collector stays
+    # off until this file exists.
+    telegram_session_path: str = "/data/telegram.session"
+    # Paste collection is off by default: psbdmp.ws could not be verified as a
+    # working free API (see app/collectors/pastes.py). PASTE_SOURCE picks the
+    # implementation in pastes.SOURCES once a working one is available.
+    pastes_enabled: bool = False
+    paste_source: str = "psbdmp"
+
 
 settings = Settings()
 

@@ -1,8 +1,10 @@
 """Telegram public channel monitoring (optional). Ransomware affiliates, initial
-access brokers and combolist sellers advertise on public channels. Install
-telethon (pip install telethon) and set TELEGRAM_API_ID, TELEGRAM_API_HASH and
-TELEGRAM_CHANNELS (comma separated usernames). First run needs an interactive
-login to create the session file; do that with scripts/telegram_login.py."""
+access brokers and combolist sellers advertise on public channels. telethon is in
+requirements.txt. Set TELEGRAM_API_ID, TELEGRAM_API_HASH and TELEGRAM_CHANNELS
+(comma separated usernames). The first run needs an interactive login to create
+the session file at TELEGRAM_SESSION_PATH; do that once with
+scripts/telegram_login.py (see DEPLOY.md). Until the settings and the session file
+exist the Connectors page shows which one is missing and the job does not run."""
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +18,11 @@ from ..db import Source
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
-SESSION_PATH = "/data/telegram.session"
+SESSION_PATH = "/data/telegram.session"  # default; settings.telegram_session_path wins
+
+
+def session_path() -> str:
+    return settings.telegram_session_path or SESSION_PATH
 
 
 def _source(db: Session, channel: str) -> Source:
@@ -32,7 +38,7 @@ def _source(db: Session, channel: str) -> Source:
 async def _collect(db: Session) -> dict:
     from telethon import TelegramClient  # type: ignore
 
-    client = TelegramClient(SESSION_PATH, int(settings.telegram_api_id), settings.telegram_api_hash)
+    client = TelegramClient(session_path(), int(settings.telegram_api_id), settings.telegram_api_hash)
     await client.connect()
     if not await client.is_user_authorized():
         log.error("telegram session not authorized; run scripts/telegram_login.py")
@@ -81,4 +87,8 @@ def run(db: Session) -> dict:
     except ImportError:
         log.info("telethon not installed; telegram collector skipped")
         return {"ok": True, "skipped": "telethon not installed"}
+    import os
+
+    if not os.path.exists(session_path()):
+        return {"ok": False, "error": f"no Telegram session file at {session_path()}; run scripts/telegram_login.py"}
     return asyncio.run(_collect(db))
