@@ -22,7 +22,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import perception, policy, reach
+from . import perception, policy, reach, skills
 from .config import settings
 from .db import Proposal, WorkItem, utcnow
 
@@ -49,7 +49,9 @@ def _pending(db: Session, key: str) -> Proposal | None:
 def propose(db: Session, action: str, key: str, title: str, rationale: str, facts: dict, target: dict,
             confidence: float, domain: str | None = None, work_item: WorkItem | None = None) -> Proposal | None:
     """Raise a proposal unless an equivalent one is already pending or was executed
-    recently, or the action is switched off."""
+    recently, or the action is switched off. The action must be a skill in the
+    catalog; the proposal takes its domain and risk from there."""
+    skill = skills.get(action)
     level = policy.autonomy(db, action)
     if level == "off":
         return None
@@ -59,9 +61,8 @@ def propose(db: Session, action: str, key: str, title: str, rationale: str, fact
             return None
         if prior.status in ("pending", "approved"):
             return None
-    spec = policy.ACTIONS[action]
-    p = Proposal(key=key, action=action, domain=domain or spec["domain"], title=title[:400], rationale=rationale,
-                 facts=facts, target=target, confidence=max(0.0, min(1.0, confidence)), risk=spec["risk"],
+    p = Proposal(key=key, action=action, domain=domain or skill.domain, title=title[:400], rationale=rationale,
+                 facts=facts, target=target, confidence=max(0.0, min(1.0, confidence)), risk=skill.risk,
                  autonomy=level, work_item_id=work_item.id if work_item else None)
     db.add(p)
     db.flush()

@@ -21,7 +21,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, ledger, narrative, oidc, perception, policy, provision, reach, sso, voice
+from . import auth, boot, brain, ledger, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
 from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
@@ -228,7 +228,7 @@ def proposals_page(request: Request, status: str = Query("pending"), user: str =
     if status != "all":
         q = q.where(Proposal.status == status)
     rows = db.execute(q).scalars().all()
-    return render(request, "proposals.html", user=user, proposals=rows, status=status, actions=policy.ACTIONS)
+    return render(request, "proposals.html", user=user, proposals=rows, status=status, actions=skills.REGISTRY)
 
 
 @app.get("/proposals/{pid}", response_class=HTMLResponse)
@@ -236,7 +236,7 @@ def proposal_page(pid: str, request: Request, user: str = auth.RequireUser, db: 
     p = db.get(Proposal, pid)
     if not p:
         raise HTTPException(404)
-    return render(request, "proposal.html", user=user, prop=p, spec=policy.ACTIONS[p.action],
+    return render(request, "proposal.html", user=user, prop=p, spec=skills.get(p.action),
                   can_decide=_is_admin(request) or p.risk != "high")
 
 
@@ -255,7 +255,11 @@ def proposal_decide(pid: str, request: Request, approve: bool = Form(False), not
 
 @app.get("/policy", response_class=HTMLResponse)
 def policy_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    return render(request, "policy.html", user=user, rows=policy.table(db), is_admin=_is_admin(request),
+    """The skills catalog: every skill grouped by domain, with its autonomy level
+    and the last time it ran."""
+    rows = {r["key"]: r for r in policy.table(db)}
+    groups = [(label, [rows[s.key] for s in ss]) for _, label, ss in skills.by_domain()]
+    return render(request, "policy.html", user=user, groups=groups, is_admin=_is_admin(request),
                   levels=policy.AUTONOMY)
 
 
@@ -266,7 +270,7 @@ def policy_set(action: str, autonomy: str = Form(...), user: str = RequireAdmin,
     except ValueError as e:
         return _back("/policy", False, str(e))
     ledger.append(db, "decision", user, f"policy: {action} -> {autonomy}", {"action": action, "autonomy": autonomy})
-    return _back("/policy", True, f"{policy.ACTIONS[action]['label']}: {autonomy}.")
+    return _back("/policy", True, f"{skills.get(action).title}: {autonomy}.")
 
 
 @app.get("/briefs", response_class=HTMLResponse)
@@ -524,6 +528,11 @@ def api_briefs(kind: str = Query(""), user: str = Depends(auth.api_user), db: Se
              "created_at": b.created_at.isoformat(), "body_md": b.body_md} for b in db.execute(q).scalars().all()]
 
 
+@app.get("/api/skills")
+def api_skills(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    return policy.catalog(db)
+
+
 @app.get("/api/ledger/verify")
 def api_ledger_verify(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     return ledger.verify(db)
@@ -534,7 +543,7 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
     return {
         "module": "sabine", "display_name": "SABINE", "platform": "Vendetta Platform", "role": "agent",
         "enabled": settings.module_enabled, "public_url": settings.public_url,
-        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/ledger/verify", "/api/module"],
+        "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/ledger/verify", "/api/module"],
         "readiness": readiness_mod.block(),
         "stats": brain.stats(db),
     }

@@ -49,7 +49,7 @@ def cycle(db: Session) -> dict:
                 if p.autonomy == "auto":
                     res = executor.execute(db, p)
                     ledger.append(db, "action", settings.actor_name, f"{p.action} {'done' if res.get('ok') else 'failed'}: {p.title}",
-                                  {"result": res, "autonomy": "auto"}, ref=p.id)
+                                  {"result": res, "autonomy": "auto", "action": p.action}, ref=p.id)
                     executed += 1
             summary = {"seen": seen, "queue": queue, "proposed": len(proposals), "executed": executed,
                        "duration_s": round((utcnow() - started).total_seconds(), 1)}
@@ -83,7 +83,7 @@ def decide(db: Session, p: Proposal, actor: str, approve: bool, note: str = "") 
     ledger.append(db, "decision", actor, f"approved: {p.title}", {"note": note}, ref=p.id)
     res = executor.execute(db, p)
     ledger.append(db, "action", settings.actor_name, f"{p.action} {'done' if res.get('ok') else 'failed'}: {p.title}",
-                  {"result": res, "autonomy": "approved", "by": actor}, ref=p.id)
+                  {"result": res, "autonomy": "approved", "by": actor, "action": p.action}, ref=p.id)
     return res
 
 

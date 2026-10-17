@@ -1,131 +1,52 @@
 """What SABINE is allowed to do on its own.
 
-Every action SABINE can take is registered here with a risk tier and a default
-autonomy level. An admin sets the level per action in the console:
+Every skill in the catalog (skills.py) carries a risk tier and a default autonomy
+level. An admin sets the level per skill in the console:
 
 - off: SABINE never raises this action.
 - propose: SABINE writes the proposal and waits for a person to approve it.
 - auto: SABINE carries it out as soon as the rule fires, and records that it did.
 
-Hard limits that no setting changes: an action with risk "high" can never be set
-to auto, and anything that touches a client host (isolate, contain, quarantine) is
+Hard limits that no setting changes: a skill with risk "high" can never be set to
+auto, and anything that touches a client host (isolate, contain, quarantine) is
 not an action SABINE can take at all. For those it raises a proposal whose
 execution is a deep link into the module, where a person with the right grant
 clicks, with the second-person control that module enforces.
 """
 from __future__ import annotations
 
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
+
+from . import skills
 
 AUTONOMY = ("off", "propose", "auto")
 
-# action -> dict(label, domain, risk, default, description, executor)
-ACTIONS = {
-    "escalate_finding": {
-        "label": "Escalate a finding into an IR case",
-        "domain": "soc", "risk": "medium", "default": "propose",
-        "description": "A critical or high finding left unescalated beyond the threshold is escalated to the IR hub through the module's own API, opening or linking a case.",
-        "executor": "escalate_finding",
-    },
-    "copilot_false_positive": {
-        "label": "Queue a finding the triage copilot calls a false positive for confirmation",
-        "domain": "soc", "risk": "low", "default": "auto",
-        "description": "When a module's triage copilot proposes false positive at high confidence and no case exists, SABINE does not escalate; it raises a low-severity work item so a responder confirms and closes it in the module, under that module's second-approver rule.",
-        "executor": "raise_work_item",
-    },
-    "link_related_findings": {
-        "label": "Note related findings across modules for one client",
-        "domain": "soc", "risk": "low", "default": "auto",
-        "description": "When one client has active findings in more than one module that share a host, credential or title, a correlation note is raised as a work item so the responder sees the whole story.",
-        "executor": "raise_work_item",
-    },
-    "host_action": {
-        "label": "Recommend a response action on a host (isolate, contain, quarantine)",
-        "domain": "soc", "risk": "high", "default": "propose",
-        "description": "SABINE never touches a host. It recommends the action with its reasoning and links the responder to the module page where the action is taken, under that module's approval rules.",
-        "executor": "handoff",
-    },
-    "roster_sync": {
-        "label": "Re-sync a module whose roster pull is failing",
-        "domain": "admin", "risk": "low", "default": "auto",
-        "description": "When a module reports a failed roster pull, SABINE asks it to pull again; if it still fails the item stays in the queue for an operator.",
-        "executor": "roster_sync",
-    },
-    "readiness_remediation": {
-        "label": "Raise a blocking readiness item as work with the fix spelled out",
-        "domain": "admin", "risk": "low", "default": "auto",
-        "description": "A red item on the go-live screen becomes a work item with the exact parameter or page to fix, assigned to the admin domain.",
-        "executor": "raise_work_item",
-    },
-    "staff_hygiene": {
-        "label": "Flag staff access that looks wrong",
-        "domain": "admin", "risk": "low", "default": "auto",
-        "description": "An active person with no module grants, a module with nobody granted, or more than a handful of admins is raised for review.",
-        "executor": "raise_work_item",
-    },
-    "stale_case_nudge": {
-        "label": "Nudge an IR case that has gone quiet",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "An open case with no timeline update past the threshold is raised to its lead with what is outstanding.",
-        "executor": "raise_work_item",
-    },
-    "retest_due": {
-        "label": "Queue a pentest retest that is waiting",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "Findings in retest_pending are queued to the engagement owner.",
-        "executor": "raise_work_item",
-    },
-    "remediation_overdue": {
-        "label": "Flag a vulnerability past its remediation SLA",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "A finding still remediating past the SLA for its severity is raised, grouped by client, with a draft client note.",
-        "executor": "raise_work_item",
-    },
-    "deliverable_acceptance_nudge": {
-        "label": "Nudge a deliverable the client has not accepted",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "A deliverable delivered in the Office of Special Projects and not accepted on the portal within the window is queued to the engagement lead with a note; nothing is sent to the client.",
-        "executor": "raise_work_item",
-    },
-    "engagement_overdue": {
-        "label": "Flag a professional-services engagement past its planned end",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "An engagement still open past its planned end date is raised to its lead with what is still outstanding.",
-        "executor": "raise_work_item",
-    },
-    "client_brief": {
-        "label": "Write a client brief",
-        "domain": "services", "risk": "low", "default": "auto",
-        "description": "A short posture brief per client from live data across every module, kept under Briefs for a person to send.",
-        "executor": "client_brief",
-    },
-    "daily_summary": {
-        "label": "Write the daily summary",
-        "domain": "admin", "risk": "low", "default": "auto",
-        "description": "What SABINE saw, proposed and did in the last day, for the morning stand-up.",
-        "executor": "daily_summary",
-    },
-}
+# The catalog, in the shape older callers read: action -> dict(label, domain, risk,
+# default, description, executor). skills.REGISTRY is the source.
+ACTIONS = {s.key: {"label": s.title, "domain": s.domain, "risk": s.risk, "default": s.default,
+                   "description": s.description, "executor": s.executor} for s in skills.REGISTRY.values()}
 
-RISK_RANK = {"low": 0, "medium": 1, "high": 2}
+RISK_RANK = skills.RISK_RANK
 
 
 def seed_policies(db: Session) -> None:
     from .db import Policy
 
-    for action, spec in ACTIONS.items():
-        if not db.get(Policy, action):
-            db.add(Policy(action=action, autonomy=spec["default"]))
+    for s in skills.REGISTRY.values():
+        if not db.get(Policy, s.key):
+            db.add(Policy(action=s.key, autonomy=s.default))
     db.commit()
 
 
 def autonomy(db: Session, action: str) -> str:
     from .db import Policy
 
+    s = skills.get(action)
     row = db.get(Policy, action)
-    level = row.autonomy if row else ACTIONS[action]["default"]
-    # Hard ceiling: high-risk actions are never automatic.
-    if ACTIONS[action]["risk"] == "high" and level == "auto":
+    level = row.autonomy if row else s.default
+    # Hard ceiling: high-risk skills are never automatic.
+    if s.risk == "high" and level == "auto":
         return "propose"
     return level
 
@@ -133,9 +54,9 @@ def autonomy(db: Session, action: str) -> str:
 def set_autonomy(db: Session, action: str, level: str, actor: str) -> str:
     from .db import Policy, utcnow
 
-    if action not in ACTIONS or level not in AUTONOMY:
+    if action not in skills.REGISTRY or level not in AUTONOMY:
         raise ValueError("bad action or level")
-    if ACTIONS[action]["risk"] == "high" and level == "auto":
+    if skills.get(action).risk == "high" and level == "auto":
         raise ValueError("a high-risk action cannot be automatic")
     row = db.get(Policy, action)
     if row is None:
@@ -146,12 +67,50 @@ def set_autonomy(db: Session, action: str, level: str, actor: str) -> str:
     return level
 
 
+def last_runs(db: Session) -> dict[str, dict]:
+    """When each skill was last carried out, from the ledger's action rows:
+    {key: {at, ok, by}}. Action rows are summarised "<key> done: ..." or
+    "<key> failed: ..." and carry the proposal's autonomy in their detail."""
+    from .db import Ledger
+
+    out: dict[str, dict] = {}
+    rows = db.execute(select(Ledger).where(Ledger.kind == "action").order_by(desc(Ledger.chain_seq)).limit(2000)).scalars().all()
+    for r in rows:
+        key = (r.detail or {}).get("action") or r.summary.split(" ", 1)[0]
+        if key in out or key not in skills.REGISTRY:
+            continue
+        out[key] = {"at": r.at, "ok": r.summary.split(":", 1)[0].endswith(" done"),
+                    "by": (r.detail or {}).get("by") or ((r.detail or {}).get("autonomy") or "")}
+        if len(out) == len(skills.REGISTRY):
+            break
+    return out
+
+
 def table(db: Session) -> list[dict]:
+    """The catalog with the live autonomy level and the last run per skill."""
     from .db import Policy
 
+    runs = last_runs(db)
     out = []
-    for action, spec in ACTIONS.items():
-        row = db.get(Policy, action)
-        out.append({"action": action, **spec, "autonomy": row.autonomy if row else spec["default"],
-                    "updated_by": row.updated_by if row else "", "can_auto": spec["risk"] != "high"})
+    for s in skills.REGISTRY.values():
+        row = db.get(Policy, s.key)
+        last = runs.get(s.key)
+        out.append({"action": s.key, **ACTIONS[s.key], **s.as_dict(),
+                    "autonomy": row.autonomy if row else s.default,
+                    "updated_by": row.updated_by if row else "",
+                    "last_run": last["at"] if last else None,
+                    "last_run_ok": last["ok"] if last else None,
+                    "last_run_by": last["by"] if last else ""})
     return out
+
+
+def catalog(db: Session) -> dict:
+    """GET /api/skills: the catalog grouped by domain."""
+    rows = {r["key"]: r for r in table(db)}
+    groups = []
+    for d, label, ss in skills.by_domain():
+        groups.append({"domain": d, "label": label, "skills": [
+            {**rows[s.key], "last_run": rows[s.key]["last_run"].isoformat() if rows[s.key]["last_run"] else None}
+            for s in ss]})
+    return {"domains": groups, "levels": list(AUTONOMY),
+            "limits": ["a high-risk skill is never automatic", "SABINE never touches a client host"]}

@@ -50,10 +50,24 @@ Special Projects engagement still open past its planned end, both to the
 engagement lead with nothing sent to the client; write a posture brief per client
 with active work; write the daily summary.
 
+## Skills
+
+Everything SABINE can do is a skill in `app/skills.py`, declared once: key, title,
+one-line description, domain (SOC, administration, professional services), the
+module it acts through, risk tier, the inputs it needs (a finding id, a client, a
+person, a module), whether it can be asked for in words on the Ask page, and
+whether its effect is reversible. The reasoner can only propose skills in the
+registry, the executor dispatches by the skill's executor name, and the policy
+table takes risk and default autonomy from it, so no other file carries its own
+list of action strings. `GET /api/skills` serves the catalog with the live
+autonomy level and the last run per skill.
+
 ## Autonomy
 
-The Autonomy page sets each action to `off`, `propose` or `auto`. A high-risk
-action can never be `auto`. Defaults: escalation and host actions propose;
+The Autonomy page is the catalog, grouped by domain. Each skill shows its
+description, the module it acts through, risk, whether it is reversible, when it
+last ran (from the ledger) and its level: `off`, `propose` or `auto`. A high-risk
+skill can never be `auto`. Defaults: escalation and host actions propose;
 everything else (notes, nudges, re-syncs, briefs) is automatic.
 
 ## Narrative

@@ -3,7 +3,7 @@
 <div style="display:grid; grid-template-columns: 3fr 2fr; gap:16px; align-items:start">
 <div>
   <div class="panel pad" style="margin-bottom:16px">
-    <div class="row" style="gap:6px; flex-wrap:wrap"><span class="chip">{{ spec.label }}</span><span class="chip">{{ prop.domain }}</span><span class="chip">{{ prop.risk }} risk</span><span class="chip">autonomy {{ prop.autonomy }}</span><span class="chip">{{ (prop.confidence*100)|int }}% confidence</span><span class="stchip st-{{ prop.status }}">{{ prop.status }}</span></div>
+    <div class="row" style="gap:6px; flex-wrap:wrap"><span class="chip">{{ spec.title }}</span><span class="chip">{{ prop.domain }}</span><span class="chip">{{ prop.risk }} risk</span><span class="chip">autonomy {{ prop.autonomy }}</span><span class="chip">{{ (prop.confidence*100)|int }}% confidence</span><span class="stchip st-{{ prop.status }}">{{ prop.status }}</span></div>
     <h3 style="margin:12px 0 6px">Why</h3>
     <p style="margin:0; white-space:pre-wrap">{{ prop.rationale }}</p>
     <p class="faint" style="font-size:12px; margin:10px 0 0">Raised {{ prop.created_at.strftime('%b %d, %Y %H:%M') }} by SABINE. {{ spec.description }}</p>

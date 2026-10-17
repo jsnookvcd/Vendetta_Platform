@@ -1,7 +1,8 @@
 """Execution: carrying out an approved proposal, and only through a module's own
 service API. Each executor returns a result dict; the brain records the outcome
 in the ledger and on the proposal. A failure never raises; it marks the proposal
-failed with the reason so a person can see it.
+failed with the reason so a person can see it. Which executor a proposal uses is
+the skill's `executor` name in the catalog (skills.py).
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import narrative, perception, reach
+from . import narrative, perception, reach, skills
 from .db import Brief, Proposal, WorkItem, utcnow
 
 log = logging.getLogger(__name__)
@@ -99,9 +100,7 @@ EXECUTORS = {
 
 
 def execute(db: Session, p: Proposal) -> dict:
-    from .policy import ACTIONS
-
-    fn = EXECUTORS[ACTIONS[p.action]["executor"]]
+    fn = EXECUTORS[skills.get(p.action).executor]
     try:
         res = fn(db, p)
     except Exception as e:  # noqa: BLE001
