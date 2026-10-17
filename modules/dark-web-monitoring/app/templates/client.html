@@ -11,7 +11,7 @@
   <a class="btn btn-sm btn-primary" href="/clients/{{ client.id }}/report.pdf?days=30">Download exposure report</a>
   <a class="btn btn-sm btn-ghost" href="/clients/{{ client.id }}/report?days=30" target="_blank">Preview report</a>
   <form class="inline" method="post" action="/clients/{{ client.id }}/toggle"><button class="btn btn-sm">{{ 'Pause monitoring' if client.active else 'Resume monitoring' }}</button></form>
-  <form class="inline" method="post" action="/clients/{{ client.id }}/backfill"><input type="hidden" name="days" value="365"><button class="btn btn-sm btn-ghost">Backfill 365 days</button></form>
+  <form class="inline" method="post" action="/clients/{{ client.id }}/backfill"><input type="hidden" name="days" value="365"><button class="btn btn-sm btn-ghost" title="Queued for the collector worker; the result appears under Watch terms">Backfill 365 days</button></form>
   <form class="inline" method="post" action="/clients/{{ client.id }}/case-ref" title="Escalations from this client link to this IR case while it is open">
     <input name="case_ref" value="{{ client.case_ref }}" placeholder="IR case, e.g. VCD-IR-2026-781" aria-label="IR case reference" style="width:220px"><button class="btn btn-sm btn-ghost">Set case ref</button>
   </form>
@@ -56,13 +56,28 @@
 </div>
 {% if client.terms %}
 <div class="panel" style="margin-top:12px"><div class="table-wrap">
-<table><thead><tr><th>Term</th><th>Kind</th><th>Severity</th><th></th></tr></thead><tbody>
+<table><thead><tr><th>Term</th><th>Kind</th><th>Severity</th><th>Source</th><th></th></tr></thead><tbody>
 {% for t in client.terms %}<tr>
   <td class="mono">{{ t.term }}</td><td>{{ t.kind }}</td><td><span class="sev sev-{{ t.severity }}">{{ t.severity }}</span></td>
+  <td><span class="chip" title="{{ 'Added by provisioning from the client name and domains' if t.source == 'auto' else 'Added by an analyst' }}">{{ t.source or 'analyst' }}</span>{% if not t.enabled %} <span class="faint">disabled</span>{% endif %}</td>
   <td style="text-align:right"><form class="inline" method="post" action="/clients/{{ client.id }}/terms/{{ t.id }}/delete"><button class="btn btn-sm btn-ghost">Remove</button></form></td>
 </tr>{% endfor %}
 </tbody></table>
 </div></div>
+{% endif %}
+
+{# Phase 4: backfill status and removed auto terms #}
+{% if coverage is defined %}
+<div class="panel pad" style="margin-top:12px">
+  {% set bq = coverage.queued %}{% set bl = coverage.last %}
+  {% if bq %}<p class="page-intro" style="margin:0">A backfill over the last {{ bq.payload.days }} days is {{ 'running' if bq.status == 'running' else 'queued for the collector worker' }}{% if bq.payload.reason %} ({{ bq.payload.reason }}){% endif %}.</p>{% endif %}
+  {% if bl %}
+  <p class="page-intro" style="margin:{{ '6px' if bq else '0' }} 0 0">Last backfill {{ bl.finished_at.strftime('%Y-%m-%d %H:%M') if bl.finished_at else '' }} UTC{% if bl.payload.reason %} ({{ bl.payload.reason }}){% endif %}:
+    {% if bl.status == 'done' %}{% if bl.result.skipped %}skipped, {{ bl.result.skipped }}.{% else %}scanned {{ bl.result.items_scanned }} items from the last {{ bl.result.days }} days against {{ bl.result.terms }} terms and created {{ bl.result.hits_new }} new hits.{% endif %}
+    {% else %}<span class="bad-txt">failed: {{ bl.error }}</span>{% endif %}</p>
+  {% elif not bq %}<p class="page-intro" style="margin:0">No backfill has run for this client. New terms queue one automatically.</p>{% endif %}
+  {% if coverage.tombstones %}<p class="page-intro" style="margin:6px 0 0">Removed auto terms that provisioning will not add again: {% for tb in coverage.tombstones %}<span class="mono">{{ tb.term }}</span> ({{ tb.kind }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+</div>
 {% endif %}
 
 <div class="section-head"><h2>Hits</h2><span class="count">{{ hits|length }}</span></div>

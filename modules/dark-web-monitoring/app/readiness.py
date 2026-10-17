@@ -82,7 +82,35 @@ def integrations() -> dict:
         }
         for r in summary["connectors"]
     }
+    out.update(watch_term_coverage())
     return out
+
+
+# ---------------------------------------------------------------- Phase 4: watch term coverage
+def watch_term_coverage() -> dict:
+    """An active client with zero enabled watch terms can never produce a term hit.
+    Adds `watch_terms` (counts and the clients concerned) and a `warnings` list."""
+    try:
+        from . import watchterms
+        from .db import Client, SessionLocal
+        db = SessionLocal()
+        try:
+            active = db.query(Client).filter(Client.active.is_(True)).count()
+            bare = watchterms.clients_without_terms(db)
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001
+        return {"watch_terms": {"ok": None, "error": f"unavailable: {type(e).__name__}"}}
+    names = [c.name for c in bare]
+    warnings = []
+    if names:
+        warnings.append(f"{len(names)} active client(s) have no enabled watch terms and cannot produce hits: "
+                        + ", ".join(names[:10]) + (" and others" if len(names) > 10 else ""))
+    return {
+        "watch_terms": {"ok": not names, "active_clients": active, "clients_without_terms": len(names),
+                        "clients": [{"id": c.id, "name": c.name} for c in bare[:50]]},
+        "warnings": warnings,
+    }
 
 
 def health_stale_after() -> int:

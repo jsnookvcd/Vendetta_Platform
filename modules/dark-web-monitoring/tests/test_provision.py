@@ -48,7 +48,9 @@ def test_pull_preserves_onboarding_data(fresh_db, monkeypatch):
     assert c2.id == c.id                       # adopted by name
     assert c2.case_ref == "VCD-IR-2026-781"    # IR ref untouched
     assert c2.industry == "bank" and c2.country == "USA" and c2.revenue_min_musd == 200  # profile untouched
-    assert db.query(WatchTerm).filter_by(client_id=c.id).count() == 1  # watch terms kept
+    # The analyst's term is kept as it was; starter terms (Phase 4) are added beside it.
+    kept = db.query(WatchTerm).filter_by(client_id=c.id, term="riverbendcu.org", kind="domain").one()
+    assert kept.severity == "high" and kept.source == "analyst"
     assert c2.portal_domains == "riverbendcu.org"  # platform-owned field updated
 
 

@@ -84,6 +84,9 @@ class WatchTerm(Base):
     severity: Mapped[str] = mapped_column(String(10), default="medium")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # auto: added by provisioning from the client's name and domains (app/watchterms.py).
+    # analyst: added by a person. Provisioning never alters or deletes analyst terms.
+    source: Mapped[str] = mapped_column(String(10), default="analyst")
 
     client: Mapped[Client] = relationship(back_populates="terms")
 
@@ -312,6 +315,8 @@ def init_db() -> None:
             "GENERATED ALWAYS AS (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(body,''))) STORED"
         ))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_items_search ON items USING GIN (search_vec)"))
+    # Phase 4: watch term source column.
+    _phase4_migrations()
 
 
 # ---------------------------------------------------------------- Phase 2: captures and priority groups
@@ -384,3 +389,33 @@ class ParserProfile(Base):
     broken_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str] = mapped_column(String(320), default="")
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+# ---------------------------------------------------------------- Phase 4: watch term coverage
+class AutoTermTombstone(Base):
+    """An auto watch term an analyst removed. Provisioning checks this table and
+    never re-adds the same term and kind for that client."""
+
+    __tablename__ = "auto_term_tombstones"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    term: Mapped[str] = mapped_column(String(300))  # stored lowercased
+    kind: Mapped[str] = mapped_column(String(20))
+    deleted_by: Mapped[str] = mapped_column(String(320), default="")
+    deleted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_auto_term_tombstones_key", "client_id", "kind", "term", unique=True),)
+
+
+class BackfillRequest(WorkerRequestMixin, Base):
+    """Re-match collected items against a client's terms, drained by the worker.
+    payload: {"client_id", "days", "term_ids" (null means every enabled term),
+    "include_iab", "reason"}. result: items scanned and hits created."""
+
+    __tablename__ = "backfill_requests"
+
+
+def _phase4_migrations() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE watch_terms ADD COLUMN IF NOT EXISTS source VARCHAR(10) DEFAULT 'analyst'"))

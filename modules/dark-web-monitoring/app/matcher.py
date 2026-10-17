@@ -67,11 +67,15 @@ def _match_cidr(term: WatchTerm, text: str) -> str | None:
     return None
 
 
-def match_item(db: Session, item: Item) -> list[Hit]:
+def match_item(db: Session, item: Item, terms: list[WatchTerm] | None = None) -> list[Hit]:
+    """Match one item. `terms` limits matching to those rows (a backfill for one
+    client or for newly added terms); by default every enabled term of every
+    active client is used."""
     text = f"{item.title}\n{item.body}\n{item.url}"
-    terms = db.execute(
-        select(WatchTerm).join(Client).where(WatchTerm.enabled.is_(True), Client.active.is_(True))
-    ).scalars().all()
+    if terms is None:
+        terms = db.execute(
+            select(WatchTerm).join(Client).where(WatchTerm.enabled.is_(True), Client.active.is_(True))
+        ).scalars().all()
     created: list[Hit] = []
     for term in terms:
         matched: str | None = None

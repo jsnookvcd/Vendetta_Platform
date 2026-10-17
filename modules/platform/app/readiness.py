@@ -157,7 +157,21 @@ def _collection_checks(integ: dict) -> list[dict]:
         checks.append(_chk("Collectors", "ok", f"{len(on)} configured connector(s) healthy{tail}"))
     else:
         checks.append(_chk("Collectors", "warn", "no connector is configured"))
+    checks += _watch_term_checks(integ)
     return checks
+
+
+def _watch_term_checks(integ: dict) -> list[dict]:
+    """Dark web watch term coverage: an active client with no enabled terms cannot
+    produce a hit. Older modules do not report it and get no check."""
+    wt = integ.get("watch_terms") or {}
+    if wt.get("ok") is True:
+        return [_chk("Watch terms", "ok", f"every active client has terms ({wt.get('active_clients', 0)})")]
+    if wt.get("ok") is False:
+        names = ", ".join(c.get("name", "?") for c in (wt.get("clients") or [])[:5])
+        return [_chk("Watch terms", "warn",
+                     f"{wt.get('clients_without_terms', 0)} active client(s) without terms: {names}")]
+    return []
 
 
 def _control_plane_checks(modules, ov) -> list[dict]:

@@ -114,6 +114,8 @@ def _check_onion(db: Session) -> tuple[bool, str]:
 
 
 def _check_forum(db: Session) -> tuple[bool, str]:
+    """On only when a forum-kind profile exists (files starting with _ are examples)
+    and an enabled forum Source references it. See the README forum guide."""
     forum_profiles = {k for k, v in profiles.all_profiles().items()
                       if v.get("kind") == "forum" and not k.startswith("_")}
     if not forum_profiles:
@@ -121,7 +123,8 @@ def _check_forum(db: Session) -> tuple[bool, str]:
     srcs = db.execute(select(Source.profile).where(Source.kind == "forum", Source.enabled.is_(True))).scalars().all()
     usable = [p for p in srcs if p in forum_profiles]
     if not usable:
-        return False, "no enabled forum source uses a forum profile"
+        return False, ("no forum profiles configured on a source: add an enabled forum Source that uses one of "
+                       + ", ".join(sorted(forum_profiles)))
     return True, f"{len(usable)} forum sources"
 
 
@@ -140,9 +143,12 @@ def _check_ct(db: Session) -> tuple[bool, str]:
 
 
 def _check_pastes(db: Session) -> tuple[bool, str]:
+    ok, reason = pastes.configured_reason()
+    if not ok:
+        return False, reason
     if not _term_count(db, ("domain", "email_domain", "brand", "keyword")):
         return False, "no domain, email_domain, brand or keyword watch terms"
-    return True, "psbdmp.ws availability is unverified"
+    return True, reason
 
 
 def _check_telegram(db: Session) -> tuple[bool, str]:
@@ -153,8 +159,8 @@ def _check_telegram(db: Session) -> tuple[bool, str]:
         return False, "needs " + ", ".join(missing)
     if importlib.util.find_spec("telethon") is None:
         return False, "telethon is not installed"
-    if not os.path.exists(telegram.SESSION_PATH):
-        return False, "no Telegram session file; run scripts/telegram_login.py"
+    if not os.path.exists(telegram.session_path()):
+        return False, f"missing Telegram session file at {telegram.session_path()}; run scripts/telegram_login.py"
     return True, ""
 
 

@@ -48,6 +48,12 @@ aws ssm put-parameter --name /darkweb/HIBP_API_KEY        --type SecureString --
 aws ssm put-parameter --name /darkweb/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
 aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL   --type SecureString --value '<url>'
 aws ssm put-parameter --name /darkweb/COOKIE_SECURE       --type String --value 'false'
+
+# Optional connectors. Each stays off, with its reason on the Connectors page, until set.
+aws ssm put-parameter --name /darkweb/TELEGRAM_API_ID     --type SecureString --value '<id from my.telegram.org>'
+aws ssm put-parameter --name /darkweb/TELEGRAM_API_HASH   --type SecureString --value '<hash from my.telegram.org>'
+aws ssm put-parameter --name /darkweb/TELEGRAM_CHANNELS   --type String --value 'channel1,channel2'
+aws ssm put-parameter --name /darkweb/PASTES_ENABLED      --type String --value 'false'
 ```
 
 RANSOMWARE_LIVE_API_KEY is required for the live victim feed. Request the free PRO key at https://my.ransomware.live. Without it the ransomware.live connector shows "not configured: needs a free PRO key from my.ransomware.live", onion seeding is skipped and the module never calls the public v2 tier. On the shared platform host (infra/redeploy.sh, SSM_PREFIX=/vendetta) the parameter is `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY`:
@@ -57,6 +63,8 @@ aws ssm put-parameter --name /vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_K
 ```
 
 Optional tuning, all with working defaults: ONION_CRAWL_BUDGET_MINUTES (45, the wall-clock cap on one onion sweep), ONION_SEED_GROUP_LIMIT (40 group detail calls per daily seed), ONION_INACTIVE_DAYS (180), ONION_MAX_CONSECUTIVE_FAILURES (10), CAPTURE_INTERVAL (5 minutes) and PRIORITY_GROUP_COUNT (25).
+
+HIBP_API_KEY turns on the HIBP connector; without it the Connectors page reads "needs HIBP_API_KEY". PASTES_ENABLED stays false until psbdmp has been probed from the host (see "Optional connectors" in README.md). TELEGRAM_SESSION_PATH and PASTE_SOURCE are optional and default to /data/telegram.session and psbdmp.
 
 SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.
 
@@ -129,7 +137,19 @@ Then browse to http://localhost:8000 and sign in as admin with the password you 
 
 ## 6. Onboard the first client
 
-Add the client, set the business profile (industry, country, state, revenue and size bands) for IAB matching, add watch terms (primary domain, email domain, brand, executive names), and for an IR matter click Backfill to check the last year of collected data. Verify the client's domain in HIBP so the breach and stealer queries return data.
+A client pulled from the control plane arrives with starter watch terms (its portal domains and its name, marked auto) and a backfill over the last 365 days queued for the worker. Set the business profile (industry, country, state, revenue and size bands) for IAB matching, review the auto terms and add executive names. A client added by hand needs its terms added; adding them queues the backfill. The client page shows the last backfill result, and the platform readiness screen warns while any active client has no enabled watch terms. Verify the client's domain in HIBP so the breach and stealer queries return data.
+
+## 6a. Telegram login (optional, once)
+
+The Telegram collector reads public channels through a real Telegram account. Use a dedicated number and device. With TELEGRAM_API_ID, TELEGRAM_API_HASH and TELEGRAM_CHANNELS in SSM and rendered into .env:
+
+```
+cd /opt/vendetta_platform/modules/dark-web-monitoring
+sudo bash scripts/render_env.sh
+sudo docker compose -p vcd-dark-web-monitoring run --rm worker python scripts/telegram_login.py
+```
+
+The script asks for the phone number, the login code Telegram sends and the account's two-step password if one is set, then prints "authorized as <name> session saved to /data/telegram.session". The session file lands on the shared /data volume, so the web container sees it and the Connectors page changes from "missing Telegram session file" to configured; the worker picks the connector up on its next 15 minute interval, or press Run now. Treat the session file as a credential: anyone holding it can act as the account. To revoke it, end the session from the Telegram app (Settings, Devices) and delete the file.
 
 ## 7. Platform wiring (when the hub is ready)
 

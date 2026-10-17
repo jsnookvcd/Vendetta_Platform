@@ -440,6 +440,25 @@ on the host and in the module as follows.
    The first crawl runs one interval after the worker starts, so either wait for it
    or confirm a single source by fetching its URL on the Research page as in step 4.
 
+### Dark web module: optional connectors
+
+Each optional connector stays off until its settings exist, and the module's
+Connectors page shows why. Put the values in SSM under
+`/vendetta/dark-web-monitoring/` and run `infra/redeploy.sh dark-web-monitoring`:
+
+- `HIBP_API_KEY` (SecureString) turns on Have I Been Pwned breach and stealer log
+  queries; without it the page reads "needs HIBP_API_KEY".
+- `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` (SecureString) and `TELEGRAM_CHANNELS`
+  enable Telegram; it also needs the one-time login in the module's DEPLOY.md
+  ("Telegram login") to create the session file.
+- `PASTES_ENABLED` stays `false` until psbdmp has been probed from the host with
+  `python -m app.diagnose` in the worker (see the module README, "Optional
+  connectors").
+
+Provisioned clients get starter watch terms from their name and portal domains,
+and the readiness screen shows a "Watch terms" warning while any active dark web
+client has no enabled terms.
+
 ## Rollback
 
 - A bad tool integration: disconnect it on the Integrations page (or clear its SSM

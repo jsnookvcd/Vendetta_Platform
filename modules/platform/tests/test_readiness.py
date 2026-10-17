@@ -200,3 +200,16 @@ def test_older_dark_web_manifest_keeps_generic_check(monkeypatch):
     probe["readiness"]["integrations"] = {"kind": "collection-sources", "configured": 3}
     mod, by = _checks(probe, monkeypatch)
     assert by["Integrations"]["state"] == "ok"
+
+
+# ---------------------------------------------------------------- dark web watch term coverage (Phase 4)
+def test_dark_web_client_without_terms_warns(monkeypatch):
+    wt = {"ok": False, "active_clients": 3, "clients_without_terms": 1,
+          "clients": [{"id": "c1", "name": "Harbor Point Logistics"}]}
+    mod, by = _checks(_dark_web_probe(watch_terms=wt), monkeypatch)
+    assert by["Watch terms"]["state"] == "warn" and "Harbor Point Logistics" in by["Watch terms"]["detail"]
+    assert mod["ready"] is True
+    mod, by = _checks(_dark_web_probe(watch_terms={"ok": True, "active_clients": 3}), monkeypatch)
+    assert by["Watch terms"]["state"] == "ok"
+    mod, by = _checks(_dark_web_probe(), monkeypatch)
+    assert "Watch terms" not in by
