@@ -42,7 +42,7 @@ MAX_ATTEMPTS = 4
 BACKOFF_HOURS = (1, 5, 18)
 DRAIN_LIMIT = 20
 DRAIN_BUDGET_SECONDS = 240
-CAPTURE_KINDS = ("victim", "page", "paste")
+CAPTURE_KINDS = ("victim", "page", "paste", "search")
 
 
 def _victim_of(item: Item) -> str:

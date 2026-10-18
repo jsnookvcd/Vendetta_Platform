@@ -3,8 +3,8 @@
 The web container queues long or Tor-bound work by inserting a row into a table
 built on db.WorkerRequestMixin; the worker claims pending rows on its next poll,
 runs them and records the result. The same functions serve every such table:
-run_requests ("Run now" on the Connectors page) today, and search_requests for
-live Tor search later. A row moves pending -> running -> done | failed.
+run_requests ("Run now" on the Connectors page), backfill_requests and
+search_requests (live Tor search). A row moves pending -> running -> done | failed.
 
 Claims use SELECT ... FOR UPDATE SKIP LOCKED so two pollers never take the same
 row."""
@@ -24,8 +24,10 @@ log = logging.getLogger(__name__)
 PENDING, RUNNING, DONE, FAILED = "pending", "running", "done", "failed"
 
 
-def enqueue(db: Session, model, requested_by: str, payload: dict | None = None):
-    req = model(status=PENDING, requested_by=requested_by[:320], payload=payload or {})
+def enqueue(db: Session, model, requested_by: str, payload: dict | None = None, **fields):
+    """Insert a pending row. Extra keyword fields set a subclass's own columns
+    (search_requests carries query and engines)."""
+    req = model(status=PENDING, requested_by=requested_by[:320], payload=payload or {}, **fields)
     db.add(req)
     db.commit()
     return req

@@ -419,3 +419,40 @@ class BackfillRequest(WorkerRequestMixin, Base):
 def _phase4_migrations() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE watch_terms ADD COLUMN IF NOT EXISTS source VARCHAR(10) DEFAULT 'analyst'"))
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+class SearchRequest(WorkerRequestMixin, Base):
+    """A live Tor search queued by the console (or by a saved search) and run by
+    the worker over Tor (app/tor_search.py). result holds the merged results and
+    per-engine status, counts, errors and timings:
+    {"results": [{key, url, host, title, snippet, engines, onion}],
+     "engines": {key: {status, count, error, ms}}, "total": n}.
+    Finished rows are pruned after 90 days."""
+
+    __tablename__ = "search_requests"
+    query: Mapped[str] = mapped_column(String(300), default="")
+    engines: Mapped[list] = mapped_column(JSON, default=list)
+    client_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    saved_search_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
+class SavedSearch(Base):
+    """A query saved against a client that the worker re-runs every interval_hours.
+    New results are ingested as kind "search" items, so watch-term matching,
+    alerting and capture apply to them."""
+
+    __tablename__ = "saved_searches"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    query: Mapped[str] = mapped_column(String(300))
+    engines: Mapped[list] = mapped_column(JSON, default=list)  # empty means every enabled engine
+    interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(320), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    next_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_request_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_new_items: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(Text, default="")

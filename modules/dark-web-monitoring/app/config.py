@@ -127,6 +127,17 @@ class Settings(BaseSettings):
     # implementation in pastes.SOURCES once a working one is available.
     pastes_enabled: bool = False
     paste_source: str = "psbdmp"
+    # ------------------------------------------------------------ Phase 3: live Tor search
+    # JSON list of engine objects merged over the defaults in app/tor_search.py by
+    # key, for example [{"key": "tor66", "enabled": false}]. Blank uses the defaults.
+    tor_search_engines: str = ""
+    # Seconds between worker polls of queued live searches.
+    tor_search_poll_seconds: int = 20
+    # Results kept per engine per search, and the per-request Tor timeout.
+    tor_search_limit: int = 30
+    tor_search_timeout: int = 90
+    # Minutes between checks for due saved searches (the tor_search connector).
+    saved_search_interval: int = 15
 
 
 settings = Settings()
