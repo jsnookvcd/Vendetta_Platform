@@ -73,6 +73,13 @@ aws ssm put-parameter --name /darkweb/TOR_SEARCH_ENGINES --type String --value '
 
 Optional Tor search tuning: TOR_SEARCH_POLL_SECONDS (20, how often the worker drains queued searches), TOR_SEARCH_LIMIT (30 results per engine), TOR_SEARCH_TIMEOUT (90 seconds per request) and SAVED_SEARCH_INTERVAL (15 minutes between checks for due saved searches).
 
+Fetch limits and Tor routing need no parameters; set them only to change the defaults. FETCH_MAX_BYTES (5242880, 5 MB) caps every response, and a larger body is truncated and recorded as truncated; the raw index HTML kept for the profile editor never exceeds it. FETCH_DEADLINE_SECONDS (0) is the wall-clock limit for one fetch including redirects, enforced while the body is read; 0 means 180 seconds over Tor and 60 seconds on clearnet, and a positive value applies to both. CLEARNET_VIA_TOR (true) ticks "Route clearnet through Tor" on the research console by default so the instance's AWS address is not exposed; the analyst can untick it per fetch. Every fetch refuses non-http schemes, loopback, private, link-local (including 169.254.169.254) and unspecified addresses, single-label names such as platform or db, and names ending in .internal or .local, on the first request and on each of up to 5 redirects; there is no setting to relax this.
+
+```
+aws ssm put-parameter --name /darkweb/CLEARNET_VIA_TOR --type String --value true
+# shared platform host: /vendetta/dark-web-monitoring/CLEARNET_VIA_TOR
+```
+
 HIBP_API_KEY turns on the HIBP connector; without it the Connectors page reads "needs HIBP_API_KEY". PASTES_ENABLED stays false until psbdmp has been probed from the host (see "Optional connectors" in README.md). TELEGRAM_SESSION_PATH and PASTE_SOURCE are optional and default to /data/telegram.session and psbdmp.
 
 SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.

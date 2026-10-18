@@ -171,7 +171,11 @@ Live searches: each one is a row in search_requests (query, engines, requester, 
 
 ## Operational security
 
-- All onion traffic leaves through Tor. Clearnet collection (feeds, HIBP, crt.sh) leaves from the instance's AWS IP. If you do not want a leak site operator to see an AWS address during research, tick "route clearnet through Tor".
+- All onion traffic leaves through Tor. Clearnet collection (feeds, HIBP, crt.sh) leaves from the instance's AWS IP. The research console routes clearnet through Tor by default (CLEARNET_VIA_TOR, true), and a URL opened from Live Tor search always goes through Tor; an analyst can untick the box to fetch a clearnet URL directly.
+- Every fetch through app/fetch.py, including each redirect hop, refuses schemes other than http and https, loopback, private, link-local (including the 169.254.169.254 metadata service) and unspecified addresses, single-label names (platform, db, sabine and the other services on the docker network) and names ending in .internal or .local. Onion hosts are always allowed through Tor. Redirects are followed manually up to 5 hops and a chain that starts on Tor stays on Tor. Hosts are checked as written and nothing is resolved locally.
+- Crawlers follow a link taken from a fetched page only when its host is the source's own host, and always over Tor.
+- Responses are capped at FETCH_MAX_BYTES (5 MB) and marked truncated beyond it, and each fetch has a wall-clock deadline enforced while reading (FETCH_DEADLINE_SECONDS; 0 means 180 seconds on Tor and 60 on clearnet), so a large or trickling response cannot exhaust memory or hold a job.
+- Parser profile selectors are limited to 200 characters and 10 comma-separated parts, and extraction in the editor preview and the crawls runs in a separate process stopped after 5 seconds (app/selectors_safe.py). On a timeout the crawl treats the profile as yielding no entries for that run.
 - The crawler reads index pages only. It does not download leaked archives. Pulling victim data from a leak site is a decision for the case lead and counsel, not an automated process, and should be done from an isolated analysis VM.
 - Nothing is posted, registered, or interacted with. Read only. Live Tor search only issues GET requests to the search engines; it never follows a result, logs in, registers, posts, purchases or downloads, and it reduces every result page to text.
 - Telegram requires a real account. Use a dedicated number and device, not a personal one.
@@ -187,6 +191,7 @@ app/
   health.py        worker heartbeat, Tor status and run retention
   work_requests.py worker-polled request tables (run_requests, backfill_requests, search_requests)
   tor_search.py    live Tor search: engine adapters, merge, search requests and saved searches
+  selectors_safe.py  selector limits and the subprocess timeout for profile extraction
   diagnose.py      python -m app.diagnose
   collectors/      leak_feeds, onion_crawl, forum_crawl, hibp, ct_logs, pastes, telegram
   profiles/        per-site YAML selector profiles (leak and forum), with examples
