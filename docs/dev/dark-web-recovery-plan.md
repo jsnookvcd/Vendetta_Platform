@@ -194,3 +194,33 @@ Tests: auto terms on provision (create, update, no deletion of analyst terms); b
 ## Prompt to start Claude Code
 
 > Read docs/dev/dark-web-recovery-plan.md in full. Start with Phase 0: I will paste the host diagnostic results; until I do, begin Phase 1 on a branch named dw/phase-1-observability. Follow the plan's working rules. After each phase, stop, summarise what changed, show the test count, and list anything that contradicts the plan's findings before moving to the next phase.
+
+## Build status (Oct 18, 2026)
+
+Phases 1 to 4 are built on branch dev/dark-web-recovery-plan, PR #2, CI green (21 checks). 224 dark web tests and 107 platform tests pass.
+
+An independent security review of the build found a seventh root cause the original findings missed: the worker crashed at startup with a NameError, because the `__main__` block sat above functions main() calls. Nothing could have collected on the host. That is fixed, with a test that starts the worker the way the container does. The review's other findings are fixed with regression tests:
+- SSRF guards on every fetch path: internal hosts, every redirect hop, and DNS answers on direct hops.
+- Crawlers follow only same-host links, over Tor.
+- Fetches are streamed under a byte cap and a deadline.
+- Profile selectors run in a killable subprocess.
+- Capture retries always terminate.
+- Viewer and ownership checks apply on live search.
+
+Clearnet fetches from the research console now go through Tor by default (CLEARNET_VIA_TOR).
+
+Verified from public sources only, since this sandbox cannot reach Tor or the ransomware.live PRO host:
+- Ahmia's search form and rotating hidden field, from its own source repository.
+- The ransomware.live PRO endpoints and header, from third-party integrations with recorded responses.
+- The OnionLand and Tor66 page layouts, from a 2023 parser. Treat those two adapters as unconfirmed.
+
+## Remaining host steps (Phase 0 and Phase 5)
+
+1. Put `RANSOMWARE_LIVE_API_KEY` in SSM at `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY` (free PRO key from my.ransomware.live).
+2. Merge PR #2 and run `infra/redeploy.sh dark-web-monitoring`.
+3. Run `python -m app.diagnose` in the worker container and record the output under "Phase 0 results".
+4. Open Connectors. Confirm Tor is exiting through Tor, the heartbeat is fresh, and ransomware.live shows victims dated this week.
+5. Run one live search. If OnionLand or Tor66 return errors, update their entries in TOR_SEARCH_ENGINES and the fixtures from the real pages.
+6. Compare `https://api-pro.ransomware.live/openapi.json` with tests/fixtures and adjust if the shapes differ.
+7. Probe psbdmp before setting PASTES_ENABLED=true.
+8. Walk the acceptance list at the top of this file and record results under "Verification".
