@@ -43,7 +43,7 @@
   </td>
   <td class="nowrap">{% for e in r.engines %}<span class="chip">{{ engine_names.get(e, e) }}</span> {% endfor %}</td>
   <td class="nowrap" style="text-align:right">
-    <a class="btn btn-sm btn-ghost" href="/research?url={{ r.url | urlencode }}">Open in research console</a>
+    <a class="btn btn-sm btn-ghost" href="/research?url={{ r.url | urlencode }}&amp;via=live">Open in research console</a>
     {% if can_write and r.onion %}<form class="inline" method="post" action="/search/live/source"><input type="hidden" name="url" value="{{ r.url }}"><input type="hidden" name="title" value="{{ r.title }}"><input type="hidden" name="request_id" value="{{ req.id }}"><button class="btn btn-sm btn-ghost">Add as source</button></form>{% endif %}
   </td>
 </tr>{% endfor %}

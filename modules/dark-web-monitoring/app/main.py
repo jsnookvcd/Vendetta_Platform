@@ -571,24 +571,35 @@ def item_detail(iid: str, request: Request, user: str = auth.RequireUser, db: Se
 
 
 @app.get("/research", response_class=HTMLResponse)
-def research(request: Request, url: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+def research(request: Request, url: str = "", via: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
     """The url parameter prefills the form (Open in research console on a live
-    search result). Nothing is fetched until the analyst presses Fetch."""
+    search result, which adds via=live). Nothing is fetched until the analyst
+    presses Fetch. A URL opened from Live Tor search carries a hidden field so it
+    is fetched through Tor even when it is clearnet."""
     prefill = tor_search.safe_url(url) if url else ""
     clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
-    return render(request, "research.html", user=user, result=None, url=prefill, tor=None, clients=clients_)
+    return render(request, "research.html", user=user, result=None, url=prefill, tor=None, clients=clients_,
+                  via_live=bool(prefill) and via == "live", tor_checked=settings.clearnet_via_tor)
 
 
 @app.post("/research", response_class=HTMLResponse)
-def research_fetch(request: Request, url: str = Form(...), force_tor: bool = Form(False), preserve: bool = Form(False), client_id: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    res = fetch(url.strip(), force_tor=force_tor)
+def research_fetch(request: Request, url: str = Form(...), force_tor: bool = Form(False), via_live_search: bool = Form(False),
+                   preserve: bool = Form(False), client_id: str = Form(""), user: str = auth.RequireUser,
+                   db: Session = Depends(get_db)):
+    """Single-URL fetch. app.fetch refuses internal and non-http targets on the
+    first request and every redirect. Onion URLs always use Tor; clearnet uses
+    Tor when the box is ticked (the default while CLEARNET_VIA_TOR is true) or
+    when the URL came from Live Tor search."""
+    use_tor = force_tor or via_live_search
+    res = fetch(url.strip(), force_tor=use_tor)
     txt = html_to_text(res.text) if res.text else f"[{len(res.content)} bytes, content-type {res.headers.get('content-type')}]"
     ev = None
     if preserve and (res.ok or res.content):
         ev = evidence.preserve(db, url.strip(), client_id=client_id or None, captured_by=user, note="research console", result=res)
-    _audit(db, user, "research.fetch", f"{url} tor={force_tor} preserve={preserve}")
+    _audit(db, user, "research.fetch", f"{url} tor={use_tor} preserve={preserve}")
     clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
-    return render(request, "research.html", user=user, result=res, text=txt[:60_000], url=url, evidence=ev, clients=clients_, tor=None)
+    return render(request, "research.html", user=user, result=res, text=txt[:60_000], url=url, evidence=ev, clients=clients_,
+                  tor=None, via_live=via_live_search, tor_checked=force_tor)
 
 
 @app.get("/research/torcheck")

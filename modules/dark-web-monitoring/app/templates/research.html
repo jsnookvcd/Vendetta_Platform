@@ -8,11 +8,12 @@
     <button class="btn btn-primary">Fetch</button>
   </div>
   <div class="row" style="margin-top:10px">
-    <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="force_tor" value="true"> Route clearnet through Tor</label>
+    <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="force_tor" value="true"{% if tor_checked %} checked{% endif %}> Route clearnet through Tor</label>
+    {% if via_live %}<input type="hidden" name="via_live_search" value="true"><span class="faint">Opened from Live Tor search: fetched through Tor.</span>{% endif %}
     <label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="preserve" value="true" checked> Preserve as evidence</label>
   </div>
 </form>
-<p class="page-intro" style="margin:10px 0 0">Fetches run from the collector's Tor circuit, never from your workstation. Preserved captures are written to the evidence store with a SHA-256 and manifest. Tor exit check at <a href="/research/torcheck">/research/torcheck</a>.</p>
+<p class="page-intro" style="margin:10px 0 0">Fetches run from the collector, never from your workstation. Onion URLs always go through Tor, and clearnet URLs go through Tor while the box is ticked, so the collector's own address is not exposed. Internal and private addresses are refused. Preserved captures are written to the evidence store with a SHA-256 and manifest. Tor exit check at <a href="/research/torcheck">/research/torcheck</a>.</p>
 </div>
 {% if result %}
 <div class="panel pad">

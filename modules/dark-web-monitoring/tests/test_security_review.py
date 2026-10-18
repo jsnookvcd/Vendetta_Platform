@@ -291,3 +291,40 @@ def test_crawl_refuses_profiles_over_the_selector_limits(fresh_db, monkeypatch):
         assert out["ok"] is False and "limit is 200" in out["error"]
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------- research console
+def test_research_routes_clearnet_through_tor_by_default(admin, monkeypatch):
+    assert 'name="force_tor" value="true" checked' in admin.get("/research").text
+    monkeypatch.setattr(settings, "clearnet_via_tor", False)
+    page = admin.get("/research").text
+    assert 'name="force_tor" value="true">' in page and "checked>" not in page.split('name="force_tor"')[1][:30]
+
+
+def test_research_url_from_live_search_is_fetched_through_tor(admin, monkeypatch):
+    from app import main
+
+    page = admin.get("/research", params={"url": "https://example.com/leak", "via": "live"}).text
+    assert 'name="via_live_search" value="true"' in page
+    assert "via_live_search" not in admin.get("/research", params={"url": "https://example.com/leak"}).text
+    calls = []
+    monkeypatch.setattr(main, "fetch", lambda url, force_tor=False: calls.append((url, force_tor)) or _res(url))
+    r = admin.post("/research", data={"url": "https://example.com/leak", "via_live_search": "true"})
+    assert r.status_code == 200 and calls == [("https://example.com/leak", True)]
+    assert 'name="via_live_search" value="true"' in r.text
+    admin.post("/research", data={"url": "https://example.com/direct"})
+    assert calls[-1] == ("https://example.com/direct", False)
+
+
+def test_live_search_result_links_carry_the_tor_marker():
+    src = (Path(__file__).parent.parent / "app" / "templates" / "live_search.html").read_text()
+    assert "/research?url={{ r.url | urlencode }}&amp;via=live" in src
+
+
+def test_research_refuses_internal_targets_without_a_request(admin, monkeypatch):
+    from app import fetch
+
+    monkeypatch.setattr(fetch, "_client", lambda *a, **k: pytest.fail("no request may be made"))
+    for url in ("http://169.254.169.254/latest/meta-data/", "http://platform:8000/", "file:///etc/passwd"):
+        r = admin.post("/research", data={"url": url, "preserve": "true"})
+        assert r.status_code == 200 and "refused" in r.text
