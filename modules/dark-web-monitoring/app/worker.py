@@ -154,6 +154,7 @@ def retention() -> None:
         n = health.prune_runs(db)
         m = work_requests.prune(db, RunRequest, health.RUN_RETENTION_DAYS)
         m += _retention_phase4(db)
+        m += _retention_phase3(db)
         log.info("retention: pruned %d collector runs and %d requests", n, m)
     finally:
         db.close()
@@ -180,6 +181,7 @@ def _recover() -> None:
         db.commit()
         work_requests.fail_interrupted(db, RunRequest)
         _recover_phase4(db)
+        _recover_phase3(db)
     finally:
         db.close()
 
@@ -204,6 +206,7 @@ def build_scheduler(now: dt.datetime | None = None) -> BlockingScheduler:
     sched.add_job(_seed, "interval", hours=24, id="seed", next_run_time=now + dt.timedelta(hours=24))
     add_phase2_jobs(sched, now)
     _add_phase4_jobs(sched, now)
+    _add_phase3_jobs(sched, now)
     return sched
 
 
@@ -257,6 +260,58 @@ def _retention_phase4(db) -> int:
     from .db import BackfillRequest
 
     return work_requests.prune(db, BackfillRequest, health.RUN_RETENTION_DAYS)
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+# The console queues a SearchRequest; this job drains live searches every
+# TOR_SEARCH_POLL_SECONDS so the web container never waits on Tor. Each search is
+# recorded as a CollectorRun under the tor_search connector (trigger "manual") so
+# the Connectors page shows its last run and engine errors. Saved searches run
+# from the tor_search connector job itself (tor_search.run_saved).
+def poll_search_requests() -> int:
+    if not settings.module_enabled:
+        return 0
+    from . import tor_search
+
+    db = SessionLocal()
+    try:
+        def handle(req) -> dict:
+            box: dict = {}
+
+            def job(jdb) -> dict:
+                box["out"] = tor_search.execute(jdb, req)
+                o = box["out"]
+                return {"ok": o["ok"], "error": o["error"], "search_request_id": req.id, "total": o["total"],
+                        "engines": {k: {kk: v[kk] for kk in ("status", "count", "ms")} for k, v in o["engines"].items()}}
+
+            run = run_job("tor_search", job, trigger="manual", requested_by=req.requested_by)
+            if run is None:
+                return {"ok": False, "error": "module disabled"}
+            if "out" not in box:
+                return {"ok": False, "error": run.error or "search failed"}
+            return box["out"]
+
+        return tor_search.drain(db, handle, saved=False)
+    finally:
+        db.close()
+
+
+def _add_phase3_jobs(sched: BlockingScheduler, now: dt.datetime) -> None:
+    sched.add_job(poll_search_requests, "interval", seconds=max(5, int(settings.tor_search_poll_seconds)),
+                  id="search_requests", next_run_time=now + dt.timedelta(seconds=START_DELAY_SECONDS))
+
+
+def _recover_phase3(db) -> None:
+    from .db import SearchRequest
+
+    work_requests.fail_interrupted(db, SearchRequest)
+
+
+def _retention_phase3(db) -> int:
+    from . import tor_search
+    from .db import SearchRequest
+
+    return work_requests.prune(db, SearchRequest, tor_search.RETENTION_DAYS)
 
 
 if __name__ == "__main__":

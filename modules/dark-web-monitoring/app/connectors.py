@@ -332,3 +332,23 @@ CONNECTORS.append(
               "capture", extra=_capture_extra))
 _BY_KEY.clear()
 _BY_KEY.update({c.key: c for c in CONNECTORS})
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+from . import tor_search as _tor_search  # noqa: E402
+
+
+def _check_tor_search(db: Session) -> tuple[bool, str]:
+    return _tor_search.configured()
+
+
+def _probe_tor_search() -> list[Probe]:
+    return [Probe(f"{e.name} search engine", e.base_url.rstrip("/") + (e.token_path or "/"), tor=True)
+            for e in _tor_search.enabled_engines()]
+
+
+CONNECTORS.append(
+    Connector("tor_search", "Live Tor search", "search", "saved_search_interval", _tor_search.run_saved,
+              _check_tor_search, "search", probes=_probe_tor_search, extra=_tor_search.engine_health))
+_BY_KEY.clear()
+_BY_KEY.update({c.key: c for c in CONNECTORS})
