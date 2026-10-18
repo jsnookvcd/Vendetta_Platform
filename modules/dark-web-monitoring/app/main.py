@@ -1033,11 +1033,16 @@ def profile_preview_or_save(group: str, request: Request, action: str = Form("pr
 
 
 # ---------------------------------------------------------------- Phase 3: live Tor search
-# A viewer may run a live search: it reads onion space and changes nothing the
-# module holds beyond the request row and the audit entry. The search routes
-# therefore authenticate with require_internal, which skips the viewer write
-# gate. Adding a result as a Source and saved searches change state and go
-# through RequireUser, so require_write refuses a viewer with 403.
+# Starting a live search queues Tor work and writes a request row, so it is a
+# state-changing route: it goes through require_internal_write and
+# require_write refuses a viewer with 403, as for adding a result as a Source
+# and saved searches. Viewing a search (GET /search/live?id= and its status)
+# is limited to the user who requested it and admins; a saved search run is
+# client work linked from the client page and is visible to all staff.
+def _can_view_search(ident: auth.Identity, req) -> bool:
+    return ident.role == "admin" or req.requested_by == ident.email or bool(req.saved_search_id)
+
+
 def _live_ctx(db: Session, ident: auth.Identity, req=None, q: str = "", error: str = "", added: str = "") -> dict:
     engines = tor_search.enabled_engines()
     ok, reason = tor_search.configured()
@@ -1054,13 +1059,13 @@ def live_search_page(request: Request, id: str = "", added: str = "",
     from .db import SearchRequest
 
     req = db.get(SearchRequest, id) if id else None
-    if id and req is None:
+    if id and (req is None or not _can_view_search(ident, req)):
         raise HTTPException(404)
     return render(request, "live_search.html", **_live_ctx(db, ident, req, added=added))
 
 
 @app.post("/search/live", response_class=HTMLResponse)
-async def live_search_submit(request: Request, ident: auth.Identity = Depends(auth.require_internal),
+async def live_search_submit(request: Request, ident: auth.Identity = Depends(auth.require_internal_write),
                              db: Session = Depends(get_db)):
     form = await request.form()
     q = tor_search.normalise_query(str(form.get("q") or ""))
@@ -1080,7 +1085,7 @@ def live_search_status(rid: str, ident: auth.Identity = Depends(auth.require_int
     from .db import SearchRequest
 
     req = db.get(SearchRequest, rid)
-    if req is None:
+    if req is None or not _can_view_search(ident, req):
         raise HTTPException(404)
     return {"id": req.id, "status": req.status, "total": (req.result or {}).get("total")}
 

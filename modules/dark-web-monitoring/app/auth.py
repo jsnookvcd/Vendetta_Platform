@@ -79,6 +79,14 @@ def require_write(request: Request, ident: Identity) -> None:
         raise HTTPException(status_code=403, detail=READ_ONLY_DETAIL)
 
 
+def require_internal_write(request: Request) -> Identity:
+    """Dependency for state-changing staff routes that need the Identity rather
+    than the email: internal users only, and require_write refuses a viewer."""
+    ident = require_internal(request)
+    require_write(request, ident)
+    return ident
+
+
 def _session_email(request: Request) -> str | None:
     tok = request.cookies.get(COOKIE)
     if not tok:

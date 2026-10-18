@@ -2,12 +2,13 @@
 {% block body %}
 {% if not configured %}<div class="health-banner amber">Live Tor search is off: {{ reason }}</div>{% endif %}
 {% if error %}<div class="health-banner amber">{{ error }}</div>{% endif %}
+{% if not can_write %}<div class="health-banner info">Viewers can read their past searches but cannot start a live search. Ask an analyst or admin to run one.</div>{% endif %}
 {% if added %}<div class="health-banner info">Added as an onion source. Profile it from <a href="/sources">Sources</a> or <a href="/priority-groups">Priority Groups</a>.</div>{% endif %}
 <div class="panel pad" style="margin-bottom:14px">
 <form method="post" action="/search/live">
   <div class="row">
     <label class="field">Query<input name="q" value="{{ q }}" maxlength="{{ max_query }}" style="min-width:380px" placeholder="acme credit union" required></label>
-    <button class="btn btn-primary" {{ 'disabled' if not configured }}>Search Tor</button>
+    <button class="btn btn-primary" {{ 'disabled' if not configured or not can_write }}>Search Tor</button>
   </div>
   <div class="row" style="margin-top:10px">
     {% for e in engines %}<label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="engine" value="{{ e.key }}" {{ 'checked' if e.key in chosen }}> {{ e.name }}</label>{% endfor %}

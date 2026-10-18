@@ -270,12 +270,16 @@ def test_engine_errors_reach_the_connector_row(admin, router):
     assert row["search_engines"]["tor66"]["status"] == "error"
 
 
-def test_viewer_can_search_but_cannot_add_source_or_save(client, router):
+def test_viewer_cannot_start_a_search_add_a_source_or_save(client, router):
     _as(client, "board@vendettacd.io", "viewer")
     r = client.post("/search/live", data={"q": "acme"}, follow_redirects=False)
-    assert r.status_code == 302
+    assert r.status_code == 403 and not _one(SearchRequest)
+    assert "cannot start a live search" in client.get("/search/live").text
+    # A search the viewer requested before (for example while an analyst) stays readable.
+    db = SessionLocal()
+    rid = tor_search.enqueue(db, "acme", [], "board@vendettacd.io").id
+    db.close()
     worker.poll_search_requests()
-    rid = _one(SearchRequest)[0].id
     page = client.get(f"/search/live?id={rid}").text
     assert "Open in research console" in page and "Add as source" not in page
     r = client.post("/search/live/source", data={"url": f"http://{AKIRA}/", "request_id": rid})

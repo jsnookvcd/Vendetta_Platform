@@ -328,3 +328,45 @@ def test_research_refuses_internal_targets_without_a_request(admin, monkeypatch)
     for url in ("http://169.254.169.254/latest/meta-data/", "http://platform:8000/", "file:///etc/passwd"):
         r = admin.post("/research", data={"url": url, "preserve": "true"})
         assert r.status_code == 200 and "refused" in r.text
+
+
+# ---------------------------------------------------------------- live search permissions
+def test_viewer_gets_403_starting_a_live_search(client):
+    from app.db import SearchRequest
+
+    _as(client, "board@vendettacd.io", "viewer")
+    assert client.post("/search/live", data={"q": "acme"}, follow_redirects=False).status_code == 403
+    assert _db().query(SearchRequest).count() == 0
+
+
+def test_live_search_is_visible_only_to_its_requester_or_an_admin(client):
+    from app import tor_search
+    from app.db import SavedSearch, SearchRequest
+
+    db = _db()
+    try:
+        mine = tor_search.enqueue(db, "acme", [], "ana@vendettacd.io").id
+        from app.db import Client
+
+        c = Client(name="Acme Credit Union")
+        db.add(c)
+        db.commit()
+        db.add(SavedSearch(client_id=c.id, query="acme", engines=[], interval_hours=24, created_by="admin"))
+        db.commit()
+        saved_id = db.query(SavedSearch).one().id
+        saved = tor_search.enqueue(db, "acme", [], "saved search by admin",
+                                   saved=db.get(SavedSearch, saved_id)).id
+        assert db.get(SearchRequest, saved).saved_search_id
+    finally:
+        db.close()
+    _as(client, "ana@vendettacd.io", "analyst")
+    assert client.get(f"/search/live?id={mine}").status_code == 200
+    assert client.get(f"/search/live/{mine}/status").status_code == 200
+    _as(client, "bob@vendettacd.io", "analyst")
+    assert client.get(f"/search/live?id={mine}").status_code == 404
+    assert client.get(f"/search/live/{mine}/status").status_code == 404
+    assert client.get(f"/search/live?id={saved}").status_code == 200  # client work on the client page
+    _as(client, "board@vendettacd.io", "viewer")
+    assert client.get(f"/search/live?id={mine}").status_code == 404
+    _as(client, "boss@vendettacd.io", "admin")
+    assert client.get(f"/search/live?id={mine}").status_code == 200
