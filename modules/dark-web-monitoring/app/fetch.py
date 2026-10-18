@@ -12,6 +12,7 @@ import dataclasses
 import ipaddress
 import logging
 import re
+import socket
 import time
 
 import httpx
@@ -92,6 +93,34 @@ def check_url(url: str) -> str:
     return ""
 
 
+def check_resolved(url: str) -> str:
+    """For a direct clearnet hop only: resolve the host and refuse it when any
+    address it resolves to is internal, so a public name pointed at a private or
+    metadata address cannot be fetched from the host. Tor-routed hops are never
+    resolved locally. A name that does not resolve is left for the request itself
+    to fail. The request resolves again when it connects, so a name that changes
+    its answer between the two lookups is not covered; the Tor default for
+    clearnet (CLEARNET_VIA_TOR) is the stronger control."""
+    host = (httpx.URL(url).host or "").rstrip(".")
+    try:
+        ipaddress.ip_address(host)
+        return ""  # literal addresses were already checked by check_url
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return ""
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+        except ValueError:
+            continue
+        if _blocked_ip(ip):
+            return f"host {host} resolves to internal address {ip}"
+    return ""
+
+
 def _refused(url: str, reason: str) -> FetchResult:
     log.warning("fetch refused %s: %s", url, reason)
     return FetchResult(url=url, status=0, content=b"", headers={}, text="", error=f"refused: {reason}")
@@ -129,6 +158,10 @@ def _get(url: str, force_tor: bool = False, timeout: int | None = None, cookies:
     current = url
     for _hop in range(MAX_REDIRECTS + 1):
         hop_tor = tor or is_onion(current)
+        if not hop_tor:
+            reason = check_resolved(current)
+            if reason:
+                return _refused(current, reason)
         # The session cookie belongs to the source's own host and is never sent elsewhere.
         hop_cookies = cookies if httpx.URL(current).host == first_host else ""
         with _client(hop_tor, timeout, hop_cookies) as c:
