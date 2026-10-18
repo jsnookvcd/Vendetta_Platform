@@ -19,9 +19,9 @@ import time
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import profiles
+from .. import profiles, selectors_safe
 from ..db import Source
-from ..fetch import absolute, fetch, html_to_text, same_host, select_href, select_text, soup_of
+from ..fetch import absolute, fetch, html_to_text, same_host
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
@@ -48,17 +48,15 @@ def _crawl(db: Session, src: Source, profile: dict) -> None:
             if not res.ok or not res.text:
                 mark_source(db, src, False, res.error or f"HTTP {res.status} on {url}")
                 continue
-            soup = soup_of(res.text)
             try:
-                rows = soup.select(profile.get("thread_selector", "")) if profile.get("thread_selector") else []
-            except Exception as e:  # noqa: BLE001
-                log.warning("bad thread_selector on %s: %s", src.name, e)
+                rows = selectors_safe.safe_forum_rows(res.text, profile)
+            except (selectors_safe.SelectorTimeout, selectors_safe.SelectorFailed) as e:
+                log.warning("thread selectors on %s gave no rows for %s: %s", src.name, url[:200], e)
                 rows = []
-            for row in rows:
+            for title, href in rows:
                 if threads_done >= max_threads:
                     break
-                title = select_text(row, profile.get("thread_title_selector", "")) or "(thread)"
-                href = select_href(row, profile.get("thread_link_selector", ""))
+                title = title or "(thread)"
                 if not href:
                     continue
                 thread_url = absolute(src.url, href)
@@ -80,7 +78,6 @@ def _crawl_thread(db: Session, src: Source, profile: dict, thread_url: str, titl
     res = fetch(thread_url, force_tor=True, cookies=cookies)
     if not res.ok or not res.text:
         return
-    soup = soup_of(res.text)
     ingest(
         db, kind="thread", title=f"{src.name}: {title}", body=html_to_text(res.text)[:120_000],
         url=thread_url, external_id=thread_url, group_name=src.group_name or src.name,
@@ -88,13 +85,11 @@ def _crawl_thread(db: Session, src: Source, profile: dict, thread_url: str, titl
         hash_parts=("thread", thread_url, title),
     )
     try:
-        posts = soup.select(profile.get("post_selector", "")) if profile.get("post_selector") else []
-    except Exception:  # noqa: BLE001
+        posts = selectors_safe.safe_forum_posts(res.text, profile)
+    except (selectors_safe.SelectorTimeout, selectors_safe.SelectorFailed) as e:
+        log.warning("post selectors on %s gave nothing for %s: %s", src.name, thread_url[:200], e)
         posts = []
-    for i, post in enumerate(posts):
-        author = select_text(post, profile.get("author_selector", ""))
-        date = select_text(post, profile.get("date_selector", ""))
-        body = select_text(post, profile.get("body_selector", ""))
+    for i, (author, date, body) in enumerate(posts):
         if not body:
             continue
         ingest(
@@ -117,6 +112,11 @@ def run(db: Session) -> dict:
         if not profile or profile.get("kind") != "forum":
             mark_source(db, src, False, "forum source needs a profile of kind forum")
             failed.append(f"{src.name}: no forum profile")
+            continue
+        problem = selectors_safe.profile_problem(profile, selectors_safe.FORUM_FIELDS)
+        if problem:
+            mark_source(db, src, False, f"forum profile refused: {problem}")
+            failed.append(f"{src.name}: {problem}")
             continue
         try:
             _crawl(db, src, profile)

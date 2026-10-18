@@ -25,10 +25,10 @@ import time
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import onion_sources, profile_store
+from .. import onion_sources, profile_store, selectors_safe
 from ..config import settings
 from ..db import Source
-from ..fetch import absolute, fetch, html_to_text, same_host, select_text, soup_of
+from ..fetch import absolute, fetch, html_to_text, same_host
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
@@ -77,11 +77,16 @@ def _crawl_generic(db: Session, src: Source, res, now: dt.datetime) -> None:
 
 def _crawl_profiled(db: Session, src: Source, res, profile: dict, now: dt.datetime) -> None:
     cookies = (src.meta or {}).get("cookie", "")
-    entries = []
-    try:
-        entries = soup_of(res.text).select(profile.get("list_selector", "")) if profile.get("list_selector") else []
-    except Exception as e:  # noqa: BLE001
-        log.warning("bad list_selector on %s: %s", src.name, e)
+    entries: list[dict] = []
+    problem = selectors_safe.profile_problem(profile, selectors_safe.LEAK_FIELDS)
+    if problem:
+        log.warning("profile %s on %s refused: %s", src.profile, src.name, problem)
+    elif profile.get("list_selector") and res.text:
+        try:
+            # Bounded: a hostile page or selector cannot hang the crawl.
+            entries = selectors_safe.safe_extract_entries(res.text, profile)
+        except (selectors_safe.SelectorTimeout, selectors_safe.SelectorFailed) as e:
+            log.warning("profile %s on %s yielded no entries this run: %s", src.profile, src.name, e)
     state = profile_store.record_crawl(db, src, profile.get("name") or src.profile, len(entries), now)
     if not entries:
         if state == "broken":
@@ -91,7 +96,7 @@ def _crawl_profiled(db: Session, src: Source, res, profile: dict, now: dt.dateti
         return
     followed = 0
     cap = int(profile.get("max_posts_per_run", 40))
-    for entry in profile_store.extract(res.text, profile):
+    for entry in entries:
         victim, desc, date, href = entry["victim"], entry["desc"], entry["date"], entry["link"]
         post_url = (absolute(src.url, href) if href else "") or src.url
         body = f"Victim: {victim}\nGroup: {src.group_name}\nDate: {date}\n\n{desc}".strip()
@@ -105,9 +110,13 @@ def _crawl_profiled(db: Session, src: Source, res, profile: dict, now: dt.dateti
         if wants_post:
             pr = fetch(post_url, force_tor=True, cookies=cookies)
             if pr.ok and pr.text:
-                psoup = soup_of(pr.text)
-                ptitle = select_text(psoup, profile.get("post_title_selector", ""))
-                pbody = select_text(psoup, profile.get("post_body_selector", "")) or html_to_text(pr.text)
+                try:
+                    ptitle, pbody = selectors_safe.safe_post_fields(pr.text, profile.get("post_title_selector", ""),
+                                                                    profile.get("post_body_selector", ""))
+                except (selectors_safe.SelectorTimeout, selectors_safe.SelectorFailed) as e:
+                    log.warning("post selectors on %s gave nothing for %s: %s", src.name, post_url[:200], e)
+                    ptitle, pbody = "", ""
+                pbody = pbody or html_to_text(pr.text)
                 body = f"Victim: {victim}\nGroup: {src.group_name}\nDate: {date}\nTitle: {ptitle}\n\n{pbody[:150_000]}"
             followed += 1
             time.sleep(PAUSE_SECONDS)

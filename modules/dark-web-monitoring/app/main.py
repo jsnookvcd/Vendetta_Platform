@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import boot
 from . import auth, connectors, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
 from . import health, work_requests
-from . import captures, onion_sources, priority, profile_store
+from . import captures, onion_sources, priority, profile_store, selectors_safe
 from . import backfill as backfill_mod, watchterms
 from . import tor_search
 from .config import settings
@@ -978,24 +978,47 @@ def profile_editor(group: str, request: Request, user: str = auth.RequireUser, d
 
 
 @app.post("/priority-groups/{group}/profile", response_class=HTMLResponse)
-async def profile_preview_or_save(group: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+def profile_preview_or_save(group: str, request: Request, action: str = Form("preview"), apply: str = Form(""),
+                            list_selector: str = Form(""), title_selector: str = Form(""),
+                            link_selector: str = Form(""), desc_selector: str = Form(""),
+                            date_selector: str = Form(""), post_title_selector: str = Form(""),
+                            post_body_selector: str = Form(""), max_posts_per_run: str = Form(""),
+                            user: str = auth.RequireUser, db: Session = Depends(get_db)):
     """Preview runs the selectors against the newest stored index page for the
     group (no network); Save stores the profile and points the group's onion
-    sources at it."""
-    form = await request.form()
-    selectors = profile_store.clean_selectors(dict(form))
+    sources at it. A plain def so it runs in the threadpool: selectors over
+    the length or part limits are refused, and the preview runs in a
+    subprocess with a timeout (app/selectors_safe.py)."""
+    selectors = profile_store.clean_selectors({
+        "list_selector": list_selector, "title_selector": title_selector, "link_selector": link_selector,
+        "desc_selector": desc_selector, "date_selector": date_selector, "post_title_selector": post_title_selector,
+        "post_body_selector": post_body_selector, "max_posts_per_run": max_posts_per_run})
     ctx = _profile_ctx(db, group)
-    if form.get("action") == "save":
-        profile_store.save(db, ctx["group_key"], ctx["display"], selectors, user,
-                           apply_to_sources=form.get("apply") == "on")
+    problem = selectors_safe.profile_problem(selectors, selectors_safe.LEAK_FIELDS)
+    if problem:
+        ctx["selectors"] = selectors
+        resp = render(request, "profile_editor.html", user=user, preview=None, saved=None, can_edit=True,
+                      error=f"Not saved or previewed. {problem[0].upper()}{problem[1:]}.", **ctx)
+        resp.status_code = 400
+        return resp
+    if action == "save":
+        profile_store.save(db, ctx["group_key"], ctx["display"], selectors, user, apply_to_sources=apply == "on")
         _audit(db, user, "profile.save", f"{ctx['group_key']}: {profile_store.profile_name_for(ctx['group_key'])}")
         return RedirectResponse(f"/priority-groups/{ctx['group_key']}/profile?saved=1", status_code=302)
     page = ctx["page"]
-    entries = profile_store.extract((page.meta or {}).get("html", ""), selectors, base_url=page.url,
-                                    limit=profile_store.PREVIEW_LIMIT) if page else []
+    entries, error = [], ""
+    html = (page.meta or {}).get("html", "") if page else ""
+    if html and selectors.get("list_selector"):
+        try:
+            entries = selectors_safe.safe_extract_entries(html, selectors, page.url, profile_store.PREVIEW_LIMIT)
+        except selectors_safe.SelectorTimeout:
+            error = (f"Preview stopped after {selectors_safe.TIMEOUT_SECONDS} seconds. These selectors are too "
+                     "expensive for this page; simplify them and try again.")
+        except selectors_safe.SelectorFailed as e:
+            error = f"Preview failed: {e}"
     ctx["selectors"] = selectors
     return render(request, "profile_editor.html", user=user, preview={"entries": entries, "has_page": bool(page)},
-                  saved=None, can_edit=True, **ctx)
+                  saved=None, can_edit=True, error=error, **ctx)
 
 
 # ---------------------------------------------------------------- Phase 3: live Tor search

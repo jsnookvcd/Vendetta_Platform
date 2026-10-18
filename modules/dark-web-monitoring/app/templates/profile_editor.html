@@ -1,13 +1,14 @@
 {% extends "base.html" %}{% block title %}Profile: {{ display }}{% endblock %}
 {% block body %}
 <p class="page-intro"><a href="/priority-groups">Priority Groups</a> / {{ display }}. State <span class="chip{{ ' stale-chip' if state == 'broken' }}">{{ state }}</span>{% if origin %} <span class="faint">loaded from the {{ origin }}</span>{% endif %}. Preview runs the selectors against the newest stored index page for this group and shows the victims they would extract. Nothing is fetched; the crawl stores a fresh page each time the index changes.</p>
+{% if error %}<div class="health-banner amber">{{ error }}</div>{% endif %}
 {% if saved %}<div class="health-banner info">Profile saved as a draft. It becomes working when the next onion crawl extracts entries with it.</div>{% endif %}
 <div class="detail-grid">
   <div>
     <div class="panel pad">
       <form method="post" action="/priority-groups/{{ group_key }}/profile">
         {% for f in fields %}
-        <label class="field" style="margin-bottom:10px">{{ f.replace('_', ' ') }}<input name="{{ f }}" class="mono" value="{{ selectors.get(f, '') }}"{% if not can_edit %} disabled{% endif %}></label>
+        <label class="field" style="margin-bottom:10px">{{ f.replace('_', ' ') }}<input name="{{ f }}" class="mono" maxlength="200" value="{{ selectors.get(f, '') }}"{% if not can_edit %} disabled{% endif %}></label>
         {% endfor %}
         <label class="field" style="margin-bottom:10px">max posts per run<input name="max_posts_per_run" type="number" min="0" max="200" value="{{ selectors.get('max_posts_per_run', 40) }}"{% if not can_edit %} disabled{% endif %}></label>
         {% if can_edit %}
@@ -31,7 +32,7 @@
             {% for e in preview.entries %}<tr><td>{{ e.victim }}{% if e.desc %}<div class="faint trunc" style="max-width:360px">{{ e.desc }}</div>{% endif %}</td><td class="nowrap faint">{{ e.date }}</td><td class="mono trunc" style="max-width:240px">{{ e.link }}</td></tr>{% endfor %}
             </tbody></table></div>
           <p class="faint" style="padding:0 14px 10px">{{ preview.entries|length }} entries{% if preview.entries|length >= 50 %} (first 50 shown){% endif %}.</p>
-          {% else %}<div class="empty"><p>These selectors extract no entries from the stored page.</p></div>{% endif %}
+          {% elif not error %}<div class="empty"><p>These selectors extract no entries from the stored page.</p></div>{% endif %}
         {% else %}<div class="empty"><p>Enter selectors and press Preview.</p></div>{% endif %}
       {% endif %}
     </div>

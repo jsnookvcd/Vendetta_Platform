@@ -188,3 +188,106 @@ def test_malformed_source_url_fails_the_capture_cleanly(fresh_db):
         assert captures._default_fetch("http://a:b:c/").error  # no exception escapes the default fetcher
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------- profile selector cost
+def slow_extract(*args, **kwargs):
+    """Runs in the spawned subprocess in place of the real extraction."""
+    import time
+
+    time.sleep(30)
+    return []
+
+
+def _stored_page(db, group="akira"):
+    html = (FIX / "leak_index.html").read_text()
+    src = _onion(db, group)
+    db.add(Item(source_id=src.id, kind="page", title=f"{group} index", body="text", url=src.url, group_name=group,
+                content_hash=Item.make_hash("page", group), meta={"html": html}))
+    db.commit()
+    return src
+
+
+def test_profile_route_is_a_plain_def():
+    import inspect
+
+    from app import main
+
+    assert not inspect.iscoroutinefunction(main.profile_preview_or_save)
+
+
+def test_profile_editor_refuses_long_or_many_part_selectors(admin):
+    from app.db import ParserProfile
+
+    db = _db()
+    try:
+        _stored_page(db)
+    finally:
+        db.close()
+    long_sel = "div" + " div" * 60
+    r = admin.post("/priority-groups/akira/profile", data={**SELECTORS, "list_selector": long_sel, "action": "save"},
+                   follow_redirects=False)
+    assert r.status_code == 400 and "limit is 200" in r.text
+    many = ", ".join(f"div.c{i}" for i in range(11))
+    r = admin.post("/priority-groups/akira/profile", data={**SELECTORS, "title_selector": many, "action": "preview"})
+    assert r.status_code == 400 and "limit is 10" in r.text
+    assert _db().query(ParserProfile).count() == 0
+    r = admin.post("/priority-groups/akira/profile", data={**SELECTORS, "action": "preview"})
+    assert r.status_code == 200 and "Acme Federal Credit Union" in r.text
+
+
+def test_profile_preview_times_out_with_a_clear_error(admin, monkeypatch):
+    from app import selectors_safe
+
+    db = _db()
+    try:
+        _stored_page(db)
+    finally:
+        db.close()
+    monkeypatch.setattr(selectors_safe, "TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr(selectors_safe, "extract_entries", slow_extract)
+    started = dt.datetime.now()
+    r = admin.post("/priority-groups/akira/profile", data={**SELECTORS, "action": "preview"})
+    assert (dt.datetime.now() - started).total_seconds() < 15
+    assert r.status_code == 200 and "Preview stopped after 2 seconds" in r.text
+
+
+def test_crawl_selector_timeout_yields_no_entries_for_the_run(fresh_db, monkeypatch):
+    from app import selectors_safe
+
+    html = (FIX / "leak_index.html").read_text()
+    monkeypatch.setattr(onion_sources, "fetch_onion", lambda url, cookies="": _res(url, html=html))
+    monkeypatch.setattr(selectors_safe, "TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr(selectors_safe, "extract_entries", slow_extract)
+    db = _db()
+    try:
+        profile_store.save(db, "akira", "akira", {**SELECTORS, "max_posts_per_run": 0}, "admin", apply_to_sources=False)
+        src = _onion(db, profile="group-akira")
+        assert onion_crawl.crawl_source(db, src) is True
+        assert db.query(Item).filter_by(kind="post").count() == 0
+        assert db.query(Item).filter_by(kind="page").count() == 1  # generic fallback still stores the index
+        assert db.get(Source, src.id).meta["profile_last_entries"] == 0
+    finally:
+        db.close()
+
+
+def test_crawl_refuses_profiles_over_the_selector_limits(fresh_db, monkeypatch):
+    from app.collectors import forum_crawl
+
+    html = (FIX / "leak_index.html").read_text()
+    monkeypatch.setattr(onion_sources, "fetch_onion", lambda url, cookies="": _res(url, html=html))
+    db = _db()
+    try:
+        profile_store.save(db, "akira", "akira", {**SELECTORS, "list_selector": "div.card," * 12,
+                                                  "max_posts_per_run": 0}, "admin", apply_to_sources=False)
+        src = _onion(db, profile="group-akira")
+        onion_crawl.crawl_source(db, src)
+        assert db.query(Item).filter_by(kind="post").count() == 0
+        monkeypatch.setattr(forum_crawl.profiles, "get", lambda n: {"kind": "forum", "thread_selector": "a" * 300})
+        monkeypatch.setattr(forum_crawl, "fetch", lambda *a, **k: pytest.fail("refused profile must not fetch"))
+        db.add(Source(name="f", kind="forum", url=f"http://{AKIRA}/", profile="f"))
+        db.commit()
+        out = forum_crawl.run(db)
+        assert out["ok"] is False and "limit is 200" in out["error"]
+    finally:
+        db.close()
