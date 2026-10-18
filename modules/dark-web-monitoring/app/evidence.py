@@ -67,6 +67,7 @@ def preserve(
         "size_bytes": len(res.content),
         "headers": res.headers,
         "error": res.error,
+        "truncated": res.truncated,
         "note": note,
         "tool": settings.app_name,
     }

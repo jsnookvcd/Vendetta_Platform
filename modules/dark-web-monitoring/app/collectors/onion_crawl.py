@@ -40,6 +40,14 @@ BACKOFF_HOURS = 12
 PAGE_HTML_CAP = 400_000
 
 
+def _capped_html(html: str) -> str:
+    """Raw index HTML kept for the profile editor, cut to PAGE_HTML_CAP bytes and
+    never more than FETCH_MAX_BYTES."""
+    cap = min(PAGE_HTML_CAP, max(1, settings.fetch_max_bytes))
+    raw = (html or "").encode("utf-8")
+    return raw[:cap].decode("utf-8", "ignore") if len(raw) > cap else (html or "")
+
+
 def _due(src: Source, now: dt.datetime) -> bool:
     if (src.fail_count or 0) < BACKOFF_AFTER_FAILS:
         return True
@@ -60,7 +68,7 @@ def _crawl_generic(db: Session, src: Source, res, now: dt.datetime) -> None:
     ingest(
         db, kind="page", title=f"{src.group_name or src.name} index", body=text[:200_000],
         url=src.url, external_id=src.url, group_name=src.group_name, published_at=now, source=src,
-        meta={"http_status": res.status, "length": len(text), "html": (res.text or "")[:PAGE_HTML_CAP],
+        meta={"http_status": res.status, "length": len(text), "html": _capped_html(res.text),
               "final_url": res.url},
         hash_parts=("page", src.url, text),
     )

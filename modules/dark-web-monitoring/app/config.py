@@ -51,6 +51,15 @@ class Settings(BaseSettings):
         return bool(self.entra_client_id and self.entra_tenant_id)
     tor_proxy: str = "socks5://tor:9050"
     request_timeout: int = 60
+    # Response size cap for every fetch (bytes). Larger bodies are truncated and the
+    # result is marked truncated. Raw index HTML kept on page items uses the same cap.
+    fetch_max_bytes: int = 5 * 1024 * 1024
+    # Wall-clock deadline per fetch, redirects included, enforced while reading.
+    # 0 uses 180 seconds for Tor and 60 for clearnet; a positive value applies to both.
+    fetch_deadline_seconds: int = 0
+    # Research console: route clearnet fetches through Tor unless the analyst
+    # unticks the box, so the collector's AWS address is not exposed by default.
+    clearnet_via_tor: bool = True
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
     )
