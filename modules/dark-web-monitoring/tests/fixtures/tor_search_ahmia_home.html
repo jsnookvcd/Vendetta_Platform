@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<!-- Rendered from ahmia-site ahmia/templates/index_tor.html (commit db1a091, Sep 2026).
+     The hidden input's name and value rotate every minute (views.rotating_field_names
+     and views.generate_token). -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Ahmia</title></head>
+<body class="main">
+  <div id="imageOverlay">&nbsp;</div>
+  <div id="ahmiaMainContent">
+    <div id="ahmiaSearchArea">
+      <h1 class="ahmia-home-logo"><img src="/static/images/ahmia-logo-dark.svg" alt="Ahmia"></h1>
+      <form id="searchForm" class="autocomplete" action="/search/" method="get">
+        <input id="id_q" type="search" name="q" title="q">
+        <input type="hidden" name="3f9a1c" value="b72e04">
+        <input type="submit" value="Search">
+      </form>
+    </div>
+    <div id="ahmiaDescriptionArea">
+      <p>Ahmia searches hidden services on the Tor network.</p>
+      <p>Onion service:
+        <a href="http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/">juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion</a></p>
+    </div>
+  </div>
+  <script>$(document).ready(function () { $('#id_q').focus(); });</script>
+</body>
+</html>
