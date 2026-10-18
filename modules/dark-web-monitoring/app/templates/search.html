@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Search{% endblock %}
+{% extends "base.html" %}{% block title %}Search collected data{% endblock %}
 {% block body %}
 <div class="panel pad" style="margin-bottom:14px">
 <form class="row" method="get" action="/search">
@@ -7,7 +7,7 @@
   <label class="field">Days back<input name="days" type="number" value="{{ days }}" style="width:92px"></label>
   <button class="btn btn-primary">Search</button>
 </form>
-<p class="page-intro" style="margin:12px 0 0">Full text search across every victim post, crawled leak-site page, forum thread, paste, breach record, infostealer log and certificate collected. Use it to scope a prospect or new client for prior exposure before onboarding.</p>
+<p class="page-intro" style="margin:12px 0 0">Full text search across every victim post, crawled leak-site page, forum thread, paste, breach record, infostealer log and certificate collected. Use it to scope a prospect or new client for prior exposure before onboarding. This searches the module's own database; to query onion search engines over Tor, use <a href="/search/live">Live Tor search</a>.</p>
 </div>
 {% if q %}
 <div class="section-head"><h2>Results</h2><span class="count">{{ items|length }}</span></div>

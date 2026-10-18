@@ -21,6 +21,7 @@ from . import auth, connectors, evidence, iab, oidc, platform, profiles, provisi
 from . import health, work_requests
 from . import captures, onion_sources, priority, profile_store
 from . import backfill as backfill_mod, watchterms
+from . import tor_search
 from .config import settings
 from .db import AuditLog, Client, Evidence, Hit, Item, RunRequest, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
@@ -339,8 +340,11 @@ def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: 
     ev = db.execute(select(Evidence).where(Evidence.client_id == cid).order_by(desc(Evidence.captured_at)).limit(50)).scalars().all()
     trend = _hit_trend(db, cid, days=21)
     coverage = {**backfill_mod.client_state(db, cid), "tombstones": watchterms.tombstones(db, cid)}
+    ident = auth.resolve_identity(request)
     return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend,
-                  coverage=coverage)
+                  coverage=coverage, saved_searches=tor_search.client_saved(db, cid),
+                  search_engines=tor_search.enabled_engines(), saved_intervals=tor_search.SAVED_INTERVALS_HOURS,
+                  can_edit=bool(ident and not ident.is_viewer))
 
 
 def _hit_trend(db: Session, cid: str, days: int = 21) -> list[int]:
@@ -567,8 +571,12 @@ def item_detail(iid: str, request: Request, user: str = auth.RequireUser, db: Se
 
 
 @app.get("/research", response_class=HTMLResponse)
-def research(request: Request, user: str = auth.RequireUser):
-    return render(request, "research.html", user=user, result=None, url="", tor=None)
+def research(request: Request, url: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """The url parameter prefills the form (Open in research console on a live
+    search result). Nothing is fetched until the analyst presses Fetch."""
+    prefill = tor_search.safe_url(url) if url else ""
+    clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
+    return render(request, "research.html", user=user, result=None, url=prefill, tor=None, clients=clients_)
 
 
 @app.post("/research", response_class=HTMLResponse)
@@ -988,3 +996,118 @@ async def profile_preview_or_save(group: str, request: Request, user: str = auth
     ctx["selectors"] = selectors
     return render(request, "profile_editor.html", user=user, preview={"entries": entries, "has_page": bool(page)},
                   saved=None, can_edit=True, **ctx)
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+# A viewer may run a live search: it reads onion space and changes nothing the
+# module holds beyond the request row and the audit entry. The search routes
+# therefore authenticate with require_internal, which skips the viewer write
+# gate. Adding a result as a Source and saved searches change state and go
+# through RequireUser, so require_write refuses a viewer with 403.
+def _live_ctx(db: Session, ident: auth.Identity, req=None, q: str = "", error: str = "", added: str = "") -> dict:
+    engines = tor_search.enabled_engines()
+    ok, reason = tor_search.configured()
+    chosen = list(req.engines or []) if req is not None else [e.key for e in engines]
+    return {"user": ident.email, "engines": engines, "configured": ok, "reason": reason, "req": req,
+            "q": q or (req.query if req is not None else ""), "chosen": chosen, "error": error, "added": added,
+            "recent": tor_search.recent_for(db, ident.email), "can_write": not ident.is_viewer,
+            "engine_names": {e.key: e.name for e in engines}, "max_query": tor_search.MAX_QUERY}
+
+
+@app.get("/search/live", response_class=HTMLResponse)
+def live_search_page(request: Request, id: str = "", added: str = "",
+                     ident: auth.Identity = Depends(auth.require_internal), db: Session = Depends(get_db)):
+    from .db import SearchRequest
+
+    req = db.get(SearchRequest, id) if id else None
+    if id and req is None:
+        raise HTTPException(404)
+    return render(request, "live_search.html", **_live_ctx(db, ident, req, added=added))
+
+
+@app.post("/search/live", response_class=HTMLResponse)
+async def live_search_submit(request: Request, ident: auth.Identity = Depends(auth.require_internal),
+                             db: Session = Depends(get_db)):
+    form = await request.form()
+    q = tor_search.normalise_query(str(form.get("q") or ""))
+    engines = [str(e) for e in form.getlist("engine")]
+    ok, reason = tor_search.configured()
+    if not q or not ok:
+        return render(request, "live_search.html",
+                      **_live_ctx(db, ident, q=q, error="Enter a query." if ok else f"Live Tor search is off: {reason}"))
+    req = tor_search.enqueue(db, q, engines, ident.email)
+    _audit(db, ident.email, "search.live", f"query={q!r} engines={','.join(req.engines)} request={req.id}")
+    return RedirectResponse(f"/search/live?id={req.id}", status_code=302)
+
+
+@app.get("/search/live/{rid}/status")
+def live_search_status(rid: str, ident: auth.Identity = Depends(auth.require_internal), db: Session = Depends(get_db)):
+    """Polled by the page every few seconds; counts only, never result content."""
+    from .db import SearchRequest
+
+    req = db.get(SearchRequest, rid)
+    if req is None:
+        raise HTTPException(404)
+    return {"id": req.id, "status": req.status, "total": (req.result or {}).get("total")}
+
+
+@app.post("/search/live/source")
+def live_search_add_source(url: str = Form(...), title: str = Form(""), request_id: str = Form(""),
+                           user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Admin and analyst: register an onion result as a Source a person can profile
+    later on Priority Groups or Sources. Viewers are refused by require_write."""
+    clean = tor_search.safe_url(url)
+    if not clean or not tor_search.is_onion_url(clean):
+        raise HTTPException(400, "only http(s) onion URLs can be added as a source")
+    existing = db.execute(select(Source).where(Source.kind == "onion", Source.url == clean)).scalar_one_or_none()
+    if existing is None:
+        name = tor_search.clean_text(title, 200) or httpx.URL(clean).host
+        db.add(Source(name=name, kind="onion", url=clean,
+                      meta={"seeded_from": "live_search", "search_request_id": request_id[:32], "added_by": user}))
+        db.commit()
+        _audit(db, user, "source.add", f"onion {clean} from live search {request_id[:32]}")
+    back = f"/search/live?id={request_id[:32]}&added=1" if request_id else "/sources"
+    return RedirectResponse(back, status_code=302)
+
+
+@app.post("/clients/{cid}/saved-searches")
+async def saved_search_add(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import SavedSearch
+
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    form = await request.form()
+    q = tor_search.normalise_query(str(form.get("q") or ""))
+    try:
+        hours = int(form.get("interval_hours") or 24)
+    except ValueError:
+        hours = 24
+    if hours not in tor_search.SAVED_INTERVALS_HOURS:
+        hours = 24
+    valid = {e.key for e in tor_search.enabled_engines()}
+    engines = [str(e) for e in form.getlist("engine") if str(e) in valid]
+    if q:
+        db.add(SavedSearch(client_id=cid, query=q, engines=engines, interval_hours=hours, created_by=user))
+        db.commit()
+        _audit(db, user, "search.saved_add", f"{cid}: query={q!r} every {hours}h engines={','.join(engines) or 'all'}")
+    return RedirectResponse(f"/clients/{cid}#saved-searches", status_code=302)
+
+
+@app.post("/clients/{cid}/saved-searches/{sid}/{action}")
+def saved_search_action(cid: str, sid: str, action: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import SavedSearch
+
+    s = db.get(SavedSearch, sid)
+    if s is None or s.client_id != cid:
+        raise HTTPException(404)
+    if action == "delete":
+        db.delete(s)
+    elif action == "toggle":
+        s.enabled = not s.enabled
+    elif action == "run":
+        s.next_run_at = dt.datetime.now(dt.timezone.utc)  # due now: the next tor_search run picks it up
+    else:
+        raise HTTPException(404)
+    db.commit()
+    _audit(db, user, f"search.saved_{action}", f"{cid}: {s.query!r}")
+    return RedirectResponse(f"/clients/{cid}#saved-searches", status_code=302)

@@ -33,7 +33,8 @@
       <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Dashboard</a>
       <a href="/hits" class="{{ 'active' if p.startswith('/hits') }}">{{ icon('alert') }} Hits</a>
       <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
-      <a href="/search" class="{{ 'active' if p.startswith('/search') or p.startswith('/items') }}">{{ icon('search') }} Search</a>
+      <a href="/search" class="{{ 'active' if (p.startswith('/search') and not p.startswith('/search/live')) or p.startswith('/items') }}">{{ icon('search') }} Search collected data</a>
+      <a href="/search/live" class="{{ 'active' if p.startswith('/search/live') }}">{{ icon('research') }} Live Tor search</a>
       <a href="/research" class="{{ 'active' if p.startswith('/research') }}">{{ icon('research') }} Research</a>
       <div class="sep"></div>
       <a href="/evidence" class="{{ 'active' if p.startswith('/evidence') }}">{{ icon('evidence') }} Evidence</a>
@@ -48,7 +49,7 @@
   <div class="main">
     <header class="topbar">
       <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
-      <form class="search" method="get" action="/search"><input name="q" placeholder="Search collected intel" value="{{ q if q is defined else '' }}"></form>
+      <form class="search" method="get" action="/search"><input name="q" placeholder="Search collected data" value="{{ q if q is defined else '' }}"></form>
       <span class="spacer"></span>
       {% if shell %}
       <div class="status-strip">

@@ -80,6 +80,38 @@
 </div>
 {% endif %}
 
+<div class="section-head" id="saved-searches"><h2>Saved Tor searches</h2><span class="count">{{ saved_searches|length if saved_searches is defined else 0 }}</span></div>
+<div class="panel pad">
+{% if can_edit %}
+<form class="row" method="post" action="/clients/{{ client.id }}/saved-searches">
+  <label class="field">Query<input name="q" maxlength="100" style="min-width:260px" placeholder="{{ client.name }}" required></label>
+  <label class="field">Every<select name="interval_hours">{% for h in saved_intervals %}<option value="{{ h }}" {{ 'selected' if h == 24 }}>{% if h < 24 %}{{ h }} hours{% elif h == 24 %}day{% elif h == 168 %}week{% else %}{{ h // 24 }} days{% endif %}</option>{% endfor %}</select></label>
+  {% for e in search_engines %}<label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="engine" value="{{ e.key }}" checked> {{ e.name }}</label>{% endfor %}
+  <button class="btn btn-primary">Save search</button>
+</form>
+{% endif %}
+<p class="page-intro" style="margin:{{ '10px' if can_edit else '0' }} 0 0">The worker re-runs each saved search over Tor on its interval. New results are stored as search items and matched against every client's watch terms, so a hit alerts and queues a capture like any other finding. A result already collected is not stored again.</p>
+</div>
+{% if saved_searches %}
+<div class="panel" style="margin-top:12px"><div class="table-wrap">
+<table><thead><tr><th>Query</th><th>Engines</th><th>Every</th><th>Last run</th><th>New items</th><th>Next run</th><th></th></tr></thead><tbody>
+{% for s in saved_searches %}<tr>
+  <td class="mono">{{ s.query }}{% if not s.enabled %} <span class="faint">paused</span>{% endif %}</td>
+  <td class="faint">{{ (s.engines or []) | join(', ') or 'all' }}</td>
+  <td class="nowrap faint">{{ s.interval_hours }}h</td>
+  <td class="nowrap">{% if s.last_run_at %}{% if s.last_request_id %}<a href="/search/live?id={{ s.last_request_id }}">{{ s.last_run_at.strftime('%b %d %H:%M') }}</a>{% else %}{{ s.last_run_at.strftime('%b %d %H:%M') }}{% endif %}{% else %}<span class="faint">never</span>{% endif %}{% if s.last_error %} <span class="bad-txt" title="{{ s.last_error }}">engine errors</span>{% endif %}</td>
+  <td class="num">{{ s.last_new_items }}</td>
+  <td class="nowrap faint">{{ s.next_run_at.strftime('%b %d %H:%M') if s.next_run_at else 'due' }}</td>
+  <td class="nowrap" style="text-align:right">{% if can_edit %}
+    <form class="inline" method="post" action="/clients/{{ client.id }}/saved-searches/{{ s.id }}/run"><button class="btn btn-sm btn-ghost">Run now</button></form>
+    <form class="inline" method="post" action="/clients/{{ client.id }}/saved-searches/{{ s.id }}/toggle"><button class="btn btn-sm btn-ghost">{{ 'Pause' if s.enabled else 'Resume' }}</button></form>
+    <form class="inline" method="post" action="/clients/{{ client.id }}/saved-searches/{{ s.id }}/delete"><button class="btn btn-sm btn-ghost">Remove</button></form>
+  {% endif %}</td>
+</tr>{% endfor %}
+</tbody></table>
+</div></div>
+{% endif %}
+
 <div class="section-head"><h2>Hits</h2><span class="count">{{ hits|length }}</span></div>
 <div class="panel"><div class="table-wrap">
 {% if hits %}
