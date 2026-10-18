@@ -126,3 +126,65 @@ def test_forum_crawl_only_follows_threads_on_the_sources_own_host_over_tor(fresh
         assert calls == [(f"http://{AKIRA}/board", True), (f"http://{AKIRA}/thread/1", True)]
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------- capture queue exception path
+def _victim_capture(db, url):
+    from app.db import Client, WatchTerm
+    from app.pipeline import ingest
+
+    c = Client(name="Acme Federal Credit Union")
+    db.add(c)
+    db.commit()
+    db.add(WatchTerm(client_id=c.id, term="Acme Federal Credit Union", kind="brand", severity="high"))
+    feed = Source(name="ransomware.live recent victims", kind="feed", url="https://api-pro.ransomware.live/victims/recent")
+    db.add(feed)
+    db.commit()
+    _, hits = ingest(db, kind="victim", title="akira: Acme Federal Credit Union", body="Victim: Acme Federal Credit Union",
+                     url=url, group_name="akira", source=feed, meta={"victim": "Acme Federal Credit Union"},
+                     hash_parts=("victim", "akira", url))
+    assert hits
+
+
+def test_capture_exception_counts_the_attempt_and_ends_unavailable(fresh_db):
+    from app import captures
+    from app.db import Capture, utcnow
+
+    def boom(url):
+        raise RuntimeError("parser exploded")
+
+    db = _db()
+    try:
+        _victim_capture(db, f"http://{AKIRA}/acme")
+        now = utcnow()
+        captures.drain(db, now=now, fetcher=boom)
+        cap = db.query(Capture).one()
+        assert cap.status == "pending" and cap.attempts == 1 and "parser exploded" in cap.last_error
+        assert cap.next_attempt_at == now + dt.timedelta(hours=1)
+        assert captures.drain(db, now=now + dt.timedelta(minutes=5), fetcher=boom)["attempted"] == 0
+        t = now
+        for hours in captures.BACKOFF_HOURS:
+            t += dt.timedelta(hours=hours)
+            captures.drain(db, now=t, fetcher=boom)
+        db.refresh(cap)
+        assert cap.status == "unavailable" and cap.attempts == captures.MAX_ATTEMPTS and cap.next_attempt_at is None
+    finally:
+        db.close()
+
+
+def test_malformed_source_url_fails_the_capture_cleanly(fresh_db):
+    from app import captures
+    from app.db import Capture
+
+    db = _db()
+    try:
+        _onion(db, url="http://a:b:c/")
+        _victim_capture(db, f"http://{AKIRA}/acme")
+        cap = db.query(Capture).one()
+        cands = captures.candidates(db, cap)
+        assert (f"http://{AKIRA}/acme", "post") in cands
+        st = captures.attempt(db, cap, fetcher=lambda u: _res(u, status=0, error="refused: invalid URL"))
+        assert st == "pending" and cap.attempts == 1 and cap.last_error
+        assert captures._default_fetch("http://a:b:c/").error  # no exception escapes the default fetcher
+    finally:
+        db.close()

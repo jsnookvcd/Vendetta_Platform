@@ -139,9 +139,12 @@ def candidates(db: Session, cap: Capture) -> list[tuple[str, str]]:
         if t is not None and (t.host or "").endswith(".onion"):
             path = t.raw_path.decode("ascii", "replace") if t.raw_path else "/"
             for s in sources:
-                host = httpx.URL(s.url).host
-                if host and host != t.host:
-                    add(f"{httpx.URL(s.url).scheme}://{host}{path}", "post")
+                try:
+                    su = httpx.URL(s.url)
+                except Exception:  # noqa: BLE001
+                    continue  # a malformed source URL is skipped, never fatal
+                if su.host and su.host != t.host:
+                    add(f"{su.scheme}://{su.host}{path}", "post")
     for s in sources:
         add(s.url, "index")
     return out
@@ -166,9 +169,28 @@ def victim_in_text(victim: str, text: str) -> bool:
 
 # ---------------------------------------------------------------- worker
 def _default_fetch(url: str) -> FetchResult:
+    from .fetch import is_onion
     from .onion_sources import fetch_onion
 
-    return fetch_onion(url) if ".onion" in (httpx.URL(url).host or "") else fetch(url, force_tor=True)
+    return fetch_onion(url) if is_onion(url) else fetch(url, force_tor=True)
+
+
+def _fail(db: Session, cap: Capture, error: str, now: dt.datetime, tried: list | None = None) -> str:
+    """Count a failed attempt and apply the backoff, or the final unavailable state
+    after MAX_ATTEMPTS. Used for ordinary failures and for unexpected exceptions."""
+    cap.attempts = (cap.attempts or 0) + 1
+    cap.last_error = error[:2000]
+    if tried is not None:
+        cap.tried = tried[-40:]
+    cap.updated_at = now
+    if cap.attempts >= MAX_ATTEMPTS:
+        cap.status = UNAVAILABLE
+        cap.finished_at = now
+        cap.next_attempt_at = None
+    else:
+        cap.next_attempt_at = now + dt.timedelta(hours=BACKOFF_HOURS[min(cap.attempts, len(BACKOFF_HOURS)) - 1])
+    db.commit()
+    return cap.status
 
 
 def attempt(db: Session, cap: Capture, fetcher: Callable[[str], FetchResult] | None = None,
@@ -200,18 +222,8 @@ def attempt(db: Session, cap: Capture, fetcher: Callable[[str], FetchResult] | N
         cap.tried = tried[-40:]
         db.commit()
         return status
-    cap.attempts = (cap.attempts or 0) + 1
-    cap.last_error = ("; ".join(errors) or "no target: the feed gave no post URL and the group has no enabled onion source")[:2000]
-    cap.tried = tried[-40:]
-    cap.updated_at = now
-    if cap.attempts >= MAX_ATTEMPTS:
-        cap.status = UNAVAILABLE
-        cap.finished_at = now
-        cap.next_attempt_at = None
-    else:
-        cap.next_attempt_at = now + dt.timedelta(hours=BACKOFF_HOURS[min(cap.attempts, len(BACKOFF_HOURS)) - 1])
-    db.commit()
-    return cap.status
+    return _fail(db, cap, "; ".join(errors) or "no target: the feed gave no post URL and the group has no enabled onion source",
+                 now, tried)
 
 
 def drain(db: Session, now: dt.datetime | None = None, fetcher: Callable[[str], FetchResult] | None = None,
@@ -233,9 +245,7 @@ def drain(db: Session, now: dt.datetime | None = None, fetcher: Callable[[str], 
         except Exception as e:  # noqa: BLE001
             log.exception("capture %s failed", cap.id)
             db.rollback()
-            cap.last_error = f"{type(e).__name__}: {e}"[:2000]
-            db.commit()
-            st = PENDING
+            st = _fail(db, cap, f"{type(e).__name__}: {e}", now)
         counts["attempted"] += 1
         counts[st if st in (CAPTURED, NO_MATCH, UNAVAILABLE) else "retrying"] += 1
     remaining = db.scalar(select(func.count(Capture.id)).where(Capture.status == PENDING)) or 0
