@@ -442,9 +442,23 @@ on the host and in the module as follows.
 
 ### Dark web module: optional connectors
 
-Each optional connector stays off until its settings exist, and the module's
-Connectors page shows why. Put the values in SSM under
-`/vendetta/dark-web-monitoring/` and run `infra/redeploy.sh dark-web-monitoring`:
+The ransomware victim feed needs one key, and the module does nothing useful
+without it. Get a free PRO key at my.ransomware.live, put it in SSM as
+`/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY` (SecureString) and run
+`infra/redeploy.sh dark-web-monitoring`. The feed then seeds the onion crawl list
+from current group locations, ranks the priority groups, and queues a direct Tor
+capture of the original leak post whenever a victim matches a client. On first
+deploy after this change the 451 mirrors seeded from the archived ransomwatch list
+are disabled automatically (kept, with the reason shown on Sources).
+
+After the redeploy, check the module's Connectors page: Tor exiting through Tor,
+a fresh worker heartbeat, and ransomware.live with a recent last success and
+victims dated this week. `python -m app.diagnose` in the worker container prints
+the same picture plus a probe of each upstream.
+
+Each optional connector stays off until its settings exist, and the Connectors page
+shows why. Put the values in SSM under `/vendetta/dark-web-monitoring/` and run
+`infra/redeploy.sh dark-web-monitoring`:
 
 - `HIBP_API_KEY` (SecureString) turns on Have I Been Pwned breach and stealer log
   queries; without it the page reads "needs HIBP_API_KEY".
