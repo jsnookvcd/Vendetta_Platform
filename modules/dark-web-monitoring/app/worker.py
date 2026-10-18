@@ -314,8 +314,6 @@ def _retention_phase3(db) -> int:
     return work_requests.prune(db, SearchRequest, tor_search.RETENTION_DAYS)
 
 
-if __name__ == "__main__":
-    main()
 
 
 # ---------------------------------------------------------------- Phase 2: victim sources and priority groups
@@ -364,3 +362,7 @@ def phase2_startup() -> None:
 def add_phase2_jobs(sched: BlockingScheduler, now: dt.datetime) -> None:
     sched.add_job(priority_refresh, "interval", hours=PRIORITY_REFRESH_HOURS, id="priority_refresh",
                   next_run_time=now + dt.timedelta(minutes=30))
+
+
+if __name__ == "__main__":
+    main()
