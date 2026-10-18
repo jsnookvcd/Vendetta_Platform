@@ -17,6 +17,8 @@ Collection
 - Paste sites: a paste index searched per watch term. Off by default (PASTES_ENABLED=false) because psbdmp.ws, the only free index wired in, could not be verified as working; see "Optional connectors" below.
 - Telegram: public channels, optional, via Telethon (in requirements.txt). Needs TELEGRAM_* settings and a one-time login; see DEPLOY.md.
 - Research console: fetch any URL (onion or clearnet) through the collector's Tor circuit and preserve the response.
+- Live Tor search (/search/live): an analyst types a query, picks engines and the worker sends it to each onion search engine over Tor. The page polls the request every few seconds; searches usually take 20 to 90 seconds. Results are merged and de-duplicated by onion host and path and show which engines returned each. Every result is plain text: no HTML from a result page is rendered or executed, and only http(s) URLs are kept. "Open in research console" prefills /research with the URL so the analyst can fetch it over Tor and preserve it as evidence through the existing path. "Add as source" (admin and analyst) registers an onion result as a Source to profile later. Viewers can search and open results but cannot add sources. Every search is written to the audit log with who searched what. Search collected data (/search) remains the full text search over the module's own database.
+- Saved Tor searches: on a client page an admin or analyst saves a query with an interval (6 hours to a week). The tor_search connector checks for due saved searches every SAVED_SEARCH_INTERVAL minutes (15), runs them through the same search_requests path and ingests new results as kind search items through pipeline.ingest, so watch-term matching, alerting and capture apply. A result already collected (same onion host and path) is never stored or alerted twice.
 
 Matching
 - Watch terms per client: domain, email domain, brand, keyword, person, IP CIDR, regex. Severity per term.
@@ -122,6 +124,24 @@ Each optional connector stays off until it has what it needs, and the Connectors
 - Pastes: "PASTES_ENABLED is false" by default. On Oct 17, 2026 psbdmp.ws could not be reached from the build environment and no current documentation for its v3 API was found; the latest public reference describes it at psbdmp.cc with registration required. Probe it from the host with `python -m app.diagnose` and set PASTES_ENABLED=true only when the psbdmp search returns HTTP 200 with JSON. A replacement index is a class implementing PasteSource (search and fetch) in app/collectors/pastes.py, registered in SOURCES and selected with PASTE_SOURCE.
 - Forums: "no forum profiles configured" until a profile of kind forum exists in app/profiles and an enabled forum Source references it. No live forum profiles ship in code.
 
+## Live Tor search engines
+
+Engines are declared in app/tor_search.py and overridden with TOR_SEARCH_ENGINES, a JSON list of engine objects merged by key. An object naming an existing key changes only the fields it sets, so a dead engine is switched off or moved without a release:
+
+```
+TOR_SEARCH_ENGINES=[{"key": "tor66", "enabled": false}, {"key": "ahmia", "base_url": "http://<new address>.onion"}]
+```
+
+Fields: key, name, parser (ahmia, onionland or tor66), enabled, base_url, search_path, query_param, params (fixed query parameters), token_path and token_form (the page and form to copy hidden inputs from before searching). Invalid JSON or an unknown parser turns the connector off with the reason on the Connectors page.
+
+Default engines and what was verified on Oct 17 to 18, 2026. The build environment could not reach Tor or ahmia.fi, so none was fetched live; confirm each on the host with a live search and `python -m app.diagnose`, which probes every enabled engine over Tor.
+
+- Ahmia (juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion). Verified from Ahmia's own source (github.com/ahmia/ahmia-site, commit db1a091, Sep 25, 2026). The search form carries a hidden input whose name and value rotate every minute; /search/ without it redirects home. The adapter fetches the homepage, copies every hidden input of form#searchForm and then searches. Queries are capped at 100 characters, Ahmia's own limit.
+- OnionLand (3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion). Address listed identically by three maintained onion search tools (robin, Oct 2026; Sicry, May 2026; OnionSearch, 2023). Markup from OnionSearch's parser.
+- Tor66 (tor66sewebgixwhcqfnp5inzp5x5uohhdy3kvtnyfxc2e5mxiuh34iid.onion). Address listed identically by the same three tools. Markup from OnionSearch's parser.
+
+An engine that is down, refuses the request or changes its layout returns no results and records the error; the other engines still answer. The last search's per-engine state and the count of searches in the last 24 hours show on the tor_search row of the Connectors page, and a search where every engine failed marks that row failed. The tests under tests/test_tor_search.py run each adapter against fixtures in tests/fixtures/tor_search_*.html. When an engine changes its markup, save a fresh result page from the research console, update the fixture and the parser together.
+
 ## Forum profiles and authenticated cookies
 
 Forum collection is read only. The crawler fetches board pages and threads and stores their text. It never logs in, registers, posts, replies, sends messages, votes or purchases, and a profile must not point it at a URL that does any of those things (logout, post, buy, vote or profile edit links).
@@ -147,12 +167,13 @@ Source health: Sources page. Leak sites go down constantly; a mirror with ten fa
 Backups: nightly pg_dump to the evidence bucket under backups/, plus daily EBS snapshots with seven retained.
 Updates: `git pull` then `scripts/deploy.sh`.
 Tor exit check: the Connectors page shows the worker's latest check; /research/torcheck runs one from the web container.
+Live searches: each one is a row in search_requests (query, engines, requester, status, merged results and per-engine status, counts, errors and timings), drained by the worker every TOR_SEARCH_POLL_SECONDS (20) and kept for 90 days. Each live search is also a collector_runs row under tor_search with trigger manual.
 
 ## Operational security
 
 - All onion traffic leaves through Tor. Clearnet collection (feeds, HIBP, crt.sh) leaves from the instance's AWS IP. If you do not want a leak site operator to see an AWS address during research, tick "route clearnet through Tor".
 - The crawler reads index pages only. It does not download leaked archives. Pulling victim data from a leak site is a decision for the case lead and counsel, not an automated process, and should be done from an isolated analysis VM.
-- Nothing is posted, registered, or interacted with. Read only.
+- Nothing is posted, registered, or interacted with. Read only. Live Tor search only issues GET requests to the search engines; it never follows a result, logs in, registers, posts, purchases or downloads, and it reduces every result page to text.
 - Telegram requires a real account. Use a dedicated number and device, not a personal one.
 - Treat the instance as holding client PII once HIBP data flows in. IAM access to it and to the bucket should match the IR desk's access list.
 
@@ -164,7 +185,8 @@ app/
   worker.py        scheduler, built from the connector registry; heartbeat, Tor check, Run now queue
   connectors.py    connector registry: every collector, its interval, configured() check and status
   health.py        worker heartbeat, Tor status and run retention
-  work_requests.py worker-polled request tables (run_requests now, reusable for later queues)
+  work_requests.py worker-polled request tables (run_requests, backfill_requests, search_requests)
+  tor_search.py    live Tor search: engine adapters, merge, search requests and saved searches
   diagnose.py      python -m app.diagnose
   collectors/      leak_feeds, onion_crawl, forum_crawl, hibp, ct_logs, pastes, telegram
   profiles/        per-site YAML selector profiles (leak and forum), with examples

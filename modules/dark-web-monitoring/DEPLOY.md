@@ -64,6 +64,15 @@ aws ssm put-parameter --name /vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_K
 
 Optional tuning, all with working defaults: ONION_CRAWL_BUDGET_MINUTES (45, the wall-clock cap on one onion sweep), ONION_SEED_GROUP_LIMIT (40 group detail calls per daily seed), ONION_INACTIVE_DAYS (180), ONION_MAX_CONSECUTIVE_FAILURES (10), CAPTURE_INTERVAL (5 minutes) and PRIORITY_GROUP_COUNT (25).
 
+Live Tor search works with its defaults (Ahmia, OnionLand and Tor66 over Tor). TOR_SEARCH_ENGINES, a JSON list merged over the defaults by key, switches an engine off or moves it to a new onion address without a release; README.md "Live Tor search engines" has the fields. Leave it unset unless an engine needs changing:
+
+```
+aws ssm put-parameter --name /darkweb/TOR_SEARCH_ENGINES --type String --value '[{"key": "tor66", "enabled": false}]'
+# shared platform host: /vendetta/dark-web-monitoring/TOR_SEARCH_ENGINES
+```
+
+Optional Tor search tuning: TOR_SEARCH_POLL_SECONDS (20, how often the worker drains queued searches), TOR_SEARCH_LIMIT (30 results per engine), TOR_SEARCH_TIMEOUT (90 seconds per request) and SAVED_SEARCH_INTERVAL (15 minutes between checks for due saved searches).
+
 HIBP_API_KEY turns on the HIBP connector; without it the Connectors page reads "needs HIBP_API_KEY". PASTES_ENABLED stays false until psbdmp has been probed from the host (see "Optional connectors" in README.md). TELEGRAM_SESSION_PATH and PASTE_SOURCE are optional and default to /data/telegram.session and psbdmp.
 
 SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.
@@ -123,6 +132,8 @@ sudo docker compose logs worker | grep -i "onion crawl\|page changed\|profiled c
 A few failures are normal (leak sites go up and down). You want at least some successes. Sources that fail 10 times in a row, or whose group has had no feed activity for 180 days, are disabled by the daily seed with the reason shown on the Sources page; Enable turns one back on.
 
 5. Captures and priority groups. When a hit lands, its direct capture appears on the hit page as pending and the worker tries it within five minutes; the Connectors page shows the capture queue depth and success rate. The Priority Groups page fills after the first daily ranking (30 minutes after the worker starts). Write leak-site profiles there for the groups that matter to your clients; the editor previews selectors against the newest stored index page.
+
+6. Live Tor search. Open Live Tor search in the console, search for a client name and wait for the page to refresh (20 to 90 seconds). Each engine shows a result count or its error. An engine error reading "layout changed" means its markup no longer matches the adapter; one reading "search token was refused" means Ahmia changed its form. Switch a failing engine off with TOR_SEARCH_ENGINES until its adapter is fixed. Open a result in the research console and preserve it to confirm the evidence path. `python -m app.diagnose` also probes each enabled engine's homepage over Tor.
 
 ## 5. Open the console
 

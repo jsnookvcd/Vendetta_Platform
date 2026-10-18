@@ -454,6 +454,10 @@ Connectors page shows why. Put the values in SSM under
 - `PASTES_ENABLED` stays `false` until psbdmp has been probed from the host with
   `python -m app.diagnose` in the worker (see the module README, "Optional
   connectors").
+- `TOR_SEARCH_ENGINES` (String, optional) is a JSON list merged over the default
+  live Tor search engines (Ahmia, OnionLand, Tor66) by key, for example
+  `[{"key": "tor66", "enabled": false}]`. Leave it unset unless an engine is down or
+  has moved; the module README ("Live Tor search engines") lists the fields.
 
 Provisioned clients get starter watch terms from their name and portal domains,
 and the readiness screen shows a "Watch terms" warning while any active dark web
