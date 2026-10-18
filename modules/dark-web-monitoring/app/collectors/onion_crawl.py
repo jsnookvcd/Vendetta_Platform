@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from .. import onion_sources, profile_store
 from ..config import settings
 from ..db import Source
-from ..fetch import absolute, fetch, html_to_text, select_text, soup_of
+from ..fetch import absolute, fetch, html_to_text, same_host, select_text, soup_of
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
@@ -93,11 +93,17 @@ def _crawl_profiled(db: Session, src: Source, res, profile: dict, now: dt.dateti
     cap = int(profile.get("max_posts_per_run", 40))
     for entry in profile_store.extract(res.text, profile):
         victim, desc, date, href = entry["victim"], entry["desc"], entry["date"], entry["link"]
-        post_url = absolute(src.url, href) if href else src.url
+        post_url = (absolute(src.url, href) if href else "") or src.url
         body = f"Victim: {victim}\nGroup: {src.group_name}\nDate: {date}\n\n{desc}".strip()
+        wants_post = href and followed < cap and (profile.get("post_body_selector") or profile.get("post_title_selector"))
+        if wants_post and not same_host(src.url, post_url):
+            # A hostile index can link anywhere, including the docker network; only
+            # the source's own onion host is followed.
+            log.warning("not following %s from %s: host differs from the source", post_url[:200], src.name)
+            wants_post = False
         # Follow the victim's own post for the full description, within the per-run cap.
-        if href and followed < cap and (profile.get("post_body_selector") or profile.get("post_title_selector")):
-            pr = fetch(post_url, cookies=cookies)
+        if wants_post:
+            pr = fetch(post_url, force_tor=True, cookies=cookies)
             if pr.ok and pr.text:
                 psoup = soup_of(pr.text)
                 ptitle = select_text(psoup, profile.get("post_title_selector", ""))

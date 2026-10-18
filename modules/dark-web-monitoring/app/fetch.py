@@ -238,9 +238,23 @@ def select_href(node, selector: str) -> str:
 
 
 def absolute(base: str, href: str) -> str:
+    """href resolved against base, or an empty string when either is malformed."""
     if not href:
         return ""
-    return str(httpx.URL(base).join(href))
+    try:
+        return str(httpx.URL(base).join(href))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def same_host(source_url: str, link: str) -> bool:
+    """True when link is an http(s) URL on exactly the source's own host. Crawlers
+    only follow links taken from fetched content when this holds."""
+    try:
+        a, b = httpx.URL(source_url), httpx.URL(link)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(a.host) and b.scheme in ("http", "https") and a.host.lower() == (b.host or "").lower()
 
 
 def tor_check() -> dict:

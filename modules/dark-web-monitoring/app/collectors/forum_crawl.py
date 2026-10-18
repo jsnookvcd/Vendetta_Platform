@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from .. import profiles
 from ..db import Source
-from ..fetch import absolute, fetch, html_to_text, select_href, select_text, soup_of
+from ..fetch import absolute, fetch, html_to_text, same_host, select_href, select_text, soup_of
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ def _crawl(db: Session, src: Source, profile: dict) -> None:
             url = absolute(src.url, section)
             if page_param and page > 1:
                 url += ("&" if "?" in url else "?") + f"{page_param}={page}"
-            res = fetch(url, cookies=cookies)
+            res = fetch(url, force_tor=True, cookies=cookies)
             if not res.ok or not res.text:
                 mark_source(db, src, False, res.error or f"HTTP {res.status} on {url}")
                 continue
@@ -62,6 +62,9 @@ def _crawl(db: Session, src: Source, profile: dict) -> None:
                 if not href:
                     continue
                 thread_url = absolute(src.url, href)
+                if not same_host(src.url, thread_url):
+                    log.warning("not following %s from %s: host differs from the source", thread_url[:200], src.name)
+                    continue
                 if thread_url in seen_threads:
                     continue
                 seen_threads.append(thread_url)
@@ -74,7 +77,7 @@ def _crawl(db: Session, src: Source, profile: dict) -> None:
 
 
 def _crawl_thread(db: Session, src: Source, profile: dict, thread_url: str, title: str, cookies: str) -> None:
-    res = fetch(thread_url, cookies=cookies)
+    res = fetch(thread_url, force_tor=True, cookies=cookies)
     if not res.ok or not res.text:
         return
     soup = soup_of(res.text)
