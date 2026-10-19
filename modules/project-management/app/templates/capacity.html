@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Capacity{% endblock %}
+{% block body %}
+<form method="get" class="formrow" style="margin-bottom:12px">
+  <label class="field">Practice<select name="practice"><option value="">Both</option>{% for k, v in PRACTICE_NAMES.items() %}<option value="{{ k }}" {{ 'selected' if practice==k }}>{{ v }}</option>{% endfor %}</select></label>
+  <label class="field" style="max-width:120px">Weeks<input name="weeks" type="number" min="1" max="12" value="{{ weeks }}"></label>
+  <button class="btn btn-sm">Show</button>
+</form>
+{% if data.overloaded_next_2_weeks %}<div class="flash bad">Over capacity in the next two weeks: {{ data.overloaded_next_2_weeks|join(', ') }}</div>{% endif %}
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Person</th>{% for w in data.weeks %}<th>Week of {{ w[5:] }}</th>{% endfor %}<th class="num">Unscheduled</th><th class="num">Free next 2 wks</th><th class="num">Harvest this wk</th></tr></thead><tbody>
+{% for p in data.people %}<tr><td>{{ p.name or p.email }}<div class="cellsub">{{ p.open_tasks }} open{% if p.overdue_tasks %}, <span class="due bad">{{ p.overdue_tasks }} overdue</span>{% endif %}{% if p.unestimated_tasks %}, {{ p.unestimated_tasks }} unestimated{% endif %}{% if p.engagements_as_pm %}, PM on {{ p.engagements_as_pm }}{% endif %}</div></td>
+{% for w in p.weeks %}<td><div class="loadbar {{ 'over' if w.over else 'warn' if (w.load_pct or 0) >= 80 }}"><span style="width:{{ [w.load_pct or 0, 100]|min }}%"></span></div><div class="cellsub">{{ w.planned_hours }} / {{ w.capacity_hours }}h</div></td>{% endfor %}
+<td class="num">{{ p.unscheduled_hours }}</td><td class="num">{{ p.free_hours_next_2_weeks }}</td><td class="num">{{ p.harvest_hours_this_week if p.harvest_hours_this_week is not none else '' }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p class="hint" style="margin-top:8px">{{ data.assumptions }}{% if data.harvest_error %} Harvest: {{ data.harvest_error }}{% endif %}</p>
+{% if is_admin %}
+<div class="section-head" style="margin-top:16px"><h2>Set someone's capacity</h2></div>
+<div class="panel pad"><form method="post" action="/capacity" class="formrow">
+  <label class="field wide">Email<input name="email" type="email" required></label>
+  <label class="field" style="max-width:140px">Hours per week<input name="weekly_hours" type="number" step="1" min="0" max="80" required></label>
+  <label class="field">Practices<input name="practices" value="ir,proserv"></label>
+  <button class="btn btn-sm">Save</button>
+</form></div>
+{% endif %}
+{% endblock %}

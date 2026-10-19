@@ -19,7 +19,9 @@ from typing import Any, Callable
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from . import harvest, integrations, oauth, service
+from . import alerts as alerts_mod
+from . import billing, capacity, changes, harvest, integrations, metrics, oauth, service, templates_lib
+from . import milestones as milestones_mod
 from .auth import Identity
 from .config import IR_WORKSTREAMS, PRACTICE_NAMES
 from .db import AuditLog, SessionLocal
@@ -39,7 +41,9 @@ INSTRUCTIONS = (
     "asked for. Meeting notes are saved here and mirrored to SharePoint. Time goes to Harvest: an "
     "engagement must be linked to a Harvest project, and the Harvest task is named per entry (use "
     "list_harvest_tasks when unsure). Confirm hours, date and task with the PM before logging time "
-    "for someone else or deleting anything."
+    "for someone else or deleting anything. Open new engagements from a template when one fits "
+    "(list_templates). Anything that changes sold hours or the end date goes through request_change, "
+    "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first."
 )
 
 
@@ -59,7 +63,8 @@ class Tool:
 TOOLS: dict[str, Tool] = {}
 _OPEN_WORLD = {"log_time", "update_time_entry", "delete_time_entry", "list_time_entries", "list_harvest_projects",
                "list_harvest_tasks", "engagement_burn", "log_meeting_notes", "update_meeting_note",
-               "retry_sharepoint_mirror"}
+               "retry_sharepoint_mirror", "draft_invoice", "uninvoiced_time", "manage_milestone",
+               "apply_template", "team_capacity", "portfolio_metrics"}
 
 
 def S(**props) -> dict:
@@ -214,12 +219,20 @@ def t_burn(db, ident, engagement):
 @tool("create_engagement", "Open a new IR or Professional Services engagement. It gets a card on the practice "
       "board (in the first phase unless phase is given) and its own task board. The code is generated "
       "(VCD-IR-2026-001 / VCD-PS-2026-001) unless you pass one.",
-      S(**{"practice!": PRACTICE, "name!": STR}, client=STR, code=STR, pm=WHO, description=STR, budget_hours=NUM,
-        starts_on=DATE, ends_on=DATE, harvest_project_id=STR, sharepoint_site_url=STR, platform_ref=STR,
+      S(**{"practice!": PRACTICE, "name!": STR}, client=STR, code=STR, pm=WHO, lead=WHO,
+        template={"type": "string", "description": "Template key (bec, ransomware, malware-analysis, ir-general, "
+                  "tabletop, vciso-onboarding, pentest, pre-ransomware, or your own); lays down its tasks, "
+                  "milestones, budget and closeout"},
+        description=STR, budget_hours=NUM, starts_on=DATE, ends_on=DATE, harvest_project_id=STR,
+        sharepoint_site_url=STR, platform_ref={"type": "string", "description": "IR hub case number "
+                                               "(VCD-IR-2026-781) or OSP engagement id; milestones show to the client "
+                                               "there"},
         phase=STR), write=True)
-def t_create_engagement(db, ident, practice, name, pm=None, phase=None, **f):
+def t_create_engagement(db, ident, practice, name, pm=None, lead=None, phase=None, **f):
     e = service.create_engagement(db, ident.email, practice=practice, name=name, pm_email=_who(ident, pm),
-                                  column=phase, **f)
+                                  lead_email=_who(ident, lead), column=phase, **f)
+    if e.platform_ref:
+        milestones_mod.publish(db, e)
     out = service.engagement_dict(db, e, detail=True)
     if e.practice == "ir":
         out["hint"] = "IR tasks can carry a workstream label: " + ", ".join(IR_WORKSTREAMS)
@@ -228,14 +241,22 @@ def t_create_engagement(db, ident, practice, name, pm=None, phase=None, **f):
 
 @tool("update_engagement", "Change an engagement's details, link its Harvest project or SharePoint site, or set "
       "its status (active, on_hold, closed; closing moves its card to the done column).",
-      S(**{"engagement!": ENG}, name=STR, client=STR, pm=WHO, description=STR, budget_hours=NUM,
+      S(**{"engagement!": ENG}, name=STR, client=STR, pm=WHO, lead=WHO, description=STR,
+        budget_hours={"type": "number", "description": "Prefer request_change for anything sold: it keeps the "
+                      "baseline and the reason"},
         starts_on=DATE, ends_on=DATE, harvest_project_id=STR, sharepoint_site_url=STR, sharepoint_folder=STR,
-        platform_ref=STR, status={"type": "string", "enum": ["active", "on_hold", "closed"]}), write=True)
-def t_update_engagement(db, ident, engagement, pm=None, **f):
+        platform_ref=STR, status={"type": "string", "enum": ["active", "on_hold", "closed"]},
+        force={"type": "boolean", "description": "Close even with closeout items open"}), write=True)
+def t_update_engagement(db, ident, engagement, pm=None, lead=None, **f):
     e = service.find_engagement(db, engagement)
     if pm is not None:
         f["pm_email"] = _who(ident, pm)
+    if lead is not None:
+        f["lead_email"] = _who(ident, lead) or ""
+    ref_before = e.platform_ref
     service.update_engagement(db, ident.email, e, **f)
+    if e.platform_ref and e.platform_ref != ref_before:
+        milestones_mod.publish(db, e)
     return service.engagement_dict(db, e, detail=True)
 
 
@@ -411,6 +432,209 @@ def t_update_time(db, ident, entry_id, hours=None, notes=None, date=None, task=N
       "deleted.", S(**{"entry_id!": STR}), write=True, destructive=True)
 def t_delete_time(db, ident, entry_id):
     return service.delete_time(db, ident.email, ident.role, entry_id)
+
+
+# ---------------------------------------------------------------- templates
+@tool("list_templates", "The engagement templates: the standard task sets, milestones and budgets per engagement "
+      "type.", S(practice=PRACTICE))
+def t_list_templates(db, ident, practice=None):
+    from sqlalchemy import select
+    from .db import Template
+    q = select(Template).where(Template.active.is_(True))
+    if practice:
+        q = q.where(Template.practice == practice)
+    return {"templates": [templates_lib.template_dict(t, full=False)
+                          for t in db.execute(q.order_by(Template.practice, Template.name)).scalars()]}
+
+
+@tool("get_template", "One template in full: tasks (owner by role pm/lead, due offset in days), milestones, "
+      "budget, target days per phase, closeout.", S(**{"template!": STR}))
+def t_get_template(db, ident, template):
+    return templates_lib.template_dict(templates_lib.find(db, template))
+
+
+@tool("save_template", "Create or change a template by key, or capture a finished engagement's board as a new "
+      "one (from_engagement). Tasks: [{title, owner: pm|lead|email, offset_days, estimate_hours, labels, "
+      "priority, checklist, column}]. Milestones: [{title, offset_days, workstream, client_visible}].",
+      S(**{"key!": STR}, name=STR, practice=PRACTICE, description=STR, budget_hours=NUM, duration_days=INT,
+        tasks={"type": "array", "items": {"type": "object"}}, milestones={"type": "array", "items": {"type": "object"}},
+        phase_days={"type": "object", "description": "Target days per practice-board phase"},
+        closeout=LABELS, active=BOOL, from_engagement=ENG), write=True)
+def t_save_template(db, ident, key, from_engagement=None, **f):
+    if from_engagement:
+        e = service.find_engagement(db, from_engagement)
+        t = templates_lib.from_engagement(db, ident.email, e, key=key, name=f.get("name") or f"{e.name} template")
+    else:
+        t = templates_lib.save(db, ident.email, key=key, **f)
+    return templates_lib.template_dict(t)
+
+
+@tool("apply_template", "Lay a template onto an existing engagement: its tasks (dated from the start), "
+      "milestones, closeout, and any budget or end date the engagement lacks.",
+      S(**{"engagement!": ENG, "template!": STR}, start=DATE), write=True)
+def t_apply_template(db, ident, engagement, template, start=None):
+    e = service.find_engagement(db, engagement)
+    res = templates_lib.apply(db, ident.email, e, templates_lib.find(db, template), start=service.parse_date(start))
+    if e.platform_ref:
+        res["publish"] = milestones_mod.publish(db, e)
+    return res
+
+
+# ---------------------------------------------------------------- milestones
+@tool("manage_milestone", "Add, update (status planned/in_progress/at_risk/done, title, due date, workstream, "
+      "client visibility) or remove a milestone, or publish. Client-visible milestones are pushed to the client's "
+      "portal (IR hub case or OSP engagement) after every change.",
+      S(**{"engagement!": ENG, "action!": {"type": "string", "enum": ["add", "update", "remove", "publish"]}},
+        milestone={"type": "string", "description": "Existing milestone title or id (update, remove)"},
+        title=STR, status={"type": "string", "enum": ["planned", "in_progress", "at_risk", "done"]},
+        due_on=DATE, workstream=STR, client_visible=BOOL), write=True)
+def t_milestone(db, ident, engagement, action, milestone=None, title=None, status=None, due_on=None,
+                workstream=None, client_visible=None):
+    e = service.find_engagement(db, engagement)
+    if action == "add":
+        m = milestones_mod.add(db, ident.email, e, title=title or "", due_on=due_on, workstream=workstream,
+                               client_visible=True if client_visible is None else client_visible)
+        if status:
+            milestones_mod.update(db, ident.email, m, status=status)
+    elif action == "update":
+        milestones_mod.update(db, ident.email, milestones_mod.find(db, e, milestone or ""), title=title,
+                              status=status, due_on=due_on, workstream=workstream, client_visible=client_visible)
+    elif action == "remove":
+        milestones_mod.remove(db, ident.email, milestones_mod.find(db, e, milestone or ""))
+    pub = milestones_mod.publish(db, e)
+    return {"engagement": e.code, "milestones": [milestones_mod.milestone_dict(m) for m in milestones_mod.list_for(db, e)],
+            "client_portal": pub}
+
+
+# ---------------------------------------------------------------- capacity
+@tool("team_capacity", "Who is loaded and who is free, week by week, from task estimates and due dates against "
+      "each person's weekly capacity, with this week's Harvest hours. Give hours (and practice) to ask whether "
+      "the team can take on a new engagement of that size.",
+      S(weeks=INT, practice=PRACTICE, hours={"type": "number", "description": "Size of a prospective engagement"}))
+def t_capacity(db, ident, weeks=4, practice=None, hours=None):
+    if hours:
+        return capacity.can_take(db, practice=practice or "ir", hours=float(hours), weeks=min(int(weeks or 2), 4))
+    return capacity.team(db, weeks=weeks or 4, practice=practice)
+
+
+@tool("set_capacity", "Set a person's bookable hours per week and the practices they work in (admins).",
+      S(**{"person!": WHO}, weekly_hours=NUM, practices=STR, active=BOOL, name=STR), write=True)
+def t_set_capacity(db, ident, person, **f):
+    if ident.role != "admin":
+        raise ServiceError("Only an admin sets capacity", 403)
+    row = capacity.set_capacity(db, _who(ident, person), **f)
+    return {"email": row.email, "weekly_hours": row.weekly_hours, "practices": row.practices, "active": row.active}
+
+
+# ---------------------------------------------------------------- metrics
+@tool("portfolio_metrics", "Delivery metrics across engagements: time to contain, time to report, cycle time, "
+      "on-time close, days per phase against template targets, budget variance, scope growth, task and milestone "
+      "on-time rates; by practice and engagement type. Give an engagement for one engagement's numbers.",
+      S(days=INT, practice=PRACTICE, type=STR, engagement=ENG, include_engagements=BOOL))
+def t_metrics(db, ident, days=90, practice=None, type=None, engagement=None, include_engagements=False):
+    if engagement:
+        e = service.find_engagement(db, engagement)
+        hrs = None
+        if e.harvest_project_id and harvest.configured():
+            try:
+                hrs = harvest.project_hours(e.harvest_project_id)["total_hours"]
+            except harvest.HarvestError:
+                pass
+        return metrics.engagement_metrics(db, e, hrs)
+    out = metrics.portfolio(db, days=days or 90, practice=practice, engagement_type=type)
+    if not include_engagements:
+        out.pop("engagements", None)
+    return out
+
+
+# ---------------------------------------------------------------- change control
+@tool("request_change", "Raise a change request against an engagement's sold scope: hours to add (or remove), "
+      "days to move the end date, the reason, and who at the client agreed. A second person approves it.",
+      S(**{"engagement!": ENG, "title!": STR}, hours_delta=NUM, days_delta=INT, description=STR,
+        reason={"type": "string", "enum": ["client_request", "scope_discovery", "new_systems", "schedule", "other"]},
+        client_approval=STR), write=True)
+def t_request_change(db, ident, engagement, title, **f):
+    e = service.find_engagement(db, engagement)
+    return changes.cr_dict(changes.request(db, ident.email, e, title=title, **f))
+
+
+@tool("decide_change", "Approve, reject or withdraw a change request. Approval moves the engagement's budget and "
+      "end date; the baseline is kept.",
+      S(**{"engagement!": ENG, "change!": {"type": "string", "description": "CR-2 or 2"},
+           "decision!": {"type": "string", "enum": ["approve", "reject", "withdraw"]}}, note=STR,
+        client_approval=STR), write=True)
+def t_decide_change(db, ident, engagement, change, decision, note="", client_approval=None):
+    e = service.find_engagement(db, engagement)
+    cr = changes.decide(db, ident.email, ident.role, changes.find(db, e, change), decision, note, client_approval)
+    return {**changes.cr_dict(cr), "scope": changes.scope_summary(db, e)}
+
+
+@tool("list_changes", "Change requests, for one engagement (with its baseline against current scope) or across "
+      "all, filtered by status.", S(engagement=ENG, status={"type": "string", "enum": ["requested", "approved",
+                                                                                       "rejected", "withdrawn",
+                                                                                       "all"]}))
+def t_list_changes(db, ident, engagement=None, status="all"):
+    e = service.find_engagement(db, engagement) if engagement else None
+    out = {"changes": [changes.cr_dict(c) for c in changes.list_for(db, engagement=e, status=status)]}
+    if e:
+        out["scope"] = changes.scope_summary(db, e)
+    return out
+
+
+# ---------------------------------------------------------------- alerts
+@tool("list_alerts", "Open delivery alerts: overdue and stuck tasks, WIP limits, budget burn and scope creep, "
+      "engagements near or past their end, phases past target, overdue milestones, pending change requests, "
+      "failed SharePoint copies. Yours by default; scope 'all' for everyone's.",
+      S(scope={"type": "string", "enum": ["mine", "all"]}, severity={"type": "string",
+                                                                     "enum": ["high", "medium", "low"]},
+        engagement=ENG, refresh=BOOL))
+def t_list_alerts(db, ident, scope="mine", severity=None, engagement=None, refresh=False):
+    if refresh:
+        alerts_mod.sync(db)
+    eng = service.find_engagement(db, engagement) if engagement else None
+    rows = alerts_mod.open_alerts(db, owner=ident.email if scope != "all" and not eng else None,
+                                  severity=severity, engagement_id=eng.id if eng else None)
+    return {"count": len(rows), "alerts": [alerts_mod.alert_dict(a) for a in rows]}
+
+
+@tool("acknowledge_alert", "Mark an alert as seen. It stays open until the condition clears.",
+      S(**{"key!": STR}), write=True)
+def t_ack(db, ident, key):
+    return alerts_mod.alert_dict(alerts_mod.ack(db, ident.email, key))
+
+
+# ---------------------------------------------------------------- closeout and invoicing
+@tool("closeout", "An engagement's closeout checklist: view it, check or uncheck an item (by number or text), "
+      "or add one. The engagement cannot be closed with items open unless forced.",
+      S(**{"engagement!": ENG}, action={"type": "string", "enum": ["view", "check", "uncheck", "add"]},
+        item=STR))
+def t_closeout(db, ident, engagement, action="view", item=None):
+    e = service.find_engagement(db, engagement)
+    if action == "view":
+        return {**billing.closeout(e), "invoices": billing.invoices_for(db, e)}
+    if ident.is_viewer:
+        raise ServiceError("Read-only access", 403)
+    if action == "add":
+        return billing.add_item(db, ident.email, e, item or "")
+    return billing.set_item(db, ident.email, e, item, done=action == "check")
+
+
+@tool("uninvoiced_time", "Uninvoiced billable hours and amount in Harvest for an engagement's project.",
+      S(**{"engagement!": ENG}, start=DATE, end=DATE))
+def t_uninvoiced(db, ident, engagement, start=None, end=None):
+    return billing.uninvoiced(db, service.find_engagement(db, engagement), start, end)
+
+
+@tool("draft_invoice", "Create a DRAFT invoice in Harvest for an engagement: hourly from its uninvoiced time and "
+      "expenses in the period, or a fixed fee. Never sends it; a person reviews and sends it in Harvest. PM of the "
+      "engagement or admin only. Confirm the period and amount with the PM first.",
+      S(**{"engagement!": ENG}, start=DATE, end=DATE,
+        summary_type={"type": "string", "enum": ["task", "people", "project", "detailed"]}, notes=STR,
+        payment_term={"type": "string", "enum": ["upon receipt", "net 15", "net 30", "net 45", "net 60"]},
+        fixed_amount={"type": "number", "description": "Fixed-fee amount instead of importing time"}),
+      write=True)
+def t_draft_invoice(db, ident, engagement, **f):
+    return billing.draft_invoice(db, ident.email, ident.role, service.find_engagement(db, engagement), **f)
 
 
 # ---------------------------------------------------------------- dispatch

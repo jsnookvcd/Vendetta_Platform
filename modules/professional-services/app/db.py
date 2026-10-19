@@ -68,6 +68,9 @@ class Engagement(Base):
     ends_on: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # planned end
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published: Mapped[bool] = mapped_column(Boolean, default=False)  # visible to the client portal
+    # Client milestones published by Project Management (project-management module):
+    # [{"key","title","workstream","status","due_on","completed_on"}], replaced whole on each publish.
+    milestones: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     client: Mapped[Client] = relationship(back_populates="engagements")
@@ -284,3 +287,4 @@ def init_db() -> None:
                                   "WHERE table_name = 'engagements' AND column_name = 'ends_on'")).first()
         if not have:
             conn.execute(_text("ALTER TABLE engagements ADD COLUMN ends_on TIMESTAMP WITH TIME ZONE"))
+        conn.execute(_text("ALTER TABLE engagements ADD COLUMN IF NOT EXISTS milestones JSON DEFAULT '[]'"))

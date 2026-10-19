@@ -111,7 +111,9 @@ def test_archive_restore_and_delete(admin):
 
 def test_closing_moves_practice_card_to_closed(admin):
     eid = _open(admin, practice="proserv", name="Tabletop")
-    admin.post(f"/engagements/{eid}/edit", data={"status": "closed"})
+    r = admin.post(f"/engagements/{eid}/edit", data={"status": "closed"}, follow_redirects=False)
+    assert "closeout" in r.headers["location"] and SessionLocal().get(Engagement, eid).status == "active"
+    admin.post(f"/engagements/{eid}/edit", data={"status": "closed", "force": "true"})
     db = SessionLocal()
     e = db.get(Engagement, eid)
     assert e.status == "closed" and service.practice_card(db, e).column.name == "Closed"

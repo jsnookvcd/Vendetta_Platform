@@ -131,7 +131,9 @@ def test_initialize_list_and_full_pm_flow(client):
     assert m.ok("list_meeting_notes", query="preservation")["count"] == 0  # action items are not body text
     assert m.ok("list_meeting_notes", query="carrier")["count"] == 1
 
-    closed = m.ok("update_engagement", engagement=e["code"], status="closed")
+    blocked = m.call("update_engagement", engagement=e["code"], status="closed")
+    assert blocked["isError"] and "closeout item" in blocked["content"][0]["text"]
+    closed = m.ok("update_engagement", engagement=e["code"], status="closed", force=True)
     assert closed["phase"] == "Closed"
     mw = m.ok("my_work", include_time=False)
     assert mw["engagements"] == []

@@ -35,6 +35,11 @@
     <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" min="0"></label>
   </div>
   <div class="formrow">
+    <label class="field wide">Template<select name="template"><option value="">None</option>{% for t in templates %}<option value="{{ t.key }}">{{ PRACTICE_NAMES[t.practice] }}: {{ t.name }}</option>{% endfor %}</select></label>
+    <label class="field">Technical lead<input name="lead_email" type="email"></label>
+    <label class="field">Platform reference<input name="platform_ref" placeholder="IR case number or OSP engagement id"></label>
+  </div>
+  <div class="formrow">
     <label class="field">Starts<input name="starts_on" type="date"></label>
     <label class="field">Planned end<input name="ends_on" type="date"></label>
     <label class="field">Harvest project ID<input name="harvest_project_id" placeholder="link now or later"></label>

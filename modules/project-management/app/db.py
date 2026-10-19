@@ -135,6 +135,25 @@ class Engagement(Base):
     sharepoint_folder: Mapped[str] = mapped_column(String(300), default="")
     # Reference into the rest of the platform: the IR hub case id or OSP engagement id.
     platform_ref: Mapped[str] = mapped_column(String(120), default="")
+    # The engagement type its template set up (bec, ransomware, tabletop, ...), and the
+    # technical lead tasks can be routed to by role.
+    engagement_type: Mapped[str] = mapped_column(String(40), default="", index=True)
+    template_id: Mapped[str] = mapped_column(String(32), default="")
+    lead_email: Mapped[str] = mapped_column(String(320), default="")
+    # Baseline as sold. Approved change requests move budget_hours and ends_on; the
+    # baseline stays, so scope growth is measurable.
+    baseline_budget_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    baseline_ends_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # Key dates the portfolio metrics are built on. Set the first time the practice
+    # card enters a column that marks them, or by hand.
+    contained_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reported_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Closeout checklist: [{"key","text","done","by","at"}]
+    closeout: Mapped[list] = mapped_column(JSON, default=list)
+    # Client milestone publishing (to the IR hub case or the OSP engagement portal).
+    publish_status: Mapped[str] = mapped_column(String(12), default="")  # "" | ok | failed | off
+    publish_detail: Mapped[str] = mapped_column(String(400), default="")
+    published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[str] = mapped_column(String(320), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -166,6 +185,9 @@ class BoardColumn(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     wip_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    # On a practice board: the engagement date entering this column records
+    # (contained | reported). Survives a rename.
+    marks: Mapped[str] = mapped_column(String(20), default="")
 
     board: Mapped[Board] = relationship(back_populates="columns")
 
@@ -258,6 +280,121 @@ class TimeLog(Base):
     spent_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     hours: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+# ---------------------------------------------------------------- delivery method
+class Template(Base):
+    """A repeatable engagement: the standard tasks (with owner by role and a due
+    offset from the start), client milestones, a default budget, target days per
+    phase, and closeout items. Applied when an engagement opens, or later."""
+    __tablename__ = "templates"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    key: Mapped[str] = mapped_column(String(40), unique=True)  # bec, ransomware, tabletop ...
+    name: Mapped[str] = mapped_column(String(200))
+    practice: Mapped[str] = mapped_column(String(16), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    budget_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # [{"title","column","labels","owner","offset_days","estimate_hours","checklist","priority"}]
+    tasks: Mapped[list] = mapped_column(JSON, default=list)
+    # [{"title","workstream","offset_days","client_visible"}]
+    milestones: Mapped[list] = mapped_column(JSON, default=list)
+    phase_days: Mapped[dict] = mapped_column(JSON, default=dict)  # {"Intake": 1, ...}
+    closeout: Mapped[list] = mapped_column(JSON, default=list)  # ["Final report delivered", ...]
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Milestone(Base):
+    """A milestone on an engagement. Client-visible ones are published to the
+    client's portal: the IR hub case for IR, the Office of Special Projects
+    engagement for ProServ."""
+    __tablename__ = "milestones"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    engagement_id: Mapped[str] = mapped_column(ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    workstream: Mapped[str] = mapped_column(String(60), default="")
+    status: Mapped[str] = mapped_column(String(16), default="planned")  # planned | in_progress | at_risk | done
+    due_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    client_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    engagement: Mapped[Engagement] = relationship()
+
+
+class ChangeRequest(Base):
+    """A change to what was sold: hours, end date, scope. Approval moves the
+    engagement's budget and end date; the baseline stays."""
+    __tablename__ = "change_requests"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    engagement_id: Mapped[str] = mapped_column(ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
+    number: Mapped[int] = mapped_column(Integer)  # CR-1, CR-2 per engagement
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    reason: Mapped[str] = mapped_column(String(40), default="client_request")
+    hours_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    days_delta: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(12), default="requested")  # requested | approved | rejected | withdrawn
+    client_approval: Mapped[str] = mapped_column(String(300), default="")  # who at the client agreed, and how
+    requested_by: Mapped[str] = mapped_column(String(320), default="")
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_by: Mapped[str] = mapped_column(String(320), default="")
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+
+    engagement: Mapped[Engagement] = relationship()
+
+
+class Capacity(Base):
+    """Bookable hours per person per week, for capacity planning."""
+    __tablename__ = "capacity"
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    weekly_hours: Mapped[float] = mapped_column(Float, default=32.0)
+    practices: Mapped[str] = mapped_column(String(40), default="ir,proserv")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Alert(Base):
+    """Something a PM should act on, computed on a schedule. One row per condition
+    (key), so a standing problem is one alert, notified once, until it clears."""
+    __tablename__ = "alerts"
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), index=True)
+    severity: Mapped[str] = mapped_column(String(8), default="medium")  # high | medium | low
+    engagement_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    card_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    owner: Mapped[str] = mapped_column(String(320), default="", index=True)
+    title: Mapped[str] = mapped_column(String(400))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(300), default="")
+    first_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    notified_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acked_by: Mapped[str] = mapped_column(String(320), default="")
+    acked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Invoice(Base):
+    """A Harvest invoice this module drafted at closeout. Drafts only: sending to
+    the client stays a person's action in Harvest."""
+    __tablename__ = "invoices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    engagement_id: Mapped[str] = mapped_column(ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
+    harvest_invoice_id: Mapped[str] = mapped_column(String(40))
+    number: Mapped[str] = mapped_column(String(60), default="")
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    state: Mapped[str] = mapped_column(String(20), default="draft")
+    period_from: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    period_to: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 # ---------------------------------------------------------------- MCP / OAuth

@@ -18,6 +18,10 @@
 {% elif name=='clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
 {% elif name=='link' %}<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>
 {% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+{% elif name=='bell' %}<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+{% elif name=='users' %}<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>
+{% elif name=='chart' %}<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>
+{% elif name=='copy' %}<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
 {% endif %}
 </svg>
 {% endmacro %}
@@ -35,6 +39,10 @@
       <a href="/engagements" class="{{ 'active' if p.startswith('/engagements') or p.startswith('/tasks') }}">{{ icon('briefcase') }} Engagements</a>
       <a href="/notes" class="{{ 'active' if p.startswith('/notes') }}">{{ icon('note') }} Meeting notes</a>
       <a href="/time" class="{{ 'active' if p=='/time' }}">{{ icon('clock') }} Time</a>
+      <a href="/alerts" class="{{ 'active' if p.startswith('/alerts') }}">{{ icon('bell') }} Alerts{% if shell and shell.alerts %} <span class="navcount">{{ shell.alerts }}</span>{% endif %}</a>
+      <a href="/capacity" class="{{ 'active' if p.startswith('/capacity') }}">{{ icon('users') }} Capacity</a>
+      <a href="/metrics" class="{{ 'active' if p.startswith('/metrics') }}">{{ icon('chart') }} Metrics</a>
+      <a href="/templates" class="{{ 'active' if p.startswith('/templates') }}">{{ icon('copy') }} Templates</a>
       <div class="sep"></div>
       <a href="/connect" class="{{ 'active' if p=='/connect' }}">{{ icon('link') }} Connect Claude</a>
       <a href="/settings/integrations" class="{{ 'active' if p.startswith('/settings/integrations') }}">{{ icon('settings') }} Integrations</a>
@@ -50,6 +58,7 @@
       <div class="status-strip">
         <span class="stat"><b>{{ shell.open }}</b> open engagements</span>
         <span class="stat"><b>{{ shell.mine }}</b> tasks assigned to you</span>
+        {% if shell.alerts %}<a class="stat" href="/alerts"><span class="dot bad"></span><b>{{ shell.alerts }}</b> alerts for you</a>{% endif %}
       </div>
       {% endif %}
     </header>

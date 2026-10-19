@@ -16,8 +16,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import harvest, sharepoint
-from .config import (DONE_COLUMN_NAMES, ENGAGEMENT_STATES, IR_WORKSTREAMS, PRACTICE_COLUMNS, PRACTICE_NAMES,
-                     PRACTICES, PRIORITIES, TASK_COLUMNS)
+from .config import (COLUMN_MARKS, DEFAULT_CLOSEOUT, DONE_COLUMN_NAMES, ENGAGEMENT_STATES, IR_WORKSTREAMS,
+                     PRACTICE_COLUMNS, PRACTICE_NAMES, PRACTICES, PRIORITIES, TASK_COLUMNS)
 from .db import (Board, BoardColumn, Card, CardEvent, Client, Engagement, MeetingNote, TimeLog, utcnow)
 
 
@@ -101,7 +101,8 @@ def practice_board(db: Session, practice: str) -> Board:
         db.add(b)
         db.flush()
         for i, name in enumerate(PRACTICE_COLUMNS[practice]):
-            db.add(BoardColumn(board_id=b.id, name=name, position=i, is_done=name in DONE_COLUMN_NAMES))
+            db.add(BoardColumn(board_id=b.id, name=name, position=i, is_done=name in DONE_COLUMN_NAMES,
+                               marks=COLUMN_MARKS[practice].get(name, "")))
         db.flush()
         db.refresh(b)
     return b
@@ -310,7 +311,8 @@ def create_engagement(db: Session, actor: str, *, practice: str, name: str, code
                       client: str | None = None, pm_email: str | None = None, description: str = "",
                       budget_hours=None, starts_on=None, ends_on=None, harvest_project_id: str = "",
                       sharepoint_site_url: str = "", sharepoint_folder: str = "", platform_ref: str = "",
-                      column: str | None = None) -> Engagement:
+                      column: str | None = None, template: str | None = None,
+                      lead_email: str | None = None) -> Engagement:
     practice = (practice or "").strip().lower()
     practice = {"ps": "proserv", "professional services": "proserv", "incident response": "ir",
                 "osp": "proserv"}.get(practice, practice)
@@ -328,7 +330,11 @@ def create_engagement(db: Session, actor: str, *, practice: str, name: str, code
                      harvest_project_id=str(harvest_project_id or "").strip(),
                      sharepoint_site_url=(sharepoint_site_url or "").strip(),
                      sharepoint_folder=(sharepoint_folder or "").strip(), platform_ref=platform_ref or "",
-                     created_by=actor)
+                     lead_email=(lead_email or "").strip().lower(), created_by=actor)
+    tpl = None
+    if template:
+        from . import templates_lib
+        tpl = templates_lib.find(db, template)
     db.add(eng)
     db.flush()
     if eng.harvest_project_id and harvest.configured():
@@ -346,8 +352,27 @@ def create_engagement(db: Session, actor: str, *, practice: str, name: str, code
     _place(db, card, col, None)
     _event(db, card, actor, "created", f"engagement opened in {col.name}")
     engagement_board(db, eng)
+    if col.marks:
+        _mark(eng, col.marks)
+    if tpl is not None:
+        from . import templates_lib
+        templates_lib.apply(db, actor, eng, tpl)
+    else:
+        eng.baseline_budget_hours, eng.baseline_ends_on = eng.budget_hours, eng.ends_on
+        eng.closeout = [{"key": f"c{i + 1}", "text": x, "done": False}
+                        for i, x in enumerate(DEFAULT_CLOSEOUT[practice])]
     db.flush()
     return eng
+
+
+def _mark(eng: Engagement, mark: str) -> None:
+    """Record an engagement date the first time its card reaches a marking column."""
+    if mark == "contained" and eng.contained_at is None:
+        eng.contained_at = utcnow()
+    elif mark == "reported" and eng.reported_at is None:
+        eng.reported_at = utcnow()
+        if eng.practice == "ir" and eng.contained_at is None:
+            eng.contained_at = eng.reported_at
 
 
 def practice_card(db: Session, eng: Engagement) -> Card | None:
@@ -357,10 +382,11 @@ def practice_card(db: Session, eng: Engagement) -> Card | None:
 
 def update_engagement(db: Session, actor: str, eng: Engagement, **f) -> Engagement:
     changed = []
-    for key in ("name", "description", "pm_email", "sharepoint_site_url", "sharepoint_folder", "platform_ref"):
+    for key in ("name", "description", "pm_email", "lead_email", "sharepoint_site_url", "sharepoint_folder",
+                "platform_ref"):
         if f.get(key) is not None:
             val = f[key].strip() if isinstance(f[key], str) else f[key]
-            if key == "pm_email":
+            if key in ("pm_email", "lead_email"):
                 val = val.lower()
             setattr(eng, key, val)
             changed.append(key)
@@ -370,11 +396,15 @@ def update_engagement(db: Session, actor: str, eng: Engagement, **f) -> Engageme
         changed.append("client")
     if f.get("budget_hours") is not None:
         eng.budget_hours = _hours(f["budget_hours"])
+        if eng.baseline_budget_hours is None:
+            eng.baseline_budget_hours = eng.budget_hours  # first budget set is what was sold
         changed.append("budget_hours")
     for key in ("starts_on", "ends_on"):
         if f.get(key) is not None:
             setattr(eng, key, parse_date(f[key]))
             changed.append(key)
+    if eng.baseline_ends_on is None and eng.ends_on:
+        eng.baseline_ends_on = eng.ends_on
     if f.get("harvest_project_id") is not None:
         eng.harvest_project_id = str(f["harvest_project_id"]).strip()
         eng.harvest_project_name = ""
@@ -388,6 +418,10 @@ def update_engagement(db: Session, actor: str, eng: Engagement, **f) -> Engageme
         st = f["status"].strip().lower().replace(" ", "_")
         if st not in ENGAGEMENT_STATES:
             raise ServiceError(f"Status must be one of: {', '.join(ENGAGEMENT_STATES)}")
+        open_items = [i["text"] for i in eng.closeout or [] if not i.get("done")]
+        if st == "closed" and eng.status != "closed" and open_items and not f.get("force"):
+            raise ServiceError(f"{eng.code} has {len(open_items)} closeout item(s) open: "
+                               + "; ".join(open_items) + ". Finish them, or close with force.", 409)
         eng.status = st
         eng.closed_at = utcnow() if st == "closed" else None
         changed.append("status")
@@ -436,7 +470,10 @@ def engagement_dict(db: Session, eng: Engagement, *, detail: bool = False) -> di
            "starts_on": eng.starts_on.isoformat() if eng.starts_on else None,
            "ends_on": eng.ends_on.isoformat() if eng.ends_on else None,
            "harvest_project_id": eng.harvest_project_id or None,
-           "harvest_project": eng.harvest_project_name or None, "platform_ref": eng.platform_ref or None}
+           "harvest_project": eng.harvest_project_name or None, "platform_ref": eng.platform_ref or None,
+           "type": eng.engagement_type or None, "lead": eng.lead_email or None,
+           "baseline_budget_hours": eng.baseline_budget_hours,
+           "closeout": f"{sum(1 for i in eng.closeout or [] if i.get('done'))}/{len(eng.closeout or [])}"}
     board = engagement_board(db, eng)
     tasks = db.execute(select(Card).where(Card.board_id == board.id, Card.archived.is_(False))).scalars().all()
     done_cols = {c.id for c in board.columns if c.is_done}
@@ -453,6 +490,21 @@ def engagement_dict(db: Session, eng: Engagement, *, detail: bool = False) -> di
         out["recent_notes"] = [{"id": n.id, "title": n.title, "held_at": n.held_at.isoformat()}
                                for n in eng.notes[:5]]
         out["task_board_id"] = board.id
+        from .db import ChangeRequest, Milestone
+        out["milestones"] = [{"id": m.id, "title": m.title, "status": m.status, "workstream": m.workstream or None,
+                              "due_on": m.due_on.isoformat() if m.due_on else None, "client_visible": m.client_visible}
+                             for m in db.execute(select(Milestone).where(Milestone.engagement_id == eng.id)
+                                                 .order_by(Milestone.position)).scalars()]
+        out["change_requests"] = [{"number": f"CR-{c.number}", "title": c.title, "status": c.status,
+                                   "hours_delta": c.hours_delta, "days_delta": c.days_delta}
+                                  for c in db.execute(select(ChangeRequest).where(
+                                      ChangeRequest.engagement_id == eng.id).order_by(ChangeRequest.number)).scalars()]
+        out["closeout_items"] = eng.closeout or []
+        out["key_dates"] = {"opened": eng.created_at.isoformat(),
+                            "contained": eng.contained_at.isoformat() if eng.contained_at else None,
+                            "reported": eng.reported_at.isoformat() if eng.reported_at else None,
+                            "closed": eng.closed_at.isoformat() if eng.closed_at else None}
+        out["client_publishing"] = {"status": eng.publish_status or None, "detail": eng.publish_detail or None}
     return out
 
 
@@ -517,6 +569,8 @@ def move_card(db: Session, actor: str, card: Card, column: str, position: int | 
     card.updated_at = utcnow()
     if prev != dest.name:
         _event(db, card, actor, "moved", f"{prev} -> {dest.name}")
+        if board.kind == "practice" and dest.marks and card.engagement_id:
+            _mark(db.get(Engagement, card.engagement_id), dest.marks)
     db.flush()
     db.refresh(card)
     return card

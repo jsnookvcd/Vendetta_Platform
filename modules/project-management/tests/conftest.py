@@ -89,10 +89,14 @@ def as_user(client, email: str):
 # ---------------------------------------------------------------- fake Harvest
 class FakeHarvest:
     def __init__(self):
-        self.users = [{"id": 11, "email": "pm@vendettacd.io", "name": "Pat PM"},
+        self.users = [{"id": 11, "email": "pm@vendettacd.io", "name": "Pat PM", "weekly_capacity": 144000},
                       {"id": 12, "email": "dan@vendettacd.io", "name": "Dan IR"},
                       {"id": 13, "email": "admin", "name": "Admin"}]
-        self.projects = [{"id": 501, "name": "IFB Incident Response", "code": "IFB-IR", "client": {"name": "IFB"},
+        self.project_hours: dict[int, float] = {}
+        self.uninvoiced = {501: {"hours": 12.5, "amount": 3125.0}}
+        self.invoices: list[dict] = []
+        self.projects = [{"id": 501, "name": "IFB Incident Response", "code": "IFB-IR",
+                          "client": {"id": 77, "name": "IFB"},
                           "budget": 120, "budget_by": "project", "is_billable": True},
                          {"id": 502, "name": "Rize vCISO", "code": "RIZE", "client": {"name": "Rize CU"}}]
         self.tasks = {501: [{"task": {"id": 901, "name": "Forensic Analysis"}, "billable": True},
@@ -117,6 +121,27 @@ class FakeHarvest:
         assert request.headers["Authorization"] == "Bearer hv-token"
         path = request.url.path.replace("/v2/", "", 1).strip("/")
         q = dict(request.url.params)
+        if path == "reports/time/projects":
+            assert len(q["from"]) == 8 and len(q["to"]) == 8  # Harvest reports take YYYYMMDD
+            return httpx.Response(200, json={"results": [{"project_id": pid, "total_hours": h}
+                                                         for pid, h in self.project_hours.items()],
+                                             "links": {"next": None}})
+        if path == "reports/time/team":
+            tot: dict[int, float] = {}
+            for e in self.entries.values():
+                tot[e["user_id"]] = tot.get(e["user_id"], 0) + e["hours"]
+            return httpx.Response(200, json={"results": [{"user_id": u, "total_hours": h} for u, h in tot.items()],
+                                             "links": {"next": None}})
+        if path == "reports/uninvoiced":
+            return httpx.Response(200, json={"results": [
+                {"project_id": pid, "client_id": 77, "uninvoiced_hours": v["hours"], "uninvoiced_amount": v["amount"],
+                 "currency": "USD"} for pid, v in self.uninvoiced.items()], "links": {"next": None}})
+        if path == "invoices" and request.method == "POST":
+            body = json.loads(request.content)
+            self.invoices.append(body)
+            return httpx.Response(201, json={"id": 9100 + len(self.invoices), "number": f"INV-{len(self.invoices)}",
+                                             "amount": 3125.0, "state": "draft", "currency": "USD",
+                                             "line_items": [{"kind": "Service"}]})
         if path == "users":
             return httpx.Response(200, json={"users": self.users, "links": {"next": None}})
         if path == "projects":
@@ -173,6 +198,7 @@ def fake_harvest(fresh_db):
 class FakeGraph:
     def __init__(self):
         self.files: dict[str, bytes] = {}
+        self.mail: list = []
         self.fail = False
         self.puts: list[str] = []
 
@@ -181,6 +207,9 @@ class FakeGraph:
         if "login.microsoftonline.com" in url:
             return httpx.Response(200, json={"access_token": "graph-token", "expires_in": 3600})
         assert request.headers.get("authorization") == "Bearer graph-token"
+        if request.method == "POST" and url.endswith("/sendMail"):
+            self.mail.append((request.url.path, json.loads(request.content)))
+            return httpx.Response(202)
         if request.method == "GET" and "/sites/" in url:
             return httpx.Response(200, json={"id": "site-123"})
         if request.method == "PUT":

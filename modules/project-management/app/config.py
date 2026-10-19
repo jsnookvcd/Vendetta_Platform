@@ -44,6 +44,13 @@ class Settings(BaseSettings):
 
     platform_url: str = ""
     platform_public_url: str = ""
+    # Where client-visible milestones are published: the IR hub (IR engagements,
+    # matched to a case by number) and the Office of Special Projects (ProServ,
+    # matched by its engagement id). Both set by the deployment.
+    platform_hub_url: str = ""
+    platform_hub_token: str = ""
+    osp_url: str = ""
+    osp_token: str = ""
     provision_interval_seconds: int = 300
     platform_token: str = ""
 
@@ -92,6 +99,14 @@ PRACTICE_COLUMNS = {
     "proserv": ["Intake", "Scoping", "SOW Out", "Scheduled", "In Delivery", "In Review",
                 "Delivered", "Invoicing", "Closed"],
 }
+# Practice-board columns whose first entry records an engagement date for the
+# portfolio metrics: entering the IR forensics phase means containment is done;
+# entering closeout (IR) or Delivered (ProServ) means the report is in the client's hands.
+COLUMN_MARKS = {
+    "ir": {"Forensics and Analysis": "contained", "Closeout and Billing": "reported"},
+    "proserv": {"Delivered": "reported"},
+}
+
 # Columns whose cards count as finished.
 DONE_COLUMN_NAMES = {"Closed", "Done"}
 
@@ -106,3 +121,33 @@ IR_WORKSTREAMS = ["Scoping and Containment", "Forensics and Analysis", "Recovery
 ENGAGEMENT_STATES = ["active", "on_hold", "closed"]
 ENGAGEMENT_STATE_NAMES = {"active": "Active", "on_hold": "On hold", "closed": "Closed"}
 PRIORITIES = ["low", "normal", "high", "urgent"]
+
+MILESTONE_STATUSES = ["planned", "in_progress", "at_risk", "done"]
+CHANGE_REASONS = ["client_request", "scope_discovery", "new_systems", "schedule", "other"]
+
+# Closeout items every engagement gets when no template supplies its own.
+DEFAULT_CLOSEOUT = {
+    "ir": ["Final report delivered", "Client acknowledged the report", "Evidence returned or destruction certified",
+           "Vendetta access to client systems removed", "All time entered in Harvest", "Lessons learned recorded",
+           "Invoice drafted"],
+    "proserv": ["Deliverables accepted by the client", "Final report delivered", "Client satisfaction check done",
+                "Vendetta access to client systems removed", "All time entered in Harvest", "Invoice drafted"],
+}
+
+# Alert thresholds. Each can be overridden with the matching environment variable.
+class AlertSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="ALERT_")
+
+    interval_seconds: int = 900          # how often alerts are recomputed (0 disables the loop)
+    due_soon_hours: int = 48
+    blocked_days: int = 3
+    burn_warn_pct: float = 80.0
+    burn_over_pct: float = 100.0
+    end_soon_days: int = 7
+    change_pending_days: int = 2
+    digest_hour_local: int = 7           # daily digest hour (America/New_York); -1 disables
+    teams_webhook_url: str = ""          # new high-severity alerts post here when set
+    mail_from: str = ""                  # Graph sendMail sender mailbox for digests (needs Mail.Send)
+
+
+alert_settings = AlertSettings()

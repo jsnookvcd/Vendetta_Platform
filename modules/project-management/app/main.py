@@ -14,8 +14,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, boot, harvest, integrations, mcp, oauth, oidc, provision, readiness, service, sharepoint,
-               sso)
+from . import (auth, billing, boot, capacity, changes, harvest, integrations, mcp, metrics, oauth, oidc, provision,
+               readiness, service, sharepoint, sso, templates_lib)
+from . import alerts as alerts_mod
+from . import milestones as milestones_mod
 from .config import (ENGAGEMENT_STATE_NAMES, ENGAGEMENT_STATES, IR_WORKSTREAMS, PRACTICE_NAMES, PRACTICES,
                      PRIORITIES, settings)
 from .db import AuditLog, Board, Client, Engagement, MeetingNote, SessionLocal, TimeLog, init_db
@@ -42,11 +44,13 @@ def _startup():
     db = SessionLocal()
     try:
         service.ensure_practice_boards(db)
+        templates_lib.seed(db)
         db.commit()
     finally:
         db.close()
     provision.start_scheduler(SessionLocal)
     sharepoint.start_retry_loop(SessionLocal, settings.sharepoint_retry_seconds)
+    alerts_mod.start_loop(SessionLocal)
 
 
 _DISABLED_HTML = (
@@ -132,6 +136,7 @@ def render(request: Request, name: str, **ctx):
             ctx["shell"] = {
                 "open": db.scalar(select(func.count(Engagement.id)).where(Engagement.status != "closed")) or 0,
                 "mine": len(service.list_tasks(db, assignee=ctx["user"])),
+                "alerts": len(alerts_mod.open_alerts(db, owner=ctx["user"], include_acked=False)),
             }
         except Exception:  # noqa: BLE001
             ctx["shell"] = None
@@ -281,8 +286,10 @@ def engagements_page(request: Request, practice: str = "", status: str = "open",
                      user: str = auth.RequireUser, db: Session = Depends(get_db)):
     rows = service.list_engagements(db, practice=practice or None, status=status, query=q or None)
     clients = db.execute(select(Client).where(Client.active.is_(True)).order_by(Client.name)).scalars().all()
+    from .db import Template
+    tpls = db.execute(select(Template).where(Template.active.is_(True)).order_by(Template.practice, Template.name)).scalars().all()
     return render(request, "engagements.html", user=user, rows=[service.engagement_dict(db, e) for e in rows],
-                  clients=clients, practice=practice, status=status, q=q,
+                  clients=clients, practice=practice, status=status, q=q, templates=tpls,
                   phases={p: [c.name for c in service.practice_board(db, p).columns] for p in PRACTICES})
 
 
@@ -290,12 +297,16 @@ def engagements_page(request: Request, practice: str = "", status: str = "open",
 def engagement_create(request: Request, practice: str = Form(...), name: str = Form(...), client: str = Form(""),
                       code: str = Form(""), pm_email: str = Form(""), budget_hours: str = Form(""),
                       starts_on: str = Form(""), ends_on: str = Form(""), harvest_project_id: str = Form(""),
-                      description: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+                      description: str = Form(""), template: str = Form(""), lead_email: str = Form(""),
+                      platform_ref: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
     def go():
         e = service.create_engagement(db, user, practice=practice, name=name, client=client or None,
                                       code=code or None, pm_email=pm_email or None, budget_hours=budget_hours,
                                       starts_on=starts_on, ends_on=ends_on, harvest_project_id=harvest_project_id,
-                                      description=description)
+                                      description=description, template=template or None,
+                                      lead_email=lead_email or None, platform_ref=platform_ref)
+        if e.platform_ref:
+            milestones_mod.publish(db, e)
         db.flush()
         return back(f"/engagements/{e.id}", msg=f"{e.code} opened")
     return _form_action(db, "/engagements", go)
@@ -327,18 +338,35 @@ def engagement_page(request: Request, eid: str, user: str = auth.RequireUser, db
                   time_err=time_err, htasks=htasks, states=ENGAGEMENT_STATES, sp_target=sharepoint.target(e),
                   harvest_on=harvest.configured(), today=dt.date.today().isoformat(),
                   practice_phases=[c.name for c in sorted(service.practice_board(db, e.practice).columns,
-                                                          key=lambda c: c.position)])
+                                                          key=lambda c: c.position)],
+                  ms=[milestones_mod.milestone_dict(m) for m in milestones_mod.list_for(db, e)],
+                  crs=[changes.cr_dict(c) for c in changes.list_for(db, engagement=e)],
+                  scope=changes.scope_summary(db, e), invoices=billing.invoices_for(db, e),
+                  eng_alerts=[a for a in alerts_mod.open_alerts(db, engagement_id=e.id) if a.severity != "low"],
+                  tpl_options=[t for t in templates_lib_list(db) if t.practice == e.practice])
+
+
+def templates_lib_list(db: Session):
+    from .db import Template
+    return db.execute(select(Template).where(Template.active.is_(True)).order_by(Template.name)).scalars().all()
 
 
 @app.post("/engagements/{eid}/edit")
 async def engagement_edit(request: Request, eid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     e = db.get(Engagement, eid) or _404()
     form = await request.form()
-    fields = {k: form.get(k) for k in ("name", "client", "pm_email", "description", "budget_hours", "starts_on",
+    fields = {k: form.get(k) for k in ("name", "client", "pm_email", "lead_email", "description", "budget_hours", "starts_on",
                                        "ends_on", "harvest_project_id", "sharepoint_site_url", "sharepoint_folder",
                                        "platform_ref", "status") if form.get(k) is not None}
-    return _form_action(db, f"/engagements/{eid}", lambda: service.update_engagement(db, user, e, **fields),
-                        "Engagement saved")
+    if form.get("force") == "true":
+        fields["force"] = True
+    before = e.platform_ref
+
+    def go():
+        service.update_engagement(db, user, e, **fields)
+        if e.platform_ref and e.platform_ref != before:
+            milestones_mod.publish(db, e)
+    return _form_action(db, f"/engagements/{eid}", go, "Engagement saved")
 
 
 @app.post("/engagements/{eid}/tasks")
@@ -610,6 +638,214 @@ async def sso_save(request: Request, db: Session = Depends(get_db)):
     sso.set_status(ok, detail)
     _audit(db, user, "sso.save", f"{'ok' if ok else 'fail'}: {detail}")
     return RedirectResponse(f"/settings/sso?{'ok' if ok else 'testfail'}=1", status_code=302)
+
+
+# ---------------------------------------------------------------- templates
+@app.get("/templates", response_class=HTMLResponse)
+def templates_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import Template
+    rows = db.execute(select(Template).order_by(Template.practice, Template.name)).scalars().all()
+    return render(request, "templates.html", user=user, rows=rows)
+
+
+@app.get("/templates/{key}", response_class=HTMLResponse)
+def template_page(request: Request, key: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    import json
+    t = templates_lib.find(db, key) if key != "new" else None
+    return render(request, "template.html", user=user, t=t,
+                  tasks_json=json.dumps(t.tasks if t else [], indent=1),
+                  ms_json=json.dumps(t.milestones if t else [], indent=1),
+                  phase_json=json.dumps(t.phase_days if t else {}, indent=1),
+                  closeout_text="\n".join(t.closeout or []) if t else "")
+
+
+@app.post("/templates")
+async def template_save(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    import json
+    f = await request.form()
+    key = (f.get("key") or "").strip()
+
+    def go():
+        try:
+            tasks = json.loads(f.get("tasks") or "[]")
+            ms = json.loads(f.get("milestones") or "[]")
+            phases = json.loads(f.get("phase_days") or "{}")
+        except ValueError as ex:
+            raise ServiceError(f"Tasks, milestones and phase days must be valid JSON: {ex}") from ex
+        t = templates_lib.save(db, user, key=key, name=f.get("name") or None, practice=f.get("practice") or None,
+                               description=f.get("description"), budget_hours=f.get("budget_hours"),
+                               duration_days=f.get("duration_days"), tasks=tasks, milestones=ms, phase_days=phases,
+                               closeout=[x for x in (f.get("closeout") or "").splitlines()],
+                               active=f.get("active") == "true")
+        return back(f"/templates/{t.key}", msg="Template saved")
+    return _form_action(db, f"/templates/{key or 'new'}", go)
+
+
+@app.post("/engagements/{eid}/template")
+def engagement_apply_template(request: Request, eid: str, template: str = Form(...), start: str = Form(""),
+                              user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+
+    def go():
+        res = templates_lib.apply(db, user, e, templates_lib.find(db, template), start=service.parse_date(start))
+        if e.platform_ref:
+            milestones_mod.publish(db, e)
+        return back(f"/engagements/{eid}", msg=f"Applied {res['template']}: {res['tasks_added']} tasks, "
+                                               f"{res['milestones_added']} milestones")
+    return _form_action(db, f"/engagements/{eid}", go)
+
+
+@app.post("/engagements/{eid}/save-template")
+def engagement_save_template(request: Request, eid: str, key: str = Form(...), name: str = Form(...),
+                             user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+    return _form_action(db, f"/engagements/{eid}", lambda: back(
+        f"/templates/{templates_lib.from_engagement(db, user, e, key=key, name=name).key}", msg="Template saved"))
+
+
+# ---------------------------------------------------------------- milestones
+@app.post("/engagements/{eid}/milestones")
+async def engagement_milestones(request: Request, eid: str, user: str = auth.RequireUser,
+                                db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+    f = await request.form()
+    action = f.get("action") or "add"
+
+    def go():
+        if action == "add":
+            milestones_mod.add(db, user, e, title=f.get("title", ""), due_on=f.get("due_on") or None,
+                               workstream=f.get("workstream") or None, client_visible=f.get("client_visible") == "true")
+        elif action == "status":
+            milestones_mod.update(db, user, milestones_mod.find(db, e, f.get("milestone", "")),
+                                  status=f.get("status"))
+        elif action == "remove":
+            milestones_mod.remove(db, user, milestones_mod.find(db, e, f.get("milestone", "")))
+        res = milestones_mod.publish(db, e)
+        msg = "Milestones saved" + (f" and shown on {res['to']}" if res.get("published") else "")
+        return back(f"/engagements/{eid}#milestones", msg=msg)
+    return _form_action(db, f"/engagements/{eid}#milestones", go)
+
+
+# ---------------------------------------------------------------- change control
+@app.post("/engagements/{eid}/changes")
+async def engagement_changes(request: Request, eid: str, user: str = auth.RequireUser,
+                             db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+    ident = _ident(request)
+    f = await request.form()
+
+    def go():
+        if f.get("action") == "decide":
+            cr = changes.decide(db, user, ident.role, changes.find(db, e, f.get("change")), f.get("decision", ""),
+                                f.get("note", ""), f.get("client_approval") or None)
+            return back(f"/engagements/{eid}#changes", msg=f"CR-{cr.number} {cr.status}")
+        cr = changes.request(db, user, e, title=f.get("title", ""), description=f.get("description", ""),
+                             hours_delta=f.get("hours_delta") or 0, days_delta=f.get("days_delta") or 0,
+                             reason=f.get("reason") or "client_request", client_approval=f.get("client_approval", ""))
+        return back(f"/engagements/{eid}#changes", msg=f"CR-{cr.number} raised; a second person approves it")
+    return _form_action(db, f"/engagements/{eid}#changes", go)
+
+
+# ---------------------------------------------------------------- closeout and invoicing
+@app.post("/engagements/{eid}/closeout")
+async def engagement_closeout(request: Request, eid: str, user: str = auth.RequireUser,
+                              db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+    f = await request.form()
+
+    def go():
+        if f.get("action") == "add":
+            billing.add_item(db, user, e, f.get("text", ""))
+        else:
+            billing.set_item(db, user, e, f.get("item"), done=f.get("action") == "check")
+    return _form_action(db, f"/engagements/{eid}#closeout", go)
+
+
+@app.post("/engagements/{eid}/invoice")
+async def engagement_invoice(request: Request, eid: str, user: str = auth.RequireUser,
+                             db: Session = Depends(get_db)):
+    e = db.get(Engagement, eid) or _404()
+    ident = _ident(request)
+    f = await request.form()
+
+    def go():
+        fixed = f.get("fixed_amount")
+        inv = billing.draft_invoice(db, user, ident.role, e, start=f.get("start") or None, end=f.get("end") or None,
+                                    summary_type=f.get("summary_type") or "task", notes=f.get("notes") or "",
+                                    payment_term=f.get("payment_term") or "net 30",
+                                    fixed_amount=float(fixed) if fixed else None)
+        return back(f"/engagements/{eid}#closeout",
+                    msg=f"Draft invoice {inv['number'] or inv['id']} created in Harvest for {inv['amount']}. "
+                        "Review and send it there.")
+    return _form_action(db, f"/engagements/{eid}#closeout", go)
+
+
+# ---------------------------------------------------------------- capacity, metrics, alerts
+@app.get("/capacity", response_class=HTMLResponse)
+def capacity_page(request: Request, weeks: int = 4, practice: str = "", user: str = auth.RequireUser,
+                  db: Session = Depends(get_db)):
+    return render(request, "capacity.html", user=user, data=capacity.team(db, weeks=weeks, practice=practice or None),
+                  practice=practice, weeks=weeks)
+
+
+@app.post("/capacity")
+def capacity_save(request: Request, email: str = Form(...), weekly_hours: str = Form(...),
+                  practices: str = Form("ir,proserv"), db: Session = Depends(get_db)):
+    user = _require_admin(request)
+    return _form_action(db, "/capacity", lambda: capacity.set_capacity(
+        db, email, weekly_hours=weekly_hours, practices=practices, active=True), f"Capacity saved for {email}")
+
+
+@app.get("/metrics", response_class=HTMLResponse)
+def metrics_page(request: Request, days: int = 90, practice: str = "", user: str = auth.RequireUser,
+                 db: Session = Depends(get_db)):
+    return render(request, "metrics.html", user=user,
+                  data=metrics.portfolio(db, days=days, practice=practice or None), days=days, practice=practice)
+
+
+@app.get("/alerts", response_class=HTMLResponse)
+def alerts_page(request: Request, scope: str = "mine", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    rows = alerts_mod.open_alerts(db, owner=user if scope == "mine" else None)
+    return render(request, "alerts.html", user=user, rows=rows, scope=scope)
+
+
+@app.post("/alerts/refresh")
+def alerts_refresh(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    res = alerts_mod.run_once(db)
+    return back("/alerts?scope=all", msg=f"{res['open']} open, {res['new']} new, {res['resolved']} cleared")
+
+
+@app.post("/alerts/ack")
+def alerts_ack(request: Request, key: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    return _form_action(db, "/alerts", lambda: alerts_mod.ack(db, user, key), "Acknowledged")
+
+
+@app.get("/api/alerts")
+def api_alerts(status: str = "open", owner: str = "", user: str = Depends(auth.api_user),
+               db: Session = Depends(get_db)):
+    """The open alert set, as SABINE reads it to queue delivery problems."""
+    rows = alerts_mod.open_alerts(db, owner=owner or None)
+    out = []
+    for a in rows:
+        d = alerts_mod.alert_dict(a)
+        eng = db.get(Engagement, a.engagement_id) if a.engagement_id else None
+        d.update(engagement=eng.code if eng else None, client=eng.client_name if eng else None,
+                 platform_client_id=eng.client.platform_client_id if eng and eng.client else None,
+                 practice=eng.practice if eng else None)
+        out.append(d)
+    return {"alerts": out}
+
+
+@app.get("/api/metrics")
+def api_metrics(days: int = 90, practice: str = "", user: str = Depends(auth.api_user),
+                db: Session = Depends(get_db)):
+    return metrics.portfolio(db, days=days, practice=practice or None)
+
+
+@app.get("/api/capacity")
+def api_capacity(weeks: int = 4, practice: str = "", user: str = Depends(auth.api_user),
+                 db: Session = Depends(get_db)):
+    return capacity.team(db, weeks=weeks, practice=practice or None)
 
 
 # ---------------------------------------------------------------- service API

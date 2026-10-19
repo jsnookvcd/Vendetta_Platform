@@ -596,6 +596,46 @@ def engagement_dict(e: Engagement) -> dict:
     }
 
 
+_MS_STATUSES = {"planned", "in_progress", "at_risk", "done"}
+
+
+@app.post("/api/engagements/{eid}/milestones")
+async def api_engagement_milestones(eid: str, request: Request, user: str = Depends(auth.api_user),
+                                    db: Session = Depends(get_db)):
+    """Project Management publishes an engagement's client-visible milestones here.
+    The list replaces the stored one and shows on the portal beside the
+    deliverables; each milestone that newly reaches done is bound into the client's
+    signed chain as a milestone_reached event."""
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    items = payload.get("milestones") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise HTTPException(400, "milestones must be a list")
+    e = db.get(Engagement, eid)
+    if e is None:
+        raise HTTPException(404, "no such engagement")
+    clean = []
+    for m in items[:100]:
+        if not isinstance(m, dict) or not str(m.get("title") or "").strip():
+            continue
+        st = str(m.get("status") or "planned")
+        clean.append({"key": str(m.get("key") or "")[:64], "title": str(m["title"]).strip()[:300],
+                      "status": st if st in _MS_STATUSES else "planned",
+                      "due_on": str(m.get("due_on") or "")[:10] or None,
+                      "completed_on": str(m.get("completed_on") or "")[:10] or None})
+    was_done = {m.get("key") for m in (e.milestones or []) if m.get("status") == "done"}
+    reached = [m for m in clean if m["status"] == "done" and m["key"] not in was_done]
+    e.milestones = clean
+    for m in reached:
+        record_event(db, e.client_id, e.id, None, "milestone_reached", user, f"Milestone reached: {m['title']}",
+                     {"milestone": m["key"], "source_module": str(payload.get("source_module") or "")[:60]})
+    db.commit()
+    _audit(db, user, "engagement.milestones", f"{e.name} {len(clean)} milestones, {len(reached)} reached")
+    return {"ok": True, "engagement": e.id, "milestones": len(clean), "new_completions": len(reached)}
+
+
 @app.get("/api/engagements")
 def api_engagements(status: str = Query("open"), platform_client_id: str = Query(""), client: str = Query(""),
                     user: str = Depends(auth.api_user), db: Session = Depends(get_db)):

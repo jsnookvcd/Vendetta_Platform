@@ -16,6 +16,31 @@ practices, built so PMs can run it from Claude. Staff-only; no client portal.
 - **Time.** Written to Harvest as the PM (matched by email) against the engagement's
   linked Harvest project. Analysts touch only their own entries; admins can log or
   fix anyone's. Every write is logged locally.
+- **Templates.** Each engagement type (BEC, ransomware, malware analysis, general IR,
+  tabletop, vCISO onboarding, pentest, Pre-Ransomware Assessment, plus your own) carries
+  its standard tasks with owner by role and due offset, client milestones, budget,
+  target days per phase and closeout list. Open an engagement from one, apply one
+  later, or save a finished engagement's board as a new one.
+- **Client milestones.** Client-visible milestones publish to the IR hub case (IR) or
+  the Office of Special Projects engagement (ProServ) named by the platform reference.
+  The client sees them in that portal, and a newly reached one is written to the signed
+  timeline or chain once.
+- **Change control.** The sold baseline is kept. Change requests add hours or days with
+  a reason and the client's agreement, and a second person approves. Approval moves the
+  working budget and end date.
+- **Capacity.** Per person, per week: remaining task estimates against bookable hours,
+  overdue work in the current week, unscheduled and unestimated work called out, and
+  this week's Harvest hours. Ask whether the team can take an engagement of a given size.
+- **Metrics.** Time to contain, time to report, cycle time, on-time close, days per
+  phase against template targets, hours against sold, scope growth, task and milestone
+  on-time rates, by practice and engagement type.
+- **Alerts.** Overdue and blocked tasks, WIP limits, budget burn at 80 and 100 percent,
+  hours past the sold baseline with no change request, engagements near or past their
+  end, phases past target, overdue milestones, change requests waiting on a decision,
+  failed SharePoint and portal publishes. Rechecked every 15 minutes, posted to Teams
+  when high, emailed as a morning digest, and queued by SABINE.
+- **Closeout and invoicing.** A closeout checklist that gates closing, and a draft
+  invoice created in Harvest from uninvoiced time (or a fixed fee). Drafts only.
 - **Claude.** `/mcp` is a remote MCP server. A PM adds it as a custom connector and
   signs in once with Microsoft 365. Claude then acts as that PM with that PM's role.
 
@@ -44,6 +69,11 @@ claude mcp add --transport http vendetta-pm https://pm.<domain>/mcp \
 Read: `whoami`, `my_work`, `list_engagements`, `get_engagement`, `get_board`,
 `list_tasks`, `get_task`, `list_meeting_notes`, `get_meeting_note`,
 `list_harvest_projects`, `list_harvest_tasks`, `list_time_entries`, `engagement_burn`.
+
+Delivery method: `list_templates`, `get_template`, `team_capacity`, `portfolio_metrics`,
+`list_changes`, `list_alerts`, `closeout` (view for everyone), `uninvoiced_time`; and for
+analysts `save_template`, `apply_template`, `manage_milestone`, `request_change`,
+`decide_change`, `acknowledge_alert`, `draft_invoice`, `set_capacity` (admin).
 
 Write (hidden from viewers): `create_engagement`, `update_engagement`,
 `move_engagement`, `create_task`, `create_tasks`, `update_task`, `move_task`,
@@ -77,7 +107,13 @@ Write (hidden from viewers): `create_engagement`, `update_engagement`,
    access token; the default SharePoint site and folder. Graph credentials default to
    the SSO app registration, which then needs Sites.Selected (write on the delivery
    site and each IR case site) or Sites.ReadWrite.All.
-4. On each engagement, link the Harvest project and, for IR, the case site URL.
+4. On each engagement, link the Harvest project and, for IR, the case site URL. Set the
+   platform reference (IR case number or OSP engagement id) so milestones reach the
+   client.
+5. Optional alert delivery: `ALERT_TEAMS_WEBHOOK_URL` for the delivery channel, and
+   `ALERT_MAIL_FROM` (a mailbox the app may send as, needing Graph Mail.Send) for the
+   7am digest. Thresholds are `ALERT_*` settings in `app/config.py`.
+6. Set each person's bookable hours on Capacity, or keep their Harvest weekly capacity.
 
 Run alone: `docker network create vendetta` once, copy `.env.example` to `.env`, then
 `docker compose up`. Tests: create role and database `pmtool`/`pmtool_test` in a local

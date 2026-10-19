@@ -24,6 +24,11 @@ delivery_model:
                          Notification and Legal, Resilience and Hardening]
   meeting_notes: stored here, mirrored to SharePoint as .docx (engagement case site or default site)
   time: Harvest API v2 is the system of record; every write is logged locally (time_logs)
+  templates: built-in per engagement type, editable, capturable from a finished engagement
+  milestones: client-visible ones publish to the IR hub case or the OSP engagement (platform_ref)
+  change_control: baseline kept; change requests approved by a second person move budget and end date
+  closeout: checklist gates closing; draft Harvest invoices only, never sent
+  alerts: recomputed every 15 minutes; Teams for new high, morning email digest, read by SABINE
 
 roles:
   admin: full; integrations; may log or change anyone's Harvest time
@@ -36,6 +41,9 @@ api:
   tasks: GET /api/tasks
   board: GET /api/boards/{ir|proserv|engagement}
   time_logs: GET /api/time-logs
+  alerts: GET /api/alerts                       # SABINE reads the open set
+  metrics: GET /api/metrics
+  capacity: GET /api/capacity
   provision_sync: POST /api/provision/sync
   deep_link: GET /clients/platform/{platform_client_id}
   mcp: POST /mcp                                # remote MCP server (Streamable HTTP), OAuth 2.1 + PKCE

@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Alerts{% endblock %}
+{% block body %}
+<div class="row" style="gap:8px;margin-bottom:12px;align-items:center">
+  <a class="btn btn-sm {{ '' if scope=='mine' else 'btn-ghost' }}" href="/alerts?scope=mine">Mine</a>
+  <a class="btn btn-sm {{ '' if scope=='all' else 'btn-ghost' }}" href="/alerts?scope=all">Everyone</a>
+  <span class="grow"></span>
+  {% if not is_viewer %}<form method="post" action="/alerts/refresh"><button class="btn btn-sm">Recheck now</button></form>{% endif %}
+</div>
+<div class="panel"><div class="table-wrap">
+{% if rows %}<table><thead><tr><th>Severity</th><th>Alert</th><th>Owner</th><th>Since</th><th></th></tr></thead><tbody>
+{% for a in rows %}<tr{% if a.acked_by %} class="faded"{% endif %}><td class="sev-{{ a.severity }}-t">{{ a.severity }}</td>
+<td><a href="{{ a.link }}">{{ a.title }}</a>{% if a.detail %}<div class="cellsub">{{ a.detail }}</div>{% endif %}</td>
+<td class="faint">{{ a.owner }}</td><td class="faint nowrap">{{ a.first_seen.strftime('%b %d %H:%M') }}</td>
+<td>{% if not a.acked_by and not is_viewer %}<form method="post" action="/alerts/ack"><input type="hidden" name="key" value="{{ a.key }}"><button class="btn btn-xs btn-ghost">Seen</button></form>{% elif a.acked_by %}<span class="cellsub">seen by {{ a.acked_by }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty"><p>No open alerts{{ ' for you' if scope=='mine' }}.</p></div>{% endif %}
+</div></div>
+<p class="hint" style="margin-top:10px">Alerts are rechecked every 15 minutes and clear on their own when the condition is fixed. New high-severity alerts post to the delivery Teams channel when one is configured.</p>
+{% endblock %}

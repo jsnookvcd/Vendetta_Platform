@@ -212,3 +212,73 @@ def project_hours(project_id: str, start: dt.date | None = None, end: dt.date | 
         by_person[e["user"] or "?"] = round(by_person.get(e["user"] or "?", 0) + float(e["hours"] or 0), 2)
         by_task[e["task"] or "?"] = round(by_task.get(e["task"] or "?", 0) + float(e["hours"] or 0), 2)
     return {"total_hours": total, "entries": len(entries), "by_person": by_person, "by_task": by_task}
+
+
+# ---------------------------------------------------------------- reports
+def team_hours(start: dt.date, end: dt.date) -> dict[str, float]:
+    """Hours logged per person (by email) between two dates, from the team time report."""
+    rows = _paged("reports/time/team", "results", {"from": start.strftime("%Y%m%d"), "to": end.strftime("%Y%m%d")})
+    users = {str(u["id"]): (u.get("email") or "").lower() for u in _paged("users", "users", {"is_active": "true"})}
+    out: dict[str, float] = {}
+    for r in rows:
+        email = users.get(str(r.get("user_id")), "")
+        if email:
+            out[email] = round(out.get(email, 0) + float(r.get("total_hours") or 0), 2)
+    return out
+
+
+def weekly_capacity() -> dict[str, float]:
+    """Each active person's weekly capacity in Harvest, in hours, by email."""
+    return {(u.get("email") or "").lower(): round(float(u.get("weekly_capacity") or 0) / 3600, 1)
+            for u in _paged("users", "users", {"is_active": "true"}) if u.get("weekly_capacity")}
+
+
+def project_hours_report(start: dt.date, end: dt.date) -> dict[str, float]:
+    """Total hours per Harvest project id between two dates (time report by project)."""
+    rows = _paged("reports/time/projects", "results",
+                  {"from": start.strftime("%Y%m%d"), "to": end.strftime("%Y%m%d")})
+    return {str(r.get("project_id")): round(float(r.get("total_hours") or 0), 2) for r in rows}
+
+
+def uninvoiced(start: dt.date, end: dt.date) -> dict[str, dict]:
+    """Uninvoiced hours and amount per project id, from the uninvoiced report."""
+    rows = _paged("reports/uninvoiced", "results",
+                  {"from": start.strftime("%Y%m%d"), "to": end.strftime("%Y%m%d")})
+    return {str(r.get("project_id")): {"hours": float(r.get("uninvoiced_hours") or 0),
+                                       "amount": float(r.get("uninvoiced_amount") or 0),
+                                       "currency": r.get("currency") or "USD",
+                                       "client_id": str(r.get("client_id") or "")} for r in rows}
+
+
+def project_client_id(project_id: str) -> str:
+    p = _request("GET", f"projects/{project_id}")
+    cid = (p.get("client") or {}).get("id")
+    if not cid:
+        raise HarvestError("That Harvest project has no client, so it cannot be invoiced")
+    return str(cid)
+
+
+def create_draft_invoice(*, client_id: str, project_id: str, start: dt.date, end: dt.date, subject: str,
+                         notes: str = "", summary_type: str = "task", payment_term: str = "net 30",
+                         fixed_amount: float | None = None, fixed_description: str = "") -> dict:
+    """Create a draft invoice. Hourly: imports the project's uninvoiced billable time
+    (and expenses) in the period, summarized by task, people or project. Fixed fee:
+    one service line for the agreed amount. Never sends it."""
+    body: dict = {"client_id": int(client_id), "subject": subject[:250], "notes": notes,
+                  "issue_date": dt.date.today().isoformat(), "payment_term": payment_term}
+    if fixed_amount:
+        body["line_items"] = [{"kind": "Service", "description": fixed_description or subject,
+                               "quantity": 1, "unit_price": round(float(fixed_amount), 2),
+                               "project_id": int(project_id)}]
+    else:
+        if summary_type not in ("project", "task", "people", "detailed"):
+            raise HarvestError("summary_type must be project, task, people or detailed")
+        body["line_items_import"] = {"project_ids": [int(project_id)],
+                                     "time": {"summary_type": summary_type, "from": start.isoformat(),
+                                              "to": end.isoformat()},
+                                     "expenses": {"summary_type": "category", "from": start.isoformat(),
+                                                  "to": end.isoformat()}}
+    inv = _request("POST", "invoices", json=body)
+    return {"id": str(inv["id"]), "number": inv.get("number") or "", "amount": inv.get("amount"),
+            "state": inv.get("state") or "draft", "currency": inv.get("currency") or "USD",
+            "line_items": len(inv.get("line_items") or [])}

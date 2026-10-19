@@ -32,6 +32,9 @@ FINDING_PATH = {
 SEV_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 # The Office of Special Projects serves engagements, not findings.
 SERVICES_MODULES = ["professional-services"]
+# Project Management raises delivery alerts (overdue tasks, budget burn, scope creep,
+# engagements past their end); SABINE reads the open set and queues the serious ones.
+PM_MODULE = "project-management"
 
 
 def _snap(db: Session, source: str, res: dict) -> None:
@@ -93,6 +96,10 @@ def observe(db: Session) -> dict:
             res = reach.get(key, "/api/engagements", params={"status": "open"}, timeout=20.0)
             _snap(db, f"engagements:{key}", res)
             seen[f"engagements:{key}"] = res["ok"]
+        if key == PM_MODULE:
+            res = reach.get(key, "/api/alerts", params={"status": "open"}, timeout=20.0)
+            _snap(db, f"alerts:{key}", res)
+            seen[f"alerts:{key}"] = res["ok"]
     seen.update(observe_business(db))
     db.commit()
     return seen
@@ -175,6 +182,13 @@ def engagements(db: Session) -> list[dict]:
             e["_module"] = key
             out.append(e)
     return out
+
+
+def pm_alerts(db: Session) -> list[dict]:
+    """Open delivery alerts from Project Management."""
+    p = snapshot(db, f"alerts:{PM_MODULE}")
+    rows = p.get("alerts") if isinstance(p, dict) else p
+    return list(rows) if isinstance(rows, list) else []
 
 
 def clients(db: Session) -> list[dict]:
@@ -397,6 +411,28 @@ def build_queue(db: Session) -> dict:
                              "progress": e.get("progress")}, **common)
             observed.add(key)
             counts["services"] += 1
+
+    # Project Management: delivery alerts at high or medium severity. Low ones (a task
+    # due tomorrow) stay with the PM; the condition clearing in the module clears it here.
+    pub = reach.public_url(PM_MODULE)
+    for a in pm_alerts(db):
+        if a.get("severity") not in ("high", "medium"):
+            continue
+        key = f"pm_alert:{a['key']}"
+        try:
+            first = dt.datetime.fromisoformat(a["first_seen"]) if a.get("first_seen") else now
+        except ValueError:
+            first = now
+        if first.tzinfo is None:
+            first = first.replace(tzinfo=dt.timezone.utc)
+        link = a.get("link") or ""
+        _upsert(db, key, source=PM_MODULE, kind="pm_alert", domain="services", title=str(a.get("title", ""))[:400],
+                client=a.get("client") or "", platform_client_id=a.get("platform_client_id") or "",
+                severity=a["severity"], link=f"{pub}{link}" if pub and link.startswith("/") else link, due_at=first,
+                payload={"alert": a.get("key"), "kind": a.get("kind"), "engagement": a.get("engagement"),
+                         "owner": a.get("owner"), "detail": a.get("detail"), "practice": a.get("practice")})
+        observed.add(key)
+        counts["services"] += 1
 
     # Anything observed before but not now has been handled in its module.
     gone = 0

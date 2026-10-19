@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Delivery metrics{% endblock %}
+{% macro v(x, unit='') %}{% if x is none %}<span class="faint">n/a</span>{% else %}{{ x }}{{ unit }}{% endif %}{% endmacro %}
+{% block body %}
+<form method="get" class="formrow" style="margin-bottom:12px">
+  <label class="field">Practice<select name="practice"><option value="">Both</option>{% for k, n in PRACTICE_NAMES.items() %}<option value="{{ k }}" {{ 'selected' if practice==k }}>{{ n }}</option>{% endfor %}</select></label>
+  <label class="field" style="max-width:140px">Window (days)<input name="days" type="number" min="7" value="{{ days }}"></label>
+  <button class="btn btn-sm">Show</button>
+</form>
+{% set t = data.totals %}
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ t.engagements }}</div><div class="l">engagements ({{ t.closed }} closed)</div></div>
+  <div class="kpi"><div class="v">{{ v(t.median_time_to_contain_hours, 'h') }}</div><div class="l">median time to contain (IR)</div></div>
+  <div class="kpi"><div class="v">{{ v(t.median_time_to_report_days, 'd') }}</div><div class="l">median time to report</div></div>
+  <div class="kpi"><div class="v">{{ v(t.median_cycle_days, 'd') }}</div><div class="l">median open to close</div></div>
+  <div class="kpi"><div class="v">{{ v(t.on_time_close_pct, '%') }}</div><div class="l">closed on time</div></div>
+  <div class="kpi"><div class="v">{{ v(t.avg_baseline_variance_pct, '%') }}</div><div class="l">hours vs sold, average</div></div>
+  <div class="kpi"><div class="v">{{ t.scope_growth_hours }}h</div><div class="l">approved scope growth ({{ t.change_requests }} CRs)</div></div>
+  <div class="kpi"><div class="v">{{ v(t.tasks_on_time_pct, '%') }}</div><div class="l">tasks done by due date</div></div>
+  <div class="kpi"><div class="v">{{ v(t.milestones_on_time_pct, '%') }}</div><div class="l">milestones on time</div></div>
+</div>
+<div class="section-head"><h2>By engagement type</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Type</th><th class="num">Engagements</th><th class="num">Contain (h)</th><th class="num">Report (d)</th><th class="num">Cycle (d)</th><th class="num">On time</th><th class="num">Hours vs sold</th><th class="num">Scope growth</th></tr></thead><tbody>
+{% for k, g in data.by_type.items() %}<tr><td>{{ k }}</td><td class="num">{{ g.engagements }}</td><td class="num">{{ v(g.median_time_to_contain_hours) }}</td><td class="num">{{ v(g.median_time_to_report_days) }}</td><td class="num">{{ v(g.median_cycle_days) }}</td><td class="num">{{ v(g.on_time_close_pct, '%') }}</td><td class="num">{{ v(g.avg_baseline_variance_pct, '%') }}</td><td class="num">{{ g.scope_growth_hours }}h</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="section-head" style="margin-top:16px"><h2>Days per phase, against template targets</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Phase</th><th class="num">Average days</th><th class="num">Target</th></tr></thead><tbody>
+{% for k, p in t.avg_days_per_phase.items() %}<tr><td>{{ k }}</td><td class="num {{ 'due bad' if p.target and p.avg and p.avg > p.target }}">{{ p.avg }}</td><td class="num faint">{{ p.target or '' }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p class="hint" style="margin-top:8px">Engagements opened or closed since {{ data.since }}, plus everything still open. Key dates are set when an engagement's card first reaches the forensics phase (contained) and closeout or Delivered (reported).{% if data.harvest_error %} Harvest: {{ data.harvest_error }}{% endif %}</p>
+{% endblock %}

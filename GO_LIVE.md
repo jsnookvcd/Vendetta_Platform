@@ -204,6 +204,15 @@ should use it. Three things to finish before the first PM uses it:
    **Connect Claude** page. If `alb_allowed_cidrs` is restricted to office ranges,
    the pm. host must also accept Claude's outbound addresses, or the connector
    cannot reach it.
+4. Optional alert delivery, added by hand under `/vendetta/project-management/`:
+   `ALERT_TEAMS_WEBHOOK_URL` (new high-severity alerts) and `ALERT_MAIL_FROM` (the
+   morning digest; the Entra app then needs the Mail.Send application permission,
+   ideally limited to that mailbox with an application access policy). SABINE queues
+   the alerts either way.
+
+Terraform also gives Project Management the hub URL and token and the Office of
+Special Projects URL and token, so milestones on an engagement whose platform reference
+names an IR case or an OSP engagement show in that client portal.
 
 This directory is also how the IR hub discovers its finding sources: the hub pulls
 findings from every connected finding module into its per-client view and /findings

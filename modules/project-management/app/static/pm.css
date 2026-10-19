@@ -57,3 +57,18 @@
 .sp-mirrored { color: var(--ok); }
 .sp-failed { color: var(--brand-2); }
 .sp-off, .sp-pending { color: var(--muted); }
+.navcount { margin-left: auto; background: var(--brand); color: #fff; border-radius: var(--radius-pill); font-size: 11px; padding: 0 7px; font-weight: 600; }
+.sev-high-t { color: var(--brand-2); font-weight: 600; }
+.sev-medium-t { color: var(--med); font-weight: 600; }
+.sev-low-t { color: var(--muted); }
+.ms-done { color: var(--ok); } .ms-at_risk { color: var(--med); } .ms-in_progress { color: var(--info); } .ms-planned { color: var(--muted); }
+.cr-requested { color: var(--med); } .cr-approved { color: var(--ok); } .cr-rejected, .cr-withdrawn { color: var(--muted); }
+.loadbar { height: 8px; border-radius: 4px; background: var(--raise); overflow: hidden; min-width: 70px; }
+.loadbar > span { display: block; height: 100%; background: var(--ok); }
+.loadbar.warn > span { background: var(--med); } .loadbar.over > span { background: var(--brand); }
+.cellsub { font-size: 11px; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 14px; }
+.kpi .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+textarea.code { font-family: var(--mono); font-size: 12px; }
