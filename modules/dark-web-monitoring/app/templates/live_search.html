@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% block title %}Live Tor search{% endblock %}
+{% block body %}
+{% if not configured %}<div class="health-banner amber">Live Tor search is off: {{ reason }}</div>{% endif %}
+{% if error %}<div class="health-banner amber">{{ error }}</div>{% endif %}
+{% if not can_write %}<div class="health-banner info">Viewers can read their past searches but cannot start a live search. Ask an analyst or admin to run one.</div>{% endif %}
+{% if added %}<div class="health-banner info">Added as an onion source. Profile it from <a href="/sources">Sources</a> or <a href="/priority-groups">Priority Groups</a>.</div>{% endif %}
+<div class="panel pad" style="margin-bottom:14px">
+<form method="post" action="/search/live">
+  <div class="row">
+    <label class="field">Query<input name="q" value="{{ q }}" maxlength="{{ max_query }}" style="min-width:380px" placeholder="acme credit union" required></label>
+    <button class="btn btn-primary" {{ 'disabled' if not configured or not can_write }}>Search Tor</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    {% for e in engines %}<label class="field" style="flex-direction:row; align-items:center; gap:7px"><input type="checkbox" name="engine" value="{{ e.key }}" {{ 'checked' if e.key in chosen }}> {{ e.name }}</label>{% endfor %}
+  </div>
+</form>
+<p class="page-intro" style="margin:10px 0 0">The collector worker sends the query to each onion search engine over Tor, never from your workstation, and usually finishes within 20 to 90 seconds. Results are reduced to text. Open a result in the research console to fetch it over Tor and preserve it as evidence. Every search is written to the audit log. To search what the module has already collected, use <a href="/search">Search collected data</a>.</p>
+</div>
+
+{% if req %}
+{% set res = req.result or {} %}
+<div class="section-head"><h2>{{ req.query }}</h2>
+  <span class="count">{% if req.status in ('pending', 'running') %}<span id="live-status" data-id="{{ req.id }}">{{ 'queued for the worker' if req.status == 'pending' else 'searching over Tor' }}</span>{% elif req.status == 'done' %}{{ res.total or 0 }} results{% else %}failed{% endif %}</span>
+</div>
+{% if req.status in ('pending', 'running') %}
+<noscript><meta http-equiv="refresh" content="5"></noscript>
+<script src="/static/live_search.js"></script>
+<div class="panel pad"><p class="page-intro" style="margin:0">Queued {{ req.requested_at.strftime('%H:%M:%S') }} UTC. This page refreshes when the worker finishes.</p></div>
+{% else %}
+{% if res.engines %}
+<div class="panel pad" style="margin-bottom:12px"><dl class="kv">
+  {% for key, st in res.engines.items() %}<dt>{{ engine_names.get(key, key) }}</dt><dd>{% if st.error %}<span class="bad-txt">{{ st.error }}</span>{% elif st.count %}<span class="ok-txt">{{ st.count }} results</span>{% else %}<span class="faint">no results</span>{% endif %} <span class="faint">{{ (st.ms / 1000) | round(1) }}s</span></dd>{% endfor %}
+</dl></div>
+{% endif %}
+{% if req.status == 'failed' and req.error %}<div class="health-banner amber">{{ req.error }}</div>{% endif %}
+<div class="panel"><div class="table-wrap">
+{% if res.results %}
+<table><thead><tr><th>Result</th><th>Engines</th><th></th></tr></thead><tbody>
+{% for r in res.results %}<tr>
+  <td style="max-width:640px">
+    <div><b>{{ r.title }}</b> {% if r.onion %}<span class="chip">onion</span>{% endif %}</div>
+    <div class="mono faint trunc" style="max-width:620px">{{ r.url }}</div>
+    {% if r.snippet %}<div class="faint" style="font-size:12px; margin-top:3px">{{ r.snippet }}</div>{% endif %}
+  </td>
+  <td class="nowrap">{% for e in r.engines %}<span class="chip">{{ engine_names.get(e, e) }}</span> {% endfor %}</td>
+  <td class="nowrap" style="text-align:right">
+    <a class="btn btn-sm btn-ghost" href="/research?url={{ r.url | urlencode }}&amp;via=live">Open in research console</a>
+    {% if can_write and r.onion %}<form class="inline" method="post" action="/search/live/source"><input type="hidden" name="url" value="{{ r.url }}"><input type="hidden" name="title" value="{{ r.title }}"><input type="hidden" name="request_id" value="{{ req.id }}"><button class="btn btn-sm btn-ghost">Add as source</button></form>{% endif %}
+  </td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><h3>No results</h3><p>No engine returned a result for this query. Check the engine status above; an engine error means it was down or its page layout changed.</p></div>{% endif %}
+</div></div>
+{% endif %}
+{% endif %}
+
+<div class="section-head"><h2>Your recent searches</h2><span class="count">{{ recent|length }}</span></div>
+<div class="panel"><div class="table-wrap">
+{% if recent %}
+<table><thead><tr><th>Query</th><th>Engines</th><th>Status</th><th>Results</th><th>When</th></tr></thead><tbody>
+{% for r in recent %}<tr>
+  <td><a href="/search/live?id={{ r.id }}">{{ r.query }}</a></td>
+  <td class="faint">{{ (r.engines or []) | join(', ') }}</td>
+  <td><span class="chip">{{ r.status }}</span></td>
+  <td class="num">{{ (r.result or {}).get('total', '') }}</td>
+  <td class="nowrap faint">{{ r.requested_at.strftime('%b %d %H:%M') }}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>You have not run a live search yet.</p></div>{% endif %}
+</div></div>
+{% endblock %}

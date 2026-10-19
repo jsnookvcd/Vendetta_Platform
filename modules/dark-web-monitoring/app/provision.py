@@ -61,6 +61,7 @@ def _pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
     roster = r.json().get("clients") or []
     seen = set()
     added = updated = 0
+    touched: list[Client] = []
     for entry in roster:
         seen.add(entry["id"])
         c = _match(db, entry)
@@ -83,7 +84,10 @@ def _pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
         if entry.get("industry") and not c.industry:
             c.industry = entry["industry"]
         c.active = True
+        touched.append(c)
     db.flush()
+    # Phase 4: starter watch terms for every created or updated client.
+    new_terms = _starter_terms(db, touched)
 
     deactivated = 0
     for c in db.query(Client).filter(Client.platform_client_id != "").all():
@@ -91,7 +95,9 @@ def _pull(db: Session, transport: httpx.BaseTransport | None = None) -> dict:
             c.active = False
             deactivated += 1
     db.commit()
-    summary = {"roster": len(roster), "added": added, "updated": updated, "deactivated": deactivated}
+    _queue_backfills(db, new_terms)
+    summary = {"roster": len(roster), "added": added, "updated": updated, "deactivated": deactivated,
+               "terms_added": sum(len(v) for v in new_terms.values())}
     log.info("platform pull: %s", summary)
     return summary
 
@@ -310,3 +316,30 @@ def staff_state() -> dict:
         "last_at": STAFF["at"].isoformat() if STAFF["at"] else None,
         "last_detail": STAFF["detail"],
     }
+
+
+# ---------------------------------------------------------------- Phase 4: starter watch terms
+# A provisioned client gets watch terms from its name and portal domains so a victim
+# post naming it produces a hit without manual setup (recovery plan F7). The rules
+# for never touching analyst terms live in app/watchterms.py. New terms queue a
+# backfill over the last 365 days, which the worker runs.
+def _starter_terms(db: Session, clients: list[Client]) -> dict[str, list[str]]:
+    from . import watchterms
+
+    out: dict[str, list[str]] = {}
+    for c in clients:
+        added = watchterms.ensure_starter_terms(db, c)
+        if added:
+            out[c.id] = [t.id for t in added]
+    return out
+
+
+def _queue_backfills(db: Session, new_terms: dict[str, list[str]]) -> None:
+    from . import backfill
+
+    for cid, term_ids in new_terms.items():
+        try:
+            backfill.queue(db, cid, term_ids, requested_by="platform-provision", reason="starter terms")
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            log.warning("could not queue backfill for %s: %s", cid, e)

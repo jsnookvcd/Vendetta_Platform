@@ -17,9 +17,13 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from . import boot
-from . import auth, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
+from . import auth, connectors, evidence, iab, oidc, platform, profiles, provision, readiness, report as report_mod, sso
+from . import health, work_requests
+from . import captures, onion_sources, priority, profile_store, selectors_safe
+from . import backfill as backfill_mod, watchterms
+from . import tor_search
 from .config import settings
-from .db import AuditLog, Client, Evidence, Hit, Item, SessionLocal, Source, WatchTerm, init_db
+from .db import AuditLog, Client, Evidence, Hit, Item, RunRequest, SessionLocal, Source, WatchTerm, init_db
 from .fetch import fetch, html_to_text, tor_check
 from .matcher import match_item
 from . import alerts
@@ -231,7 +235,43 @@ def dashboard(request: Request, user: str = auth.RequireUser, db: Session = Depe
         .where(Hit.status.in_(("new", "reviewing"))).order_by(desc(Hit.created_at)).limit(15)
     ).scalars().all()
     victims = db.execute(select(Item).where(Item.kind == "victim").order_by(desc(Item.collected_at)).limit(25)).scalars().all()
-    return render(request, "dashboard.html", user=user, stats=stats, hits=hits, victims=victims)
+    banner = _health_banner(db)
+    return render(request, "dashboard.html", user=user, stats=stats, hits=hits, victims=victims, banner=banner)
+
+
+def _health_banner(db: Session) -> dict:
+    try:
+        return connectors.health_summary(db)["banner"]
+    except Exception as e:  # noqa: BLE001
+        log.warning("health summary failed: %s", e)
+        db.rollback()
+        return {"level": "amber", "messages": ["Collector health could not be read."]}
+
+
+# ---------------------------------------------------------------- connectors
+@app.get("/connectors", response_class=HTMLResponse)
+def connectors_page(request: Request, queued: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    summary = connectors.health_summary(db)
+    return render(request, "connectors.html", user=user, h=summary, rows=summary["connectors"],
+                  can_run=bool(ident and not ident.is_viewer), queued=queued,
+                  stale_after=health.HEARTBEAT_STALE_SECONDS,
+                  is_admin=bool(ident and ident.role == "admin"), backfill=_ransomwatch_backfill_state(db))
+
+
+@app.post("/connectors/{key}/run")
+def connector_run_now(key: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Queue an immediate run. The worker picks it up within a minute; the web
+    container never runs a collector itself."""
+    c = connectors.get(key)
+    if c is None:
+        raise HTTPException(404, "unknown connector")
+    if not c.scheduled:
+        raise HTTPException(400, "this connector is a one-time backfill; an admin starts it with Backfill")
+    if not work_requests.pending(db, RunRequest, RunRequest.payload["connector"].as_string() == key):
+        work_requests.enqueue(db, RunRequest, user, {"connector": key})
+        _audit(db, user, "connector.run_now", key)
+    return RedirectResponse(f"/connectors?queued={key}", status_code=302)
 
 
 # ---------------------------------------------------------------- clients and terms
@@ -299,7 +339,12 @@ def client_detail(cid: str, request: Request, user: str = auth.RequireUser, db: 
     ).scalars().all()
     ev = db.execute(select(Evidence).where(Evidence.client_id == cid).order_by(desc(Evidence.captured_at)).limit(50)).scalars().all()
     trend = _hit_trend(db, cid, days=21)
-    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend)
+    coverage = {**backfill_mod.client_state(db, cid), "tombstones": watchterms.tombstones(db, cid)}
+    ident = auth.resolve_identity(request)
+    return render(request, "client.html", user=user, client=c, hits=hits, evidence=ev, trend=trend,
+                  coverage=coverage, saved_searches=tor_search.client_saved(db, cid),
+                  search_engines=tor_search.enabled_engines(), saved_intervals=tor_search.SAVED_INTERVALS_HOURS,
+                  can_edit=bool(ident and not ident.is_viewer))
 
 
 def _hit_trend(db: Session, cid: str, days: int = 21) -> list[int]:
@@ -332,17 +377,25 @@ def update_portal(cid: str, portal_enabled: bool = Form(False), portal_domains: 
 
 @app.post("/clients/{cid}/terms")
 def add_term(cid: str, term: str = Form(...), kind: str = Form("keyword"), severity: str = Form("medium"), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    added = []
     for t in [x.strip() for x in term.splitlines() if x.strip()]:
-        db.add(WatchTerm(client_id=cid, term=t, kind=kind, severity=severity))
+        wt = WatchTerm(client_id=cid, term=t, kind=kind, severity=severity, source=watchterms.ANALYST)
+        db.add(wt)
+        added.append(wt)
     db.commit()
     _audit(db, user, "term.add", f"{cid}: {kind} {term[:200]}")
+    if added:
+        backfill_mod.queue(db, cid, [t.id for t in added], requested_by=user, reason="terms added")
     return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
 @app.post("/clients/{cid}/terms/{tid}/delete")
 def del_term(cid: str, tid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     t = db.get(WatchTerm, tid)
-    if t:
+    if t and t.client_id == cid:
+        watchterms.record_deletion(db, t, user)
         db.delete(t)
         db.commit()
         _audit(db, user, "term.delete", f"{cid}: {t.term}")
@@ -389,16 +442,15 @@ def client_report_pdf(cid: str, request: Request, days: int = 30, user: str = au
 
 @app.post("/clients/{cid}/backfill")
 def backfill(cid: str, days: int = Form(90), user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    """Re-run matching for this client's terms against items already collected.
-    Use when onboarding an IR client: did their name show up on a leak site last month?"""
-    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
-    items = db.execute(select(Item).where(Item.collected_at >= since)).scalars().all()
-    n = 0
-    for it in items:
-        new = [h for h in match_item(db, it) if h.client_id == cid]
-        new += [h for h in iab.match_iab(db, it) if h.client_id == cid]
-        n += len(new)
-    _audit(db, user, "client.backfill", f"{cid}: {n} hits over {days}d")
+    """Re-run matching for this client's terms and IAB profile against items already
+    collected. Use when onboarding an IR client: did their name show up on a leak site
+    last month? Queued for the worker (app/backfill.py); the client page shows the
+    result once it has run."""
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    days = max(1, min(int(days), 3650))
+    backfill_mod.queue(db, cid, None, requested_by=user, reason="manual", days=days, include_iab=True)
+    _audit(db, user, "client.backfill", f"{cid}: queued over {days}d")
     return RedirectResponse(f"/clients/{cid}", status_code=302)
 
 
@@ -458,7 +510,7 @@ def hit_detail(hid: str, request: Request, user: str = auth.RequireUser, db: Ses
     if not h:
         raise HTTPException(404)
     ev = db.execute(select(Evidence).where(Evidence.item_id == h.item_id).order_by(desc(Evidence.captured_at))).scalars().all()
-    return render(request, "hit.html", user=user, hit=h, evidence=ev)
+    return render(request, "hit.html", user=user, hit=h, evidence=ev, capture=captures.for_hit(db, hid))
 
 
 @app.post("/hits/{hid}")
@@ -519,20 +571,35 @@ def item_detail(iid: str, request: Request, user: str = auth.RequireUser, db: Se
 
 
 @app.get("/research", response_class=HTMLResponse)
-def research(request: Request, user: str = auth.RequireUser):
-    return render(request, "research.html", user=user, result=None, url="", tor=None)
+def research(request: Request, url: str = "", via: str = "", user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """The url parameter prefills the form (Open in research console on a live
+    search result, which adds via=live). Nothing is fetched until the analyst
+    presses Fetch. A URL opened from Live Tor search carries a hidden field so it
+    is fetched through Tor even when it is clearnet."""
+    prefill = tor_search.safe_url(url) if url else ""
+    clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
+    return render(request, "research.html", user=user, result=None, url=prefill, tor=None, clients=clients_,
+                  via_live=bool(prefill) and via == "live", tor_checked=settings.clearnet_via_tor)
 
 
 @app.post("/research", response_class=HTMLResponse)
-def research_fetch(request: Request, url: str = Form(...), force_tor: bool = Form(False), preserve: bool = Form(False), client_id: str = Form(""), user: str = auth.RequireUser, db: Session = Depends(get_db)):
-    res = fetch(url.strip(), force_tor=force_tor)
+def research_fetch(request: Request, url: str = Form(...), force_tor: bool = Form(False), via_live_search: bool = Form(False),
+                   preserve: bool = Form(False), client_id: str = Form(""), user: str = auth.RequireUser,
+                   db: Session = Depends(get_db)):
+    """Single-URL fetch. app.fetch refuses internal and non-http targets on the
+    first request and every redirect. Onion URLs always use Tor; clearnet uses
+    Tor when the box is ticked (the default while CLEARNET_VIA_TOR is true) or
+    when the URL came from Live Tor search."""
+    use_tor = force_tor or via_live_search
+    res = fetch(url.strip(), force_tor=use_tor)
     txt = html_to_text(res.text) if res.text else f"[{len(res.content)} bytes, content-type {res.headers.get('content-type')}]"
     ev = None
     if preserve and (res.ok or res.content):
         ev = evidence.preserve(db, url.strip(), client_id=client_id or None, captured_by=user, note="research console", result=res)
-    _audit(db, user, "research.fetch", f"{url} tor={force_tor} preserve={preserve}")
+    _audit(db, user, "research.fetch", f"{url} tor={use_tor} preserve={preserve}")
     clients_ = db.execute(select(Client).order_by(Client.name)).scalars().all()
-    return render(request, "research.html", user=user, result=res, text=txt[:60_000], url=url, evidence=ev, clients=clients_, tor=None)
+    return render(request, "research.html", user=user, result=res, text=txt[:60_000], url=url, evidence=ev, clients=clients_,
+                  tor=None, via_live=via_live_search, tor_checked=force_tor)
 
 
 @app.get("/research/torcheck")
@@ -605,9 +672,9 @@ def set_cookie(sid: str, cookie: str = Form(""), user: str = auth.RequireUser, d
 def toggle_source(sid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
     s = db.get(Source, sid)
     if s:
-        s.enabled = not s.enabled
-        s.fail_count = 0
+        onion_sources.set_enabled_by_person(s, not s.enabled, user)
         db.commit()
+        _audit(db, user, "source.toggle", f"{s.name} enabled={s.enabled}")
     return RedirectResponse("/sources", status_code=302)
 
 
@@ -661,9 +728,15 @@ def api_victims(days: int = 7, group: str = "", user: str = Depends(auth.api_use
 def api_add_terms(cid: str, payload: dict, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     if not db.get(Client, cid):
         raise HTTPException(404)
+    added = []
     for t in payload.get("terms", []):
-        db.add(WatchTerm(client_id=cid, term=t["term"], kind=t.get("kind", "keyword"), severity=t.get("severity", "medium")))
+        wt = WatchTerm(client_id=cid, term=t["term"], kind=t.get("kind", "keyword"),
+                       severity=t.get("severity", "medium"), source=watchterms.ANALYST)
+        db.add(wt)
+        added.append(wt)
     db.commit()
+    if added:
+        backfill_mod.queue(db, cid, [t.id for t in added], requested_by=user, reason="terms added by API")
     return {"ok": True}
 
 
@@ -806,3 +879,274 @@ def client_by_platform_id(pid: str, user: str = auth.RequireUser, db: Session = 
     if not c:
         raise HTTPException(404, "that client has not been provisioned into this module yet")
     return RedirectResponse(f"/clients/{c.id}", status_code=302)
+
+
+# ---------------------------------------------------------------- Phase 2: backfill, captures, priority groups
+def _require_admin(request: Request) -> None:
+    ident = auth.resolve_identity(request)
+    if not ident or ident.role != "admin":
+        raise HTTPException(403, "admin only")
+
+
+def _ransomwatch_backfill_state(db: Session) -> dict:
+    from .db import CollectorRun
+
+    done = db.execute(select(CollectorRun).where(CollectorRun.job_id == "ransomwatch", CollectorRun.ok.is_(True))
+                      .order_by(desc(CollectorRun.finished_at)).limit(1)).scalar_one_or_none()
+    queued = work_requests.pending(db, RunRequest, RunRequest.payload["connector"].as_string() == "ransomwatch")
+    return {"done_at": done.finished_at if done else None, "items": done.items_new if done else 0,
+            "queued": bool(queued)}
+
+
+@app.post("/connectors/ransomwatch/backfill")
+def ransomwatch_backfill(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Admin only. Queue the one-time historical backfill from the archived
+    ransomwatch posts.json. Refused once a backfill has succeeded."""
+    _require_admin(request)
+    st = _ransomwatch_backfill_state(db)
+    if st["done_at"] is not None:
+        raise HTTPException(409, "the ransomwatch backfill already ran")
+    if not st["queued"]:
+        work_requests.enqueue(db, RunRequest, user, {"connector": "ransomwatch"})
+        _audit(db, user, "connector.backfill", "ransomwatch")
+    return RedirectResponse("/connectors?queued=ransomwatch", status_code=302)
+
+
+@app.post("/hits/{hid}/capture")
+def hit_capture_now(hid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Queue a direct capture for the worker's next drain (within five minutes)."""
+    h = db.get(Hit, hid)
+    if not h:
+        raise HTTPException(404)
+    captures.request_now(db, h, user)
+    _audit(db, user, "capture.request", hid)
+    return RedirectResponse(f"/hits/{hid}", status_code=302)
+
+
+@app.get("/priority-groups", response_class=HTMLResponse)
+def priority_groups_page(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    return render(request, "priority_groups.html", user=user, rows=priority.page_rows(db),
+                  is_admin=bool(ident and ident.role == "admin"), can_edit=bool(ident and not ident.is_viewer),
+                  top=settings.priority_group_count, broken=profile_store.broken_profiles(db))
+
+
+@app.post("/priority-groups/recompute")
+def priority_recompute(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    _audit(db, user, "priority.recompute", str(priority.compute(db)))
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+@app.post("/priority-groups/add")
+def priority_add(request: Request, group: str = Form(...), user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    if group.strip():
+        priority.set_flags(db, group, user, pinned=True)
+        _audit(db, user, "priority.pin", group.strip())
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+@app.post("/priority-groups/{group}/flag/{action}")
+def priority_flag(group: str, action: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    _require_admin(request)
+    flags = {"pin": {"pinned": True}, "unpin": {"pinned": False},
+             "exclude": {"excluded": True}, "include": {"excluded": False}}.get(action)
+    if flags is None:
+        raise HTTPException(404)
+    priority.set_flags(db, group, user, **flags)
+    _audit(db, user, f"priority.{action}", group)
+    return RedirectResponse("/priority-groups", status_code=302)
+
+
+def _profile_ctx(db: Session, group: str) -> dict:
+    from .db import PriorityGroup
+
+    key = group.strip().lower()
+    row = db.get(PriorityGroup, key)
+    srcs = [s for s in db.execute(select(Source).where(Source.kind == "onion")).scalars()
+            if (s.group_name or "").lower() == key]
+    display = (row.display_name if row else "") or (srcs[0].group_name if srcs else group)
+    stored = profile_store.for_group(db, key)
+    if stored is not None:
+        selectors, origin = dict(stored.selectors or {}), "database"
+    elif profile_store.yaml_for_group(key):
+        selectors, origin = dict(profile_store.yaml_for_group(key)), "yaml"
+    else:
+        selectors, origin = {}, ""
+    page = profile_store.latest_page(db, key)
+    return {"group_key": key, "display": display, "selectors": selectors, "origin": origin, "stored": stored,
+            "state": profile_store.state_for_group(db, key), "page": page, "sources": srcs,
+            "fields": profile_store.SELECTOR_FIELDS}
+
+
+@app.get("/priority-groups/{group}/profile", response_class=HTMLResponse)
+def profile_editor(group: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    ident = auth.resolve_identity(request)
+    ctx = _profile_ctx(db, group)
+    return render(request, "profile_editor.html", user=user, preview=None, saved=request.query_params.get("saved"),
+                  can_edit=bool(ident and not ident.is_viewer), **ctx)
+
+
+@app.post("/priority-groups/{group}/profile", response_class=HTMLResponse)
+def profile_preview_or_save(group: str, request: Request, action: str = Form("preview"), apply: str = Form(""),
+                            list_selector: str = Form(""), title_selector: str = Form(""),
+                            link_selector: str = Form(""), desc_selector: str = Form(""),
+                            date_selector: str = Form(""), post_title_selector: str = Form(""),
+                            post_body_selector: str = Form(""), max_posts_per_run: str = Form(""),
+                            user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Preview runs the selectors against the newest stored index page for the
+    group (no network); Save stores the profile and points the group's onion
+    sources at it. A plain def so it runs in the threadpool: selectors over
+    the length or part limits are refused, and the preview runs in a
+    subprocess with a timeout (app/selectors_safe.py)."""
+    selectors = profile_store.clean_selectors({
+        "list_selector": list_selector, "title_selector": title_selector, "link_selector": link_selector,
+        "desc_selector": desc_selector, "date_selector": date_selector, "post_title_selector": post_title_selector,
+        "post_body_selector": post_body_selector, "max_posts_per_run": max_posts_per_run})
+    ctx = _profile_ctx(db, group)
+    problem = selectors_safe.profile_problem(selectors, selectors_safe.LEAK_FIELDS)
+    if problem:
+        ctx["selectors"] = selectors
+        resp = render(request, "profile_editor.html", user=user, preview=None, saved=None, can_edit=True,
+                      error=f"Not saved or previewed. {problem[0].upper()}{problem[1:]}.", **ctx)
+        resp.status_code = 400
+        return resp
+    if action == "save":
+        profile_store.save(db, ctx["group_key"], ctx["display"], selectors, user, apply_to_sources=apply == "on")
+        _audit(db, user, "profile.save", f"{ctx['group_key']}: {profile_store.profile_name_for(ctx['group_key'])}")
+        return RedirectResponse(f"/priority-groups/{ctx['group_key']}/profile?saved=1", status_code=302)
+    page = ctx["page"]
+    entries, error = [], ""
+    html = (page.meta or {}).get("html", "") if page else ""
+    if html and selectors.get("list_selector"):
+        try:
+            entries = selectors_safe.safe_extract_entries(html, selectors, page.url, profile_store.PREVIEW_LIMIT)
+        except selectors_safe.SelectorTimeout:
+            error = (f"Preview stopped after {selectors_safe.TIMEOUT_SECONDS} seconds. These selectors are too "
+                     "expensive for this page; simplify them and try again.")
+        except selectors_safe.SelectorFailed as e:
+            error = f"Preview failed: {e}"
+    ctx["selectors"] = selectors
+    return render(request, "profile_editor.html", user=user, preview={"entries": entries, "has_page": bool(page)},
+                  saved=None, can_edit=True, error=error, **ctx)
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+# Starting a live search queues Tor work and writes a request row, so it is a
+# state-changing route: it goes through require_internal_write and
+# require_write refuses a viewer with 403, as for adding a result as a Source
+# and saved searches. Viewing a search (GET /search/live?id= and its status)
+# is limited to the user who requested it and admins; a saved search run is
+# client work linked from the client page and is visible to all staff.
+def _can_view_search(ident: auth.Identity, req) -> bool:
+    return ident.role == "admin" or req.requested_by == ident.email or bool(req.saved_search_id)
+
+
+def _live_ctx(db: Session, ident: auth.Identity, req=None, q: str = "", error: str = "", added: str = "") -> dict:
+    engines = tor_search.enabled_engines()
+    ok, reason = tor_search.configured()
+    chosen = list(req.engines or []) if req is not None else [e.key for e in engines]
+    return {"user": ident.email, "engines": engines, "configured": ok, "reason": reason, "req": req,
+            "q": q or (req.query if req is not None else ""), "chosen": chosen, "error": error, "added": added,
+            "recent": tor_search.recent_for(db, ident.email), "can_write": not ident.is_viewer,
+            "engine_names": {e.key: e.name for e in engines}, "max_query": tor_search.MAX_QUERY}
+
+
+@app.get("/search/live", response_class=HTMLResponse)
+def live_search_page(request: Request, id: str = "", added: str = "",
+                     ident: auth.Identity = Depends(auth.require_internal), db: Session = Depends(get_db)):
+    from .db import SearchRequest
+
+    req = db.get(SearchRequest, id) if id else None
+    if id and (req is None or not _can_view_search(ident, req)):
+        raise HTTPException(404)
+    return render(request, "live_search.html", **_live_ctx(db, ident, req, added=added))
+
+
+@app.post("/search/live", response_class=HTMLResponse)
+async def live_search_submit(request: Request, ident: auth.Identity = Depends(auth.require_internal_write),
+                             db: Session = Depends(get_db)):
+    form = await request.form()
+    q = tor_search.normalise_query(str(form.get("q") or ""))
+    engines = [str(e) for e in form.getlist("engine")]
+    ok, reason = tor_search.configured()
+    if not q or not ok:
+        return render(request, "live_search.html",
+                      **_live_ctx(db, ident, q=q, error="Enter a query." if ok else f"Live Tor search is off: {reason}"))
+    req = tor_search.enqueue(db, q, engines, ident.email)
+    _audit(db, ident.email, "search.live", f"query={q!r} engines={','.join(req.engines)} request={req.id}")
+    return RedirectResponse(f"/search/live?id={req.id}", status_code=302)
+
+
+@app.get("/search/live/{rid}/status")
+def live_search_status(rid: str, ident: auth.Identity = Depends(auth.require_internal), db: Session = Depends(get_db)):
+    """Polled by the page every few seconds; counts only, never result content."""
+    from .db import SearchRequest
+
+    req = db.get(SearchRequest, rid)
+    if req is None or not _can_view_search(ident, req):
+        raise HTTPException(404)
+    return {"id": req.id, "status": req.status, "total": (req.result or {}).get("total")}
+
+
+@app.post("/search/live/source")
+def live_search_add_source(url: str = Form(...), title: str = Form(""), request_id: str = Form(""),
+                           user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    """Admin and analyst: register an onion result as a Source a person can profile
+    later on Priority Groups or Sources. Viewers are refused by require_write."""
+    clean = tor_search.safe_url(url)
+    if not clean or not tor_search.is_onion_url(clean):
+        raise HTTPException(400, "only http(s) onion URLs can be added as a source")
+    existing = db.execute(select(Source).where(Source.kind == "onion", Source.url == clean)).scalar_one_or_none()
+    if existing is None:
+        name = tor_search.clean_text(title, 200) or httpx.URL(clean).host
+        db.add(Source(name=name, kind="onion", url=clean,
+                      meta={"seeded_from": "live_search", "search_request_id": request_id[:32], "added_by": user}))
+        db.commit()
+        _audit(db, user, "source.add", f"onion {clean} from live search {request_id[:32]}")
+    back = f"/search/live?id={request_id[:32]}&added=1" if request_id else "/sources"
+    return RedirectResponse(back, status_code=302)
+
+
+@app.post("/clients/{cid}/saved-searches")
+async def saved_search_add(cid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import SavedSearch
+
+    if not db.get(Client, cid):
+        raise HTTPException(404)
+    form = await request.form()
+    q = tor_search.normalise_query(str(form.get("q") or ""))
+    try:
+        hours = int(form.get("interval_hours") or 24)
+    except ValueError:
+        hours = 24
+    if hours not in tor_search.SAVED_INTERVALS_HOURS:
+        hours = 24
+    valid = {e.key for e in tor_search.enabled_engines()}
+    engines = [str(e) for e in form.getlist("engine") if str(e) in valid]
+    if q:
+        db.add(SavedSearch(client_id=cid, query=q, engines=engines, interval_hours=hours, created_by=user))
+        db.commit()
+        _audit(db, user, "search.saved_add", f"{cid}: query={q!r} every {hours}h engines={','.join(engines) or 'all'}")
+    return RedirectResponse(f"/clients/{cid}#saved-searches", status_code=302)
+
+
+@app.post("/clients/{cid}/saved-searches/{sid}/{action}")
+def saved_search_action(cid: str, sid: str, action: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    from .db import SavedSearch
+
+    s = db.get(SavedSearch, sid)
+    if s is None or s.client_id != cid:
+        raise HTTPException(404)
+    if action == "delete":
+        db.delete(s)
+    elif action == "toggle":
+        s.enabled = not s.enabled
+    elif action == "run":
+        s.next_run_at = dt.datetime.now(dt.timezone.utc)  # due now: the next tor_search run picks it up
+    else:
+        raise HTTPException(404)
+    db.commit()
+    _audit(db, user, f"search.saved_{action}", f"{cid}: {s.query!r}")
+    return RedirectResponse(f"/clients/{cid}#saved-searches", status_code=302)

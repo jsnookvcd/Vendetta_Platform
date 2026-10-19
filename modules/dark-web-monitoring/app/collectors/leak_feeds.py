@@ -1,12 +1,14 @@
 """Ransomware leak site victim feeds from clearnet aggregators.
 
-Two free sources are used and merged:
-  ransomware.live   JSON API of recent victims across tracked groups
-  ransomwatch       GitHub-hosted posts.json and groups.json (also seeds our onion source list)
+  ransomware.live   The live victim feed. PRO API only (app/ransomware_live.py):
+                    without RANSOMWARE_LIVE_API_KEY the connector is not
+                    configured and never calls the public v2 tier.
+  ransomwatch       Archived upstream in mid-2025. Never scheduled. Kept only as
+                    a one-time historical backfill an admin starts from the
+                    Connectors page; its source is marked archived.
 
-Both are community projects. Field names drift, so parsing is defensive. The onion
-crawler (onion_crawl.py) is the primary source once sources are seeded; these feeds
-catch groups we do not crawl directly and give published dates."""
+Onion source seeding moved to app/onion_sources.py and reads ransomware.live PRO
+group locations instead of the ransomwatch archive."""
 from __future__ import annotations
 
 import datetime as dt
@@ -15,23 +17,24 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
-from ..db import Source
+from .. import ransomware_live as rl
+from ..db import Source, utcnow
 from ..fetch import fetch_json
 from ..pipeline import ingest, mark_source
 
 log = logging.getLogger(__name__)
 
-def _rl_base() -> str:
-    """PRO API (free key from my.ransomware.live, intended for business use) when a key is set,
-    otherwise the public v2 endpoint, which is rate limited to one call per minute."""
-    if settings.ransomware_live_base:
-        return settings.ransomware_live_base.rstrip("/")
-    return "https://api-pro.ransomware.live" if settings.ransomware_live_api_key else "https://api.ransomware.live/v2"
-
-
 RANSOMWATCH_POSTS = "https://raw.githubusercontent.com/joshhighet/ransomwatch/main/posts.json"
 RANSOMWATCH_GROUPS = "https://raw.githubusercontent.com/joshhighet/ransomwatch/main/groups.json"
+RL_FEED_NAME = "ransomware.live recent victims"
+
+
+def _rl_base() -> str:
+    return rl.base_url()
+
+
+def rl_headers() -> dict:
+    return rl.headers()
 
 
 def _parse_dt(v) -> dt.datetime | None:
@@ -43,7 +46,8 @@ def _parse_dt(v) -> dt.datetime | None:
         except ValueError:
             continue
     try:
-        return dt.datetime.fromisoformat(str(v)).astimezone(dt.timezone.utc)
+        v2 = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return v2 if v2.tzinfo else v2.replace(tzinfo=dt.timezone.utc)
     except Exception:  # noqa: BLE001
         return None
 
@@ -57,54 +61,71 @@ def _get_source(db: Session, name: str, url: str) -> Source:
     return src
 
 
-def run_ransomware_live(db: Session) -> int:
-    url = f"{_rl_base()}/recentvictims"
-    src = _get_source(db, "ransomware.live recent victims", url)
-    headers = {settings.ransomware_live_api_header: settings.ransomware_live_api_key} if settings.ransomware_live_api_key else {}
+def ingest_victim(db: Session, v: dict, src: Source):
+    """Store one ransomware.live victim row. The leak post URL (post_url or
+    claim_url) is the item URL, which the capture queue fetches on a hit."""
+    victim = rl.victim_name(v)
+    group = rl.victim_group(v)
+    desc = v.get("description") or ""
+    website = v.get("website") or v.get("domain") or ""
+    activity = v.get("activity") or v.get("sector") or ""
+    country = v.get("country") or ""
+    published = _parse_dt(v.get("attackdate") or v.get("published") or v.get("discovered"))
+    body = "\n".join([f"Victim: {victim}", f"Website: {website}", f"Sector: {activity}", f"Country: {country}", "", desc])
+    return ingest(
+        db,
+        kind="victim",
+        title=f"{group}: {victim}",
+        body=body,
+        url=rl.victim_target_url(v),
+        external_id=f"rl:{group}:{victim}",
+        group_name=group,
+        published_at=published,
+        source=src,
+        meta={"raw": v, "victim": victim, "activity": activity, "country": country,
+              "discovered": v.get("discovered") or ""},
+        hash_parts=("victim", group.lower(), victim.lower()),
+    )
+
+
+def run_ransomware_live(db: Session, client: rl.Client | None = None) -> dict:
+    """Returns a run summary: {"ok", "new", "rows"} and "error" on failure. One
+    call to /victims/recent per run."""
+    if not rl.configured():
+        return {"ok": False, "new": 0, "error": rl.NOT_CONFIGURED}
+    url = f"{rl.base_url()}{rl.RECENT_VICTIMS}"
+    src = _get_source(db, RL_FEED_NAME, url)
     try:
-        data = fetch_json(url, headers=headers)
-    except Exception as e:  # noqa: BLE001
+        client = client or rl.Client()
+        rows = client.recent_victims()
+    except rl.RansomwareLiveError as e:
         mark_source(db, src, False, str(e))
-        return 0
-    rows = data if isinstance(data, list) else data.get("victims") or data.get("data") or []
+        return {"ok": False, "new": 0, "error": str(e)}
     n = 0
     for v in rows:
-        victim = v.get("victim") or v.get("post_title") or v.get("title") or ""
-        group = v.get("group") or v.get("group_name") or ""
-        desc = v.get("description") or ""
-        website = v.get("website") or v.get("domain") or ""
-        activity = v.get("activity") or v.get("sector") or ""
-        country = v.get("country") or ""
-        published = _parse_dt(v.get("attackdate") or v.get("published") or v.get("discovered"))
-        body = "\n".join(
-            s for s in [f"Victim: {victim}", f"Website: {website}", f"Sector: {activity}", f"Country: {country}", "", desc] if s is not None
-        )
-        item, _ = ingest(
-            db,
-            kind="victim",
-            title=f"{group}: {victim}",
-            body=body,
-            url=v.get("post_url") or v.get("claim_url") or "",
-            external_id=f"rl:{group}:{victim}",
-            group_name=group,
-            published_at=published,
-            source=src,
-            meta={"raw": v},
-            hash_parts=("victim", group.lower(), victim.lower()),
-        )
+        if not rl.victim_name(v):
+            continue
+        item, _ = ingest_victim(db, v, src)
         n += 1 if item else 0
     mark_source(db, src, True)
-    log.info("ransomware.live: %d new victims", n)
-    return n
+    from .. import onion_sources  # local import: onion_sources imports this module
+
+    onion_sources.update_feed_activity(db)
+    log.info("ransomware.live: %d new victims from %d rows", n, len(rows))
+    return {"ok": True, "new": n, "rows": len(rows)}
 
 
-def run_ransomwatch_posts(db: Session) -> int:
-    src = _get_source(db, "ransomwatch posts", RANSOMWATCH_POSTS)
+def run_ransomwatch_posts(db: Session) -> dict:
+    """One-time historical backfill from the archived ransomwatch posts.json.
+    Returns a run summary. The source is marked archived and disabled so it never
+    counts as a live, healthy feed."""
+    src = _get_source(db, "ransomwatch posts (archive)", RANSOMWATCH_POSTS)
     try:
         rows = fetch_json(RANSOMWATCH_POSTS)
     except Exception as e:  # noqa: BLE001
         mark_source(db, src, False, str(e))
-        return 0
+        mark_archived(db, src)
+        return {"ok": False, "new": 0, "error": str(e)}
     n = 0
     for v in rows:
         victim = v.get("post_title") or ""
@@ -118,65 +139,36 @@ def run_ransomwatch_posts(db: Session) -> int:
             group_name=group,
             published_at=_parse_dt(v.get("discovered")),
             source=src,
-            meta={"raw": v},
+            meta={"raw": v, "victim": victim, "archive": "ransomwatch"},
             hash_parts=("victim", group.lower(), victim.lower()),
         )
         n += 1 if item else 0
     mark_source(db, src, True)
-    log.info("ransomwatch posts: %d new victims", n)
-    return n
+    mark_archived(db, src, backfilled=True)
+    log.info("ransomwatch backfill: %d new victims", n)
+    return {"ok": True, "new": n, "rows": len(rows)}
 
 
-def _group_lists() -> list[tuple[str, list]]:
-    """Group lists from ransomware.live (live) and ransomwatch (archived mid-2025, still a useful seed)."""
-    out = []
-    headers = {settings.ransomware_live_api_header: settings.ransomware_live_api_key} if settings.ransomware_live_api_key else {}
-    for label, url, hdrs in [
-        ("ransomware.live", f"{_rl_base()}/groups", headers),
-        ("ransomwatch", RANSOMWATCH_GROUPS, {}),
-    ]:
-        try:
-            data = fetch_json(url, headers=hdrs)
-            groups = data if isinstance(data, list) else data.get("groups") or data.get("data") or []
-            out.append((label, groups))
-        except Exception as e:  # noqa: BLE001
-            log.warning("%s group list fetch failed: %s", label, e)
-    return out
+def mark_archived(db: Session, src: Source, backfilled: bool = False) -> None:
+    meta = dict(src.meta or {})
+    meta["archived"] = True
+    meta["archived_reason"] = "ransomwatch was archived upstream in mid-2025 and produces no new victims"
+    if backfilled:
+        meta["backfilled_at"] = utcnow().isoformat()
+    src.meta = meta
+    src.enabled = False
+    db.add(src)
+    db.commit()
 
 
 def seed_onion_sources(db: Session) -> int:
-    """Register every known onion mirror of every tracked group as a crawl source."""
-    added = 0
-    seen: set[str] = set(db.execute(select(Source.url).where(Source.kind == "onion")).scalars().all())
-    for label, groups in _group_lists():
-        for g in groups:
-            name = g.get("name", "")
-            for loc in g.get("locations", []) or []:
-                if not isinstance(loc, dict):
-                    continue
-                fqdn = loc.get("fqdn") or ""
-                if not fqdn.endswith(".onion"):
-                    continue
-                slug = loc.get("slug") or ""
-                # slug is normally the full URL; fall back to building one from the fqdn.
-                url = slug if slug.startswith("http") else f"http://{fqdn}{slug or '/'}"
-                if url in seen:
-                    continue
-                seen.add(url)
-                db.add(Source(
-                    name=f"{name} leak site",
-                    kind="onion",
-                    url=url,
-                    group_name=name,
-                    enabled=bool(loc.get("enabled", True)),
-                    meta={"seeded_from": label, "available": loc.get("available"), "updated": loc.get("updated")},
-                ))
-                added += 1
-    db.commit()
-    log.info("seeded %d onion sources", added)
-    return added
+    """Compatibility wrapper. Seeding reads ransomware.live PRO group locations;
+    see app/onion_sources.py."""
+    from .. import onion_sources
+
+    return onion_sources.seed(db).get("added", 0)
 
 
-def run(db: Session) -> None:
-    run_ransomware_live(db)
-    run_ransomwatch_posts(db)
+def run(db: Session) -> dict:
+    """The live feed for scripts and manual use. ransomwatch is a backfill only."""
+    return run_ransomware_live(db)

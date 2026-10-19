@@ -1,5 +1,12 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
 {% block body %}
+{% if banner and banner.level %}
+<div class="health-banner {{ banner.level }}" role="status">
+  <b>{{ 'Collection is down.' if banner.level == 'red' else 'Collection needs attention.' }}</b>
+  {% for m in banner.messages %}<span>{{ m }}</span> {% endfor %}
+  <a href="/connectors">Open Connectors</a>
+</div>
+{% endif %}
 {% if stats.clients == 0 %}
 <div class="panel"><div class="empty">
   <h3>Set up your first client to start monitoring</h3>

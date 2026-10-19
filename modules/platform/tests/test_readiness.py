@@ -141,3 +141,75 @@ def test_stale_communication_drafts_warn(admin):
     # once a person decides it, the warning clears
     admin.post(f"/clients/{c.id}/communications/{r.json()['id']}/discard")
     assert _cp("Communications drafts")["state"] == "ok"
+
+
+def _dark_web_probe(**integ):
+    base = {"kind": "collection-sources", "configured": 12,
+            "tor": {"ok": True, "reachable": True, "checked_at": "2026-10-17T12:00:00+00:00", "error": ""},
+            "worker_heartbeat_age_seconds": 30, "heartbeat_stale_after_seconds": 300,
+            "connectors": {
+                "ransomware_live": {"configured": True, "reason": "", "last_ok": "2026-10-17T11:50:00+00:00",
+                                    "last_run_ok": True, "stale": False, "error": ""},
+                "hibp": {"configured": False, "reason": "needs HIBP_API_KEY", "last_ok": None,
+                         "last_run_ok": None, "stale": False, "error": ""},
+            }}
+    base.update(integ)
+    probe = _ready_probe()
+    probe["readiness"]["integrations"] = base
+    return probe
+
+
+def _checks(probe, monkeypatch):
+    monkeypatch.setattr(settings, "secret_key", "a-real-secret")
+    rep = readiness.assess([_mod("dark-web-monitoring")], {"dark-web-monitoring": probe})
+    return rep["modules"][0], {c["label"]: c for c in rep["modules"][0]["checks"]}
+
+
+def test_dark_web_collection_healthy(monkeypatch):
+    mod, by = _checks(_dark_web_probe(), monkeypatch)
+    assert by["Tor exit"]["state"] == "ok"
+    assert by["Collector worker"]["state"] == "ok"
+    assert by["Collectors"]["state"] == "ok" and "1 not configured" in by["Collectors"]["detail"]
+    assert mod["ready"] is True
+
+
+def test_dark_web_tor_down_or_worker_silent_blocks_go_live(monkeypatch):
+    mod, by = _checks(_dark_web_probe(tor={"ok": False, "checked_at": None, "error": "SOCKS refused"}), monkeypatch)
+    assert by["Tor exit"]["state"] == "fail" and "SOCKS" in by["Tor exit"]["detail"]
+    assert mod["ready"] is False
+    mod, by = _checks(_dark_web_probe(worker_heartbeat_age_seconds=900), monkeypatch)
+    assert by["Collector worker"]["state"] == "fail"
+    mod, by = _checks(_dark_web_probe(worker_heartbeat_age_seconds=None), monkeypatch)
+    assert by["Collector worker"]["state"] == "fail" and mod["ready"] is False
+
+
+def test_dark_web_failing_or_stale_connector_warns(monkeypatch):
+    conns = {
+        "ransomware_live": {"configured": True, "last_run_ok": False, "stale": False, "error": "403 Forbidden"},
+        "ransomwatch": {"configured": True, "last_run_ok": True, "stale": True, "error": ""},
+    }
+    mod, by = _checks(_dark_web_probe(connectors=conns), monkeypatch)
+    assert by["Collectors"]["state"] == "warn"
+    assert "failing: ransomware_live" in by["Collectors"]["detail"]
+    assert "stale: ransomwatch" in by["Collectors"]["detail"]
+    assert mod["ready"] is True
+
+
+def test_older_dark_web_manifest_keeps_generic_check(monkeypatch):
+    probe = _ready_probe()
+    probe["readiness"]["integrations"] = {"kind": "collection-sources", "configured": 3}
+    mod, by = _checks(probe, monkeypatch)
+    assert by["Integrations"]["state"] == "ok"
+
+
+# ---------------------------------------------------------------- dark web watch term coverage (Phase 4)
+def test_dark_web_client_without_terms_warns(monkeypatch):
+    wt = {"ok": False, "active_clients": 3, "clients_without_terms": 1,
+          "clients": [{"id": "c1", "name": "Harbor Point Logistics"}]}
+    mod, by = _checks(_dark_web_probe(watch_terms=wt), monkeypatch)
+    assert by["Watch terms"]["state"] == "warn" and "Harbor Point Logistics" in by["Watch terms"]["detail"]
+    assert mod["ready"] is True
+    mod, by = _checks(_dark_web_probe(watch_terms={"ok": True, "active_clients": 3}), monkeypatch)
+    assert by["Watch terms"]["state"] == "ok"
+    mod, by = _checks(_dark_web_probe(), monkeypatch)
+    assert "Watch terms" not in by

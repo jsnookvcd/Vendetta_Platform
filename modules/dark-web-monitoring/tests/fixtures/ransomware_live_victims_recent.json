@@ -1,0 +1,61 @@
+{
+  "client": "fixture@example.com",
+  "count": 3,
+  "victims": [
+    {
+      "discovered": "2026-10-15 10:55:21.878217",
+      "description": "[AI generated] Acme Federal Credit Union is a member-owned credit union serving central Pennsylvania.",
+      "website": "ACMEFCU.EXAMPLE",
+      "post_url": "http://akiraexamplefixtureaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion/acmefcu-example",
+      "country": "US",
+      "activity": "Financial Services",
+      "duplicates": [],
+      "extrainfos": [],
+      "screenshot": "https://images.ransomware.live/victims/0000000000000000000000000000000a.png",
+      "infostealer": "",
+      "press": null,
+      "id": "QUNNRUZDVS5FWEFNUExFQGFraXJh",
+      "permalink": "https://www.ransomware.live/id/QUNNRUZDVS5FWEFNUExFQGFraXJh",
+      "attackdate": "2026-10-15 10:55:07.828396",
+      "victim": "Acme Federal Credit Union",
+      "group": "akira"
+    },
+    {
+      "discovered": "2026-10-14 08:12:09.594250",
+      "description": "[AI generated] Example Tooling Works manufactures precision parts.",
+      "website": "EXAMPLETOOLING.EXAMPLE",
+      "post_url": "",
+      "country": "DE",
+      "activity": "Manufacturing",
+      "duplicates": [],
+      "extrainfos": [],
+      "screenshot": "",
+      "infostealer": {"users": 0, "employees": 0, "thirdparties": 0},
+      "press": null,
+      "id": "RVhBTVBMRVRPT0xJTkcuRVhBTVBMRUBxaWxpbg==",
+      "permalink": "https://www.ransomware.live/id/RVhBTVBMRVRPT0xJTkcuRVhBTVBMRUBxaWxpbg==",
+      "attackdate": "2026-10-14 08:11:54.126703",
+      "victim": "Example Tooling Works",
+      "group": "qilin"
+    },
+    {
+      "discovered": "2026-10-13 22:01:00.000000",
+      "description": "",
+      "website": "",
+      "post_url": "http://qilinexamplefixturebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion/blog/fixture-school-district",
+      "country": "US",
+      "activity": "Education",
+      "duplicates": [],
+      "extrainfos": [],
+      "screenshot": "",
+      "infostealer": "",
+      "press": null,
+      "id": "RklYVFVSRVNDSE9PTERJU1RSSUNUQHFpbGlu",
+      "permalink": "https://www.ransomware.live/id/RklYVFVSRVNDSE9PTERJU1RSSUNUQHFpbGlu",
+      "attackdate": "2026-10-13 22:00:00.000000",
+      "victim": "Fixture School District",
+      "group_name": null,
+      "group": "qilin"
+    }
+  ]
+}

@@ -70,13 +70,14 @@ def _domains(db: Session) -> list[tuple[str, str]]:
     return out
 
 
-def run(db: Session) -> None:
+def run(db: Session) -> dict:
     if not settings.hibp_api_key:
         log.info("hibp: no API key, skipping")
-        return
+        return {"ok": True, "skipped": "needs HIBP_API_KEY"}
     src = _source(db)
+    domains = _domains(db)
     try:
-        for domain, _cid in _domains(db):
+        for domain, _cid in domains:
             breached = _get(f"breacheddomain/{domain}") or {}
             for alias, breaches in breached.items():
                 email = f"{alias}@{domain}"
@@ -127,6 +128,8 @@ def run(db: Session) -> None:
                 )
             time.sleep(1.6)
         mark_source(db, src, True)
+        return {"ok": True, "domains": len(domains)}
     except Exception as e:  # noqa: BLE001
         log.exception("hibp run failed")
         mark_source(db, src, False, str(e))
+        return {"ok": False, "error": str(e)}

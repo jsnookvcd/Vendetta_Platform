@@ -10,7 +10,7 @@
   <label class="field">Session cookie<input name="cookie" style="min-width:220px" placeholder="name=value; name2=value2"></label>
   <button class="btn btn-primary">Add source</button>
 </form>
-<p class="page-intro" style="margin:12px 0 0">Onion sources are seeded daily from the tracked group lists. A profile turns a plain crawl into per-post or per-thread parsing. For a board your team already has an account on, paste the session cookie from an authenticated browser; it is sent read only and never used to log in or post. Sources that fail five times back off to a 12 hour retry.</p>
+<p class="page-intro" style="margin:12px 0 0">Onion sources are seeded daily from ransomware.live PRO group locations. A source is disabled when its group has had no feed activity for 180 days or after 10 failed crawls in a row; the reason shows in the last column and Enable turns it back on. A profile turns a plain crawl into per-post or per-thread parsing. For a board your team already has an account on, paste the session cookie from an authenticated browser; it is sent read only and never used to log in or post. Sources that fail five times back off to a 12 hour retry.</p>
 </div>
 <div class="panel"><div class="table-wrap">
 <table>
@@ -24,7 +24,7 @@
     <td class="mono trunc" style="max-width:260px">{{ s.url }}</td>
     <td class="nowrap faint">{{ s.last_ok.strftime('%b %d %H:%M') if s.last_ok else 'never' }}</td>
     <td class="num">{% if s.fail_count %}<span class="bad-txt">{{ s.fail_count }}</span>{% else %}<span class="ok-txt">0</span>{% endif %}</td>
-    <td class="faint trunc" style="max-width:220px">{{ s.last_error }}</td>
+    <td class="faint trunc" style="max-width:260px" title="{{ s.last_error }}">{% if s.meta and s.meta.get('archived') %}<span class="chip">archived</span> {% endif %}{% if not s.enabled and s.meta and s.meta.get('disabled') %}<span class="chip">off: {{ s.meta['disabled']['code'].replace('_', ' ') }}</span> {{ s.meta['disabled']['detail'] }}{% else %}{{ s.last_error }}{% endif %}</td>
     <td class="nowrap" style="text-align:right"><form class="inline" method="post" action="/sources/{{ s.id }}/toggle"><button class="btn btn-sm btn-ghost">{{ 'Disable' if s.enabled else 'Enable' }}</button></form></td>
   </tr>{% endfor %}
   </tbody>

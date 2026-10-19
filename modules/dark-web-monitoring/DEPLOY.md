@@ -48,7 +48,39 @@ aws ssm put-parameter --name /darkweb/HIBP_API_KEY        --type SecureString --
 aws ssm put-parameter --name /darkweb/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
 aws ssm put-parameter --name /darkweb/TEAMS_WEBHOOK_URL   --type SecureString --value '<url>'
 aws ssm put-parameter --name /darkweb/COOKIE_SECURE       --type String --value 'false'
+
+# Optional connectors. Each stays off, with its reason on the Connectors page, until set.
+aws ssm put-parameter --name /darkweb/TELEGRAM_API_ID     --type SecureString --value '<id from my.telegram.org>'
+aws ssm put-parameter --name /darkweb/TELEGRAM_API_HASH   --type SecureString --value '<hash from my.telegram.org>'
+aws ssm put-parameter --name /darkweb/TELEGRAM_CHANNELS   --type String --value 'channel1,channel2'
+aws ssm put-parameter --name /darkweb/PASTES_ENABLED      --type String --value 'false'
 ```
+
+RANSOMWARE_LIVE_API_KEY is required for the live victim feed. Request the free PRO key at https://my.ransomware.live. Without it the ransomware.live connector shows "not configured: needs a free PRO key from my.ransomware.live", onion seeding is skipped and the module never calls the public v2 tier. On the shared platform host (infra/redeploy.sh, SSM_PREFIX=/vendetta) the parameter is `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY`:
+
+```
+aws ssm put-parameter --name /vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
+```
+
+Optional tuning, all with working defaults: ONION_CRAWL_BUDGET_MINUTES (45, the wall-clock cap on one onion sweep), ONION_SEED_GROUP_LIMIT (40 group detail calls per daily seed), ONION_INACTIVE_DAYS (180), ONION_MAX_CONSECUTIVE_FAILURES (10), CAPTURE_INTERVAL (5 minutes) and PRIORITY_GROUP_COUNT (25).
+
+Live Tor search works with its defaults (Ahmia, OnionLand and Tor66 over Tor). TOR_SEARCH_ENGINES, a JSON list merged over the defaults by key, switches an engine off or moves it to a new onion address without a release; README.md "Live Tor search engines" has the fields. Leave it unset unless an engine needs changing:
+
+```
+aws ssm put-parameter --name /darkweb/TOR_SEARCH_ENGINES --type String --value '[{"key": "tor66", "enabled": false}]'
+# shared platform host: /vendetta/dark-web-monitoring/TOR_SEARCH_ENGINES
+```
+
+Optional Tor search tuning: TOR_SEARCH_POLL_SECONDS (20, how often the worker drains queued searches), TOR_SEARCH_LIMIT (30 results per engine), TOR_SEARCH_TIMEOUT (90 seconds per request) and SAVED_SEARCH_INTERVAL (15 minutes between checks for due saved searches).
+
+Fetch limits and Tor routing need no parameters; set them only to change the defaults. FETCH_MAX_BYTES (5242880, 5 MB) caps every response, and a larger body is truncated and recorded as truncated; the raw index HTML kept for the profile editor never exceeds it. FETCH_DEADLINE_SECONDS (0) is the wall-clock limit for one fetch including redirects, enforced while the body is read; 0 means 180 seconds over Tor and 60 seconds on clearnet, and a positive value applies to both. CLEARNET_VIA_TOR (true) ticks "Route clearnet through Tor" on the research console by default so the instance's AWS address is not exposed; the analyst can untick it per fetch. Every fetch refuses non-http schemes, loopback, private, link-local (including 169.254.169.254) and unspecified addresses, single-label names such as platform or db, and names ending in .internal or .local, on the first request and on each of up to 5 redirects; there is no setting to relax this.
+
+```
+aws ssm put-parameter --name /darkweb/CLEARNET_VIA_TOR --type String --value true
+# shared platform host: /vendetta/dark-web-monitoring/CLEARNET_VIA_TOR
+```
+
+HIBP_API_KEY turns on the HIBP connector; without it the Connectors page reads "needs HIBP_API_KEY". PASTES_ENABLED stays false until psbdmp has been probed from the host (see "Optional connectors" in README.md). TELEGRAM_SESSION_PATH and PASTE_SOURCE are optional and default to /data/telegram.session and psbdmp.
 
 SECRET_KEY, POSTGRES_PASSWORD, EVIDENCE_BUCKET and SNS_TOPIC_ARN were created by Terraform. DEPLOY_KEY was created in step 1. Jira and the platform hub are intentionally left blank; add them later when those are live.
 
@@ -91,13 +123,24 @@ sudo docker compose exec worker python -c "from app.fetch import tor_check;print
 # expect IsTor: true and an exit IP
 ```
 
-3. Clearnet feeds populated the dashboard. The worker runs the feeds on boot; after a minute the dashboard shows victim posts and the onion source count is in the hundreds.
+Or run the full diagnosis, which also covers steps 3 and 4:
+```
+sudo docker compose exec worker python -m app.diagnose
+# heartbeat age under a minute, tor is_tor=True, a row per connector, and a status code and byte count per upstream
+```
+The same health is on the console's Connectors page and in the dashboard banner.
+
+3. The victim feed populated the dashboard. With the PRO key set, the worker runs the ransomware.live feed on boot and seeds onion sources from ransomware.live PRO group locations; after a minute the dashboard shows victim posts dated within the last few days and the Sources page lists the seeded mirrors. On a host upgraded from an earlier release, the worker's first start disables the mirrors seeded from the ransomwatch archive (reason "ransomwatch archive" on the Sources page) and marks the ransomwatch feed archived; no rows are deleted. ransomwatch is never scheduled. To import its history once, an admin presses Backfill on its row on the Connectors page.
 
 4. One onion source actually crawls:
 ```
 sudo docker compose logs worker | grep -i "onion crawl\|page changed\|profiled crawl"
 ```
-A few failures are normal (leak sites go up and down). You want at least some successes.
+A few failures are normal (leak sites go up and down). You want at least some successes. Sources that fail 10 times in a row, or whose group has had no feed activity for 180 days, are disabled by the daily seed with the reason shown on the Sources page; Enable turns one back on.
+
+5. Captures and priority groups. When a hit lands, its direct capture appears on the hit page as pending and the worker tries it within five minutes; the Connectors page shows the capture queue depth and success rate. The Priority Groups page fills after the first daily ranking (30 minutes after the worker starts). Write leak-site profiles there for the groups that matter to your clients; the editor previews selectors against the newest stored index page.
+
+6. Live Tor search. Open Live Tor search in the console, search for a client name and wait for the page to refresh (20 to 90 seconds). Each engine shows a result count or its error. An engine error reading "layout changed" means its markup no longer matches the adapter; one reading "search token was refused" means Ahmia changed its form. Switch a failing engine off with TOR_SEARCH_ENGINES until its adapter is fixed. Open a result in the research console and preserve it to confirm the evidence path. `python -m app.diagnose` also probes each enabled engine's homepage over Tor.
 
 ## 5. Open the console
 
@@ -112,7 +155,19 @@ Then browse to http://localhost:8000 and sign in as admin with the password you 
 
 ## 6. Onboard the first client
 
-Add the client, set the business profile (industry, country, state, revenue and size bands) for IAB matching, add watch terms (primary domain, email domain, brand, executive names), and for an IR matter click Backfill to check the last year of collected data. Verify the client's domain in HIBP so the breach and stealer queries return data.
+A client pulled from the control plane arrives with starter watch terms (its portal domains and its name, marked auto) and a backfill over the last 365 days queued for the worker. Set the business profile (industry, country, state, revenue and size bands) for IAB matching, review the auto terms and add executive names. A client added by hand needs its terms added; adding them queues the backfill. The client page shows the last backfill result, and the platform readiness screen warns while any active client has no enabled watch terms. Verify the client's domain in HIBP so the breach and stealer queries return data.
+
+## 6a. Telegram login (optional, once)
+
+The Telegram collector reads public channels through a real Telegram account. Use a dedicated number and device. With TELEGRAM_API_ID, TELEGRAM_API_HASH and TELEGRAM_CHANNELS in SSM and rendered into .env:
+
+```
+cd /opt/vendetta_platform/modules/dark-web-monitoring
+sudo bash scripts/render_env.sh
+sudo docker compose -p vcd-dark-web-monitoring run --rm worker python scripts/telegram_login.py
+```
+
+The script asks for the phone number, the login code Telegram sends and the account's two-step password if one is set, then prints "authorized as <name> session saved to /data/telegram.session". The session file lands on the shared /data volume, so the web container sees it and the Connectors page changes from "missing Telegram session file" to configured; the worker picks the connector up on its next 15 minute interval, or press Run now. Treat the session file as a credential: anyone holding it can act as the account. To revoke it, end the session from the Telegram app (Settings, Devices) and delete the file.
 
 ## 7. Platform wiring (when the hub is ready)
 

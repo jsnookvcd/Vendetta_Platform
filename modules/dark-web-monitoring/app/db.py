@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -83,6 +84,9 @@ class WatchTerm(Base):
     severity: Mapped[str] = mapped_column(String(10), default="medium")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # auto: added by provisioning from the client's name and domains (app/watchterms.py).
+    # analyst: added by a person. Provisioning never alters or deletes analyst terms.
+    source: Mapped[str] = mapped_column(String(10), default="analyst")
 
     client: Mapped[Client] = relationship(back_populates="terms")
 
@@ -229,6 +233,60 @@ class AuditLog(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
 
 
+class CollectorRun(Base):
+    """One execution of a scheduled or manually requested collector job. Written by
+    the worker's job wrapper so the console can show what ran, what it produced and
+    why it failed. Rows older than RUN_RETENTION_DAYS are pruned daily."""
+
+    __tablename__ = "collector_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(50), index=True)
+    trigger: Mapped[str] = mapped_column(String(20), default="schedule")  # schedule | manual | startup
+    requested_by: Mapped[str] = mapped_column(String(320), default="")
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # None while running
+    items_new: Mapped[int] = mapped_column(Integer, default=0)
+    hits_new: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WorkerState(Base):
+    """Small key/value store the worker writes and the web container reads:
+    the heartbeat, the latest Tor check and similar singletons."""
+
+    __tablename__ = "worker_state"
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WorkerRequestMixin:
+    """A unit of work the web container queues and the worker drains. The web
+    container never runs collectors or Tor requests itself; it inserts a row and the
+    worker claims it on its next poll. Reused by every worker-polled request table
+    (run_requests now; search_requests and similar later): subclass with a
+    __tablename__ and hand the model to app.work_requests."""
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    # pending | running | done | failed
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    requested_by: Mapped[str] = mapped_column(String(320), default="")
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class RunRequest(WorkerRequestMixin, Base):
+    """"Run now" on the Connectors page. payload: {"connector": key}."""
+
+    __tablename__ = "run_requests"
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
@@ -257,3 +315,144 @@ def init_db() -> None:
             "GENERATED ALWAYS AS (to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(body,''))) STORED"
         ))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_items_search ON items USING GIN (search_vec)"))
+    # Phase 4: watch term source column.
+    _phase4_migrations()
+
+
+# ---------------------------------------------------------------- Phase 2: captures and priority groups
+class Capture(Base):
+    """Direct capture of the page an aggregator hit points at. The aggregator tells
+    us where to look; the capture is the record. Queued by pipeline.ingest when an
+    item produces a hit and drained by the worker over Tor (app/captures.py).
+
+    status: pending | captured | captured_index_no_match | unavailable"""
+
+    __tablename__ = "captures"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    hit_id: Mapped[str] = mapped_column(ForeignKey("hits.id", ondelete="CASCADE"), unique=True)
+    client_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    item_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    item_kind: Mapped[str] = mapped_column(String(20), default="")
+    group_name: Mapped[str] = mapped_column(String(100), default="")
+    victim: Mapped[str] = mapped_column(String(300), default="")
+    # The original leak post (or the item's own URL); empty means "the group's index".
+    target_url: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    captured_url: Mapped[str] = mapped_column(Text, default="")
+    evidence_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    tried: Mapped[list] = mapped_column(JSON, default=list)
+    requested_by: Mapped[str] = mapped_column(String(320), default="system")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PriorityGroup(Base):
+    """Ransomware groups ranked for direct, profiled crawls (app/priority.py).
+    computed marks the daily top N; pinned and excluded are an admin's overrides."""
+
+    __tablename__ = "priority_groups"
+    group_key: Mapped[str] = mapped_column(String(100), primary_key=True)  # lower-case group name
+    display_name: Mapped[str] = mapped_column(String(100), default="")
+    victims_90d: Mapped[int] = mapped_column(Integer, default=0)
+    matched_victims: Mapped[int] = mapped_column(Integer, default=0)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+    computed: Mapped[bool] = mapped_column(Boolean, default=False)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    computed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ParserProfile(Base):
+    """A leak-site parser profile stored in the database so it can be written and
+    edited on the host from the Priority Groups page. The YAML files under
+    app/profiles stay as a fallback (app/profile_store.py).
+
+    state: draft (saved, not yet used by a crawl) | working (the last crawl
+    extracted entries) | broken (it extracted entries before and now extracts none)"""
+
+    __tablename__ = "parser_profiles"
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    group_key: Mapped[str] = mapped_column(String(100), default="", index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="leak")
+    selectors: Mapped[dict] = mapped_column(JSON, default=dict)
+    state: Mapped[str] = mapped_column(String(10), default="draft")
+    last_entries: Mapped[int] = mapped_column(Integer, default=0)
+    ever_extracted: Mapped[int] = mapped_column(Integer, default=0)
+    last_crawled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    broken_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(320), default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+
+# ---------------------------------------------------------------- Phase 4: watch term coverage
+class AutoTermTombstone(Base):
+    """An auto watch term an analyst removed. Provisioning checks this table and
+    never re-adds the same term and kind for that client."""
+
+    __tablename__ = "auto_term_tombstones"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    term: Mapped[str] = mapped_column(String(300))  # stored lowercased
+    kind: Mapped[str] = mapped_column(String(20))
+    deleted_by: Mapped[str] = mapped_column(String(320), default="")
+    deleted_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_auto_term_tombstones_key", "client_id", "kind", "term", unique=True),)
+
+
+class BackfillRequest(WorkerRequestMixin, Base):
+    """Re-match collected items against a client's terms, drained by the worker.
+    payload: {"client_id", "days", "term_ids" (null means every enabled term),
+    "include_iab", "reason"}. result: items scanned and hits created."""
+
+    __tablename__ = "backfill_requests"
+
+
+def _phase4_migrations() -> None:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE watch_terms ADD COLUMN IF NOT EXISTS source VARCHAR(10) DEFAULT 'analyst'"))
+
+
+# ---------------------------------------------------------------- Phase 3: live Tor search
+class SearchRequest(WorkerRequestMixin, Base):
+    """A live Tor search queued by the console (or by a saved search) and run by
+    the worker over Tor (app/tor_search.py). result holds the merged results and
+    per-engine status, counts, errors and timings:
+    {"results": [{key, url, host, title, snippet, engines, onion}],
+     "engines": {key: {status, count, error, ms}}, "total": n}.
+    Finished rows are pruned after 90 days."""
+
+    __tablename__ = "search_requests"
+    query: Mapped[str] = mapped_column(String(300), default="")
+    engines: Mapped[list] = mapped_column(JSON, default=list)
+    client_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    saved_search_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
+class SavedSearch(Base):
+    """A query saved against a client that the worker re-runs every interval_hours.
+    New results are ingested as kind "search" items, so watch-term matching,
+    alerting and capture apply to them."""
+
+    __tablename__ = "saved_searches"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    query: Mapped[str] = mapped_column(String(300))
+    engines: Mapped[list] = mapped_column(JSON, default=list)  # empty means every enabled engine
+    interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(320), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    next_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_request_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_new_items: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(Text, default="")

@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Priority Groups{% endblock %}
+{% block body %}
+<p class="page-intro">The groups that get direct, profiled crawls first. The computed list is the top {{ top }} groups by ransomware.live victims published in the last 90 days, with victims in your active clients' industries and countries weighted up. It refreshes daily. A pinned group is always a priority group; an excluded group never is. The onion crawl visits priority groups first on every run and the rest by recent activity within its time budget.</p>
+{% if broken %}<div class="health-banner amber">Broken parser profiles: {% for b in broken %}<b>{{ b.profile }}</b>{{ ', ' if not loop.last }}{% endfor %}. Open the group's profile and fix its selectors against the newest stored page.</div>{% endif %}
+{% if is_admin %}
+<div class="panel pad" style="margin-bottom:14px">
+  <form class="row" method="post" action="/priority-groups/add">
+    <label class="field">Pin a group by name<input name="group" placeholder="akira" required></label>
+    <button class="btn btn-primary">Pin</button>
+  </form>
+  <form class="inline" method="post" action="/priority-groups/recompute" style="margin-top:10px"><button class="btn btn-sm btn-ghost">Recompute now</button></form>
+</div>
+{% endif %}
+<div class="panel"><div class="table-wrap">
+<table>
+  <thead><tr><th class="num">Rank</th><th>Group</th><th class="num">Victims 90d</th><th class="num">Client matches</th><th class="num">Score</th><th>Status</th><th>Profile</th><th>Onion sources</th><th>Newest stored page</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}{% set g = r.row %}<tr>
+    <td class="num">{{ g.rank or '' }}</td>
+    <td class="nowrap"><b>{{ g.display_name or g.group_key }}</b></td>
+    <td class="num">{{ g.victims_90d }}</td>
+    <td class="num">{{ g.matched_victims }}</td>
+    <td class="num">{{ '%.1f' % g.score }}</td>
+    <td class="nowrap">{% if g.excluded %}<span class="chip">excluded</span>{% elif g.pinned %}<span class="chip ok-txt">pinned</span>{% elif g.computed %}<span class="chip">computed</span>{% else %}<span class="faint">not priority</span>{% endif %}</td>
+    <td class="nowrap"><span class="chip profile-{{ r.profile_state }}{{ ' stale-chip' if r.profile_state == 'broken' }}">{{ r.profile_state }}</span></td>
+    <td class="nowrap">{{ r.sources_enabled }} of {{ r.sources_total }} enabled</td>
+    <td class="nowrap faint">{{ r.latest_page_at.strftime('%Y-%m-%d %H:%M') if r.latest_page_at else 'none' }}</td>
+    <td class="nowrap" style="text-align:right">
+      <a class="btn btn-sm btn-ghost" href="/priority-groups/{{ g.group_key }}/profile">Profile</a>
+      {% if is_admin %}
+        {% if g.pinned %}<form class="inline" method="post" action="/priority-groups/{{ g.group_key }}/flag/unpin"><button class="btn btn-sm btn-ghost">Unpin</button></form>
+        {% elif not g.excluded %}<form class="inline" method="post" action="/priority-groups/{{ g.group_key }}/flag/pin"><button class="btn btn-sm btn-ghost">Pin</button></form>{% endif %}
+        {% if g.excluded %}<form class="inline" method="post" action="/priority-groups/{{ g.group_key }}/flag/include"><button class="btn btn-sm btn-ghost">Include</button></form>
+        {% else %}<form class="inline" method="post" action="/priority-groups/{{ g.group_key }}/flag/exclude"><button class="btn btn-sm btn-ghost">Exclude</button></form>{% endif %}
+      {% endif %}
+    </td>
+  </tr>{% else %}<tr><td colspan="10"><div class="empty"><p>No ranking yet. It needs ransomware.live victims in the last 90 days, which the feed collects once RANSOMWARE_LIVE_API_KEY is set; the worker recomputes daily.</p></div></td></tr>{% endfor %}
+  </tbody>
+</table>
+</div></div>
+<p class="page-intro" style="margin-top:14px">Profile states: none (no profile), draft (saved, no crawl has extracted an entry yet), working (the last crawl extracted entries), broken (it extracted entries before and extracts none now). Profiles are stored in the database and edited here; YAML files in app/profiles still load as a fallback.</p>
+{% endblock %}

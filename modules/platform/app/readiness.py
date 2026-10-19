@@ -115,9 +115,63 @@ def _module_checks(module, probe: dict) -> list[dict]:
             checks.append(_chk("SABINE reach", "warn", "MODULE_DIRECTORY reaches fewer than two modules"))
         else:
             checks.append(_chk("SABINE reach", "ok", f"{n} modules, narrative: {integ.get('narrative')}"))
+    elif integ.get("kind") == "collection-sources" and "tor" in integ:
+        checks += _collection_checks(integ)
     elif integ.get("kind"):
         checks.append(_chk("Integrations", "ok", integ.get("kind").replace("-", " ")))
     return checks
+
+
+def _collection_checks(integ: dict) -> list[dict]:
+    """Dark web monitoring collection health: Tor and the collector worker block
+    go-live; a failing or stale connector is a warning. A module that predates
+    these keys reports only a source count and falls back to the generic check."""
+    checks: list[dict] = []
+    tor = integ.get("tor") or {}
+    if tor.get("ok"):
+        checks.append(_chk("Tor exit", "ok", f"checked {str(tor.get('checked_at') or '')[:16]}"))
+    else:
+        checks.append(_chk("Tor exit", "fail", tor.get("error") or "not exiting through Tor"))
+    age = integ.get("worker_heartbeat_age_seconds")
+    limit = integ.get("heartbeat_stale_after_seconds") or 300
+    if age is None:
+        checks.append(_chk("Collector worker", "fail", "no heartbeat recorded"))
+    elif age > limit:
+        checks.append(_chk("Collector worker", "fail", f"last heartbeat {age // 60} min ago"))
+    else:
+        checks.append(_chk("Collector worker", "ok", f"heartbeat {age}s ago"))
+    conns = integ.get("connectors") or {}
+    on = {k: v for k, v in conns.items() if v.get("configured")}
+    failing = sorted(k for k, v in on.items() if v.get("error") or v.get("last_run_ok") is False)
+    stale = sorted(k for k, v in on.items() if v.get("stale") and k not in failing)
+    off = len(conns) - len(on)
+    tail = f"; {off} not configured" if off else ""
+    if failing or stale:
+        parts = []
+        if failing:
+            parts.append("failing: " + ", ".join(failing))
+        if stale:
+            parts.append("stale: " + ", ".join(stale))
+        checks.append(_chk("Collectors", "warn", "; ".join(parts) + tail))
+    elif on:
+        checks.append(_chk("Collectors", "ok", f"{len(on)} configured connector(s) healthy{tail}"))
+    else:
+        checks.append(_chk("Collectors", "warn", "no connector is configured"))
+    checks += _watch_term_checks(integ)
+    return checks
+
+
+def _watch_term_checks(integ: dict) -> list[dict]:
+    """Dark web watch term coverage: an active client with no enabled terms cannot
+    produce a hit. Older modules do not report it and get no check."""
+    wt = integ.get("watch_terms") or {}
+    if wt.get("ok") is True:
+        return [_chk("Watch terms", "ok", f"every active client has terms ({wt.get('active_clients', 0)})")]
+    if wt.get("ok") is False:
+        names = ", ".join(c.get("name", "?") for c in (wt.get("clients") or [])[:5])
+        return [_chk("Watch terms", "warn",
+                     f"{wt.get('clients_without_terms', 0)} active client(s) without terms: {names}")]
+    return []
 
 
 def _control_plane_checks(modules, ov) -> list[dict]:
