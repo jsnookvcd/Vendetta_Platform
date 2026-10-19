@@ -22,10 +22,10 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, boot, brain, business, intent, ledger, metrics, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
+from . import auth, boot, brain, business, intent, investigator, ledger, metrics, narrative, oidc, perception, policy, provision, reach, skills, sso, voice
 from . import readiness as readiness_mod
 from .config import settings
-from .db import AuditLog, Brief, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
+from .db import AuditLog, Brief, Investigation, Proposal, SessionLocal, Speech, User, WorkItem, init_db, utcnow
 
 log = logging.getLogger(__name__)
 _APP_DIR = Path(__file__).resolve().parent
@@ -43,6 +43,7 @@ def _startup():
     init_db()
     provision.start_scheduler(SessionLocal)
     brain.start_scheduler()
+    investigator.start_worker()
 
 
 def get_db():
@@ -198,7 +199,7 @@ def run_now(user: str = auth.RequireUser, db: Session = Depends(get_db)):
 def queue_page(request: Request, domain: str = Query(""), state: str = Query("open"),
                user: str = auth.RequireUser, db: Session = Depends(get_db)):
     return render(request, "queue.html", user=user, items=_queue(db, domain, state), domain=domain, state=state,
-                  stats=brain.stats(db))
+                  stats=brain.stats(db), investigate_on=investigator.enabled())
 
 
 @app.post("/queue/{wid}/claim")
@@ -707,13 +708,100 @@ def api_ledger_verify(user: str = Depends(auth.api_user), db: Session = Depends(
     return ledger.verify(db)
 
 
+# ---------------------------------------------------------------- investigations
+def _inv_json(i: Investigation, steps: bool = False) -> dict:
+    out = {"id": i.id, "number": i.number, "module": i.module, "finding_id": i.finding_id, "title": i.title,
+           "severity": i.severity, "client": i.client, "platform_client_id": i.platform_client_id, "trigger": i.trigger,
+           "requested_by": i.requested_by, "status": i.status, "model": i.model, "steps": i.steps,
+           "tokens": {"in": i.tokens_in, "out": i.tokens_out}, "verdict": i.verdict, "confidence": i.confidence,
+           "summary": i.summary, "conclusion": i.conclusion, "outcome": i.outcome, "error": i.error,
+           "created_at": i.created_at.isoformat(),
+           "finished_at": i.finished_at.isoformat() if i.finished_at else None}
+    if steps:
+        out["trace"] = [{"seq": s.seq, "kind": s.kind, "tool": s.tool, "args": s.args, "text": s.text, "sha256": s.sha256,
+                         "ok": s.ok, "at": s.at.isoformat()} for s in i.step_rows]
+    return out
+
+
+def _start_investigation(db: Session, module: str, finding_id: str, user: str, trigger: str) -> tuple[Investigation | None, str]:
+    inv, detail = investigator.queue(db, module, finding_id, trigger=trigger, requested_by=user)
+    if inv is not None:
+        _audit(db, user, "investigation.start", f"{inv.number} {module}:{finding_id} {inv.status}")
+    return inv, detail
+
+
+@app.get("/investigations", response_class=HTMLResponse)
+def investigations_page(request: Request, status: str = Query(""), user: str = auth.RequireUser,
+                        db: Session = Depends(get_db)):
+    q = select(Investigation).order_by(desc(Investigation.created_at)).limit(200)
+    if status:
+        q = q.where(Investigation.status == status)
+    st = investigator.stats(db)
+    return render(request, "investigations.html", user=user, rows=db.execute(q).scalars().all(), status=status,
+                  counts=st["by_status"], enabled=st["enabled"], ceiling=st["ceiling"])
+
+
+@app.get("/investigations/{iid}", response_class=HTMLResponse)
+def investigation_page(iid: str, request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    inv = db.get(Investigation, iid)
+    if not inv:
+        raise HTTPException(404)
+    ident = auth.resolve_identity(request)
+    return render(request, "investigation.html", user=user, inv=inv,
+                  can_rerun=investigator.enabled() and not (ident and ident.is_viewer))
+
+
+@app.post("/investigations/new")
+def investigation_new(work_item: str = Form(""), module: str = Form(""), finding_id: str = Form(""),
+                      user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    if work_item:
+        w = db.get(WorkItem, work_item)
+        if not w or w.kind != "finding":
+            raise HTTPException(404)
+        module, finding_id = w.source, w.key.split(":", 2)[2]
+    inv, detail = _start_investigation(db, module, finding_id, user, "person")
+    if inv is None:
+        return _back("/queue", False, detail)
+    if inv.status == "queued":
+        investigator.kick()
+    return _back(f"/investigations/{inv.id}", inv.status in ("queued", "running"), detail)
+
+
+@app.get("/api/investigations")
+def api_investigations(status: str = Query(""), user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    q = select(Investigation).order_by(desc(Investigation.created_at)).limit(200)
+    if status:
+        q = q.where(Investigation.status == status)
+    return [_inv_json(i) for i in db.execute(q).scalars().all()]
+
+
+@app.get("/api/investigations/{iid}")
+def api_investigation(iid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    inv = db.get(Investigation, iid)
+    if not inv:
+        raise HTTPException(404)
+    return _inv_json(inv, steps=True)
+
+
+@app.post("/api/investigations")
+def api_investigation_new(body: dict, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    inv, detail = _start_investigation(db, str(body.get("module") or ""), str(body.get("finding_id") or ""), user, "person")
+    if inv is None:
+        limited = "last 10 minutes" in detail or "the limit is" in detail or "minutes; open it" in detail
+        return JSONResponse({"ok": False, "detail": detail}, status_code=429 if limited else 404)
+    if inv.status == "queued":
+        investigator.kick()
+    return JSONResponse({"ok": inv.status in ("queued", "running"), "detail": detail, "investigation": _inv_json(inv)},
+                        status_code=200 if inv.status in ("queued", "running") else 409)
+
+
 @app.get("/api/module")
 def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     return {
         "module": "sabine", "display_name": "SABINE", "platform": "Vendetta Platform", "role": "agent",
         "enabled": settings.module_enabled, "public_url": settings.public_url,
         "endpoints": ["/api/queue", "/api/proposals", "/api/run", "/api/briefs", "/api/skills", "/api/metrics",
-                      "/api/business", "/api/concierge", "/api/ledger/verify", "/api/module"],
+                      "/api/business", "/api/concierge", "/api/investigations", "/api/ledger/verify", "/api/module"],
         "readiness": readiness_mod.block(),
         "stats": brain.stats(db),
     }

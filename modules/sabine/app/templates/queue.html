@@ -11,10 +11,11 @@
   <thead><tr><th>Sev</th><th>Item</th><th>Client</th><th>Domain</th><th>Source</th><th>Since</th><th></th></tr></thead>
   <tbody>{% for w in items %}<tr class="{{ 'faint' if w.state in ('done', 'gone') }}">
     <td><span class="stchip st-{{ w.severity }}">{{ w.severity }}</span></td>
-    <td>{{ w.title }}{% if w.payload.get('rationale') %}<div class="faint" style="font-size:12px">{{ w.payload.rationale|truncate(200) }}</div>{% endif %}{% if w.state == 'claimed' %}<div class="faint" style="font-size:12px">claimed by {{ w.owner }}</div>{% endif %}</td>
+    <td>{{ w.title }}{% if w.payload.get('rationale') %}<div class="faint" style="font-size:12px">{{ w.payload.rationale|truncate(200) }}</div>{% endif %}{% if w.state == 'claimed' %}<div class="faint" style="font-size:12px">claimed by {{ w.owner }}</div>{% endif %}{% set iv = w.payload.get('investigation') %}{% if iv %}<div style="font-size:12px; margin-top:4px"><a class="alink" href="/investigations/{{ iv.id }}">{{ iv.number }}</a> <span class="faint">{{ iv.status }}{% if iv.verdict %}: {{ iv.verdict|replace('_', ' ') }} at {{ (iv.confidence*100)|int }}%{% endif %}</span></div>{% endif %}</td>
     <td class="faint">{{ w.client }}</td><td class="faint">{{ w.domain }}</td><td class="faint">{{ w.source }}</td>
     <td class="faint nowrap">{{ w.first_seen.strftime('%b %d %H:%M') }}</td>
     <td class="nowrap">{% if w.link %}<a class="alink" href="{{ w.link }}" target="_blank" rel="noopener">open</a> {% endif %}
+      {% if w.kind == 'finding' and w.state in ('open', 'claimed') and investigate_on %}<form class="inline" method="post" action="/investigations/new"><input type="hidden" name="work_item" value="{{ w.id }}"><button class="btn btn-xs btn-ghost">Investigate</button></form>{% endif %}
       {% if w.state == 'open' %}<form class="inline" method="post" action="/queue/{{ w.id }}/claim"><button class="btn btn-xs btn-ghost">Claim</button></form>{% endif %}
       {% if w.state in ('open', 'claimed') %}<form class="inline" method="post" action="/queue/{{ w.id }}/done"><button class="btn btn-xs btn-ghost">Done</button></form>{% endif %}</td>
   </tr>{% else %}<tr><td colspan="7" class="faint">Nothing here.</td></tr>{% endfor %}</tbody>

@@ -10,6 +10,7 @@ module's API does not allow. Its reach is set by MODULE_DIRECTORY (which modules
 can see and the tokens it presents) and by the autonomy policy per action kind."""
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -137,6 +138,36 @@ class Settings(BaseSettings):
     memory_reject_step: float = 0.1
     memory_approve_step: float = 0.05
 
+    # The investigation agent: a language-model loop that works one finding through
+    # read-only tools scoped to that finding's client and ends with a verdict and a
+    # recommended skill. It needs ANTHROPIC_API_KEY; without one, nothing is
+    # investigated and readiness says so. The agent never acts: its recommendation
+    # is a proposal that goes through the autonomy policy, capped at the ceiling
+    # below, and a high-risk or person-decides skill stays with a person whatever
+    # the ceiling. The deterministic rules keep running either way.
+    investigation_enabled: bool = True
+    investigation_model: str = ""          # blank uses llm_model
+    investigation_max_steps: int = 12      # model turns per investigation
+    investigation_max_tool_chars: int = 6000  # one tool result as the model sees it
+    investigation_max_tokens: int = 1500   # per model turn
+    investigation_max_total_tokens: int = 60000  # input plus output across the whole run
+    investigation_max_tool_calls: int = 25  # across the whole run
+    investigation_max_tools_per_turn: int = 5
+    investigation_timeout_seconds: int = 240
+    investigate_max_per_cycle: int = 3     # new investigations the rule raises per cycle
+    # The highest autonomy a recommendation from an investigation may run at.
+    # "propose" (default): every recommendation waits for a person. "auto": a
+    # recommendation whose effect is only a SABINE queue item (confirm a false
+    # positive, link related findings) may run without one when its own policy is
+    # auto; escalation, paging, suppression and host actions always wait for a
+    # person. "off": the conclusion is recorded and no proposal is raised.
+    investigation_autonomy_ceiling: str = "propose"
+    # A person can re-run an investigation of one finding at most this often, and
+    # start at most this many an hour.
+    investigation_rerun_minutes: int = 10
+    investigation_user_hourly_cap: int = 20
+    investigation_worker_seconds: int = 15  # how often the worker drains the queue; 0 disables it
+
     # Running the business: Harvest (time, budgets, capacity) and HubSpot (deals). Each
     # is optional; without credentials the source is skipped and readiness says so.
     harvest_account_id: str = ""
@@ -150,6 +181,14 @@ class Settings(BaseSettings):
     renewal_days: int = 60
     won_lookback_days: int = 30
     won_onboard_days: int = 3              # a closed-won deal not on the platform after this many days
+
+    @field_validator("investigation_autonomy_ceiling")
+    @classmethod
+    def _ceiling(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in ("off", "propose", "auto"):
+            raise ValueError("INVESTIGATION_AUTONOMY_CEILING must be off, propose or auto")
+        return v
 
     @property
     def oidc_enabled(self) -> bool:

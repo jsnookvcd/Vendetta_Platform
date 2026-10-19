@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}{{ inv.number }}{% endblock %}
+{% block body %}
+<div style="display:grid; grid-template-columns: 3fr 2fr; gap:16px; align-items:start">
+<div>
+  <div class="panel pad" style="margin-bottom:16px">
+    <div class="row" style="gap:6px; flex-wrap:wrap"><span class="chip">{{ inv.number }}</span><span class="stchip st-{{ inv.severity }}">{{ inv.severity }}</span><span class="chip">{{ inv.module }}:{{ inv.finding_id }}</span><span class="stchip st-{{ inv.status }}">{{ inv.status }}</span>{% if inv.verdict %}<span class="chip">{{ inv.verdict|replace('_', ' ') }}, {{ (inv.confidence*100)|int }}%</span>{% endif %}</div>
+    <h3 style="margin:12px 0 6px">{{ inv.title }}</h3>
+    <p class="faint" style="margin:0 0 8px">{{ inv.client }}. Started by {{ inv.trigger }}{% if inv.trigger != 'rule' %} ({{ inv.requested_by }}){% endif %} {{ inv.created_at.strftime('%b %d, %Y %H:%M') }}{% if inv.model %}; model {{ inv.model }}{% endif %}{% if inv.finished_at and inv.started_at %}; {{ ((inv.finished_at - inv.started_at).total_seconds())|int }}s, {{ inv.steps }} steps, {{ inv.tokens_in + inv.tokens_out }} tokens{% endif %}.</p>
+    {% if inv.summary %}<h3 style="margin:12px 0 6px">Conclusion</h3><p class="faint" style="margin:0 0 6px; font-size:12px">Written by the model from monitored data an attacker may have shaped. Check it against the trace before acting.</p><blockquote style="margin:0; padding-left:10px; border-left:3px solid var(--line, #444); white-space:pre-wrap">{{ inv.summary }}</blockquote>{% endif %}
+    {% if inv.error %}<p class="flash bad" style="margin-top:10px">{{ inv.error }}</p>{% endif %}
+    {% set c = inv.conclusion or {} %}
+    {% if c.get('key_evidence') %}<h3 style="margin:14px 0 6px">Evidence it rests on</h3><ul style="margin:0; padding-left:18px">{% for e in c.key_evidence %}<li><span class="mono">{{ e.module }}:{{ e.finding_id }}</span> {{ e.why }}</li>{% endfor %}</ul>{% endif %}
+    {% if c.get('hypotheses_considered') %}<h3 style="margin:14px 0 6px">Explanations weighed</h3><ul style="margin:0; padding-left:18px">{% for h in c.hypotheses_considered %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
+    {% if c.get('open_questions') %}<h3 style="margin:14px 0 6px">Open questions</h3><ul style="margin:0; padding-left:18px">{% for q in c.open_questions %}<li>{{ q }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% if inv.outcome %}
+  <div class="panel pad" style="margin-bottom:16px">
+    <h3 style="margin:0 0 6px">Recommendation</h3>
+    <p style="margin:0"><b>{{ (c.get('recommended_action') or 'none')|replace('_', ' ') }}</b>: {{ inv.outcome.get('result') }}. <span class="faint">{{ inv.outcome.get('detail') }}</span></p>
+    {% if inv.outcome.get('proposal') %}<p style="margin:8px 0 0"><a class="alink" href="/proposals/{{ inv.outcome.proposal }}">open the proposal</a></p>{% endif %}
+  </div>
+  {% endif %}
+  <div class="section-head"><h2>Trace</h2></div>
+  <div class="panel">{% for s in inv.step_rows %}
+    <div class="pad" style="border-bottom:1px solid var(--line, #222)">
+      <div class="row" style="gap:6px"><span class="faint mono">{{ s.seq }}</span>
+        {% if s.kind == 'tool' %}<span class="chip">{{ s.tool }}</span><span class="faint mono" style="font-size:12px">{{ s.args|tojson }}</span>{% if not s.ok %}<span class="stchip st-failed">error</span>{% endif %}
+        {% elif s.kind == 'thought' %}<span class="chip">reasoning</span>{% elif s.kind == 'conclusion' %}<span class="chip">conclude</span>{% else %}<span class="chip">{{ s.kind }}</span>{% endif %}
+        <span class="faint" style="margin-left:auto; font-size:12px">{{ s.at.strftime('%H:%M:%S') }}</span></div>
+      {% if s.kind == 'tool' %}<details style="margin-top:6px"><summary class="faint" style="font-size:12px">result, {{ s.text|length }} chars, sha256 {{ s.sha256[:16] }}</summary><pre class="mono" style="white-space:pre-wrap; font-size:11px; margin:6px 0 0">{{ s.text }}</pre></details>
+      {% else %}<p style="margin:6px 0 0; white-space:pre-wrap">{{ s.text }}</p>{% endif %}
+    </div>{% else %}<div class="pad faint">No steps yet.</div>{% endfor %}</div>
+</div>
+<div>
+  <div class="panel pad">
+    <h3 style="margin:0 0 6px">How this works</h3>
+    <p class="faint" style="margin:0; font-size:13px">The agent reads only, and only this client's data. Finding text comes from monitored systems and the open internet, so it is treated as untrusted. SABINE checks the recommendation against the verdict and the findings the agent actually read, builds the target itself, and the autonomy policy decides what happens next. Each tool call is on the ledger with the SHA-256 of the result shown here.</p>
+    {% if inv.status in ('concluded', 'inconclusive', 'failed', 'no_model') and can_rerun %}
+    <form method="post" action="/investigations/new" style="margin-top:12px"><input type="hidden" name="module" value="{{ inv.module }}"><input type="hidden" name="finding_id" value="{{ inv.finding_id }}"><button class="btn btn-ghost btn-sm">Investigate again</button></form>{% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}

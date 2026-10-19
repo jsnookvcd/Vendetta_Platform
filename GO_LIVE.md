@@ -149,6 +149,12 @@ Autonomy page, every default is safe for a first deployment (escalation and host
 actions propose; notes, nudges, re-syncs and briefs are automatic). Leave it
 there until you have watched a few days of proposals; then widen what it may do.
 
+To turn on narrative and the investigation agent, put an Anthropic API key at
+`/vendetta/sabine/ANTHROPIC_API_KEY` (SecureString) and run `infra/redeploy.sh sabine`.
+Every investigation's recommendation waits for a person
+(`INVESTIGATION_AUTONOMY_CEILING=propose`). Read a week of investigations on the
+Investigations page, against what the responders decided, before raising it.
+
 For the SOC wall display, read `/vendetta/sabine/KIOSK_TOKEN` from SSM and open
 `https://sabine.<domain>/board?k=<token>` once on that screen; it keeps a cookie
 and refreshes itself, and nothing on it can approve anything.

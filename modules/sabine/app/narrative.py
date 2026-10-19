@@ -335,6 +335,9 @@ def _what_was_done(skill, proposal, result: dict) -> str:
         return f"Nudged {f.get('case')}; it is on the queue for {f.get('lead') or 'the lead'}"
     if skill.key == "link_related_findings":
         return f"Noted {len(f.get('finding_ids') or [])} related findings for {f.get('client')} on the queue"
+    if skill.key == "investigate":
+        return (f"Started investigation {r.get('number', '')} on {f.get('finding_id')} for {f.get('client') or 'the client'}. "
+                "The trace and my recommendation land under Investigations")
     if skill.key == "copilot_false_positive":
         return f"{f.get('finding_id')} is on the queue to confirm and close as a false positive"
     if skill.key == "page_oncall":

@@ -6,6 +6,8 @@
     <div class="row" style="gap:6px; flex-wrap:wrap"><span class="chip">{{ spec.title }}</span><span class="chip">{{ prop.domain }}</span><span class="chip">{{ prop.risk }} risk</span><span class="chip">autonomy {{ prop.autonomy }}</span><span class="chip">{{ (prop.confidence*100)|int }}% confidence</span><span class="stchip st-{{ prop.status }}">{{ prop.status }}</span></div>
     <h3 style="margin:12px 0 6px">Why</h3>
     <p style="margin:0; white-space:pre-wrap">{{ prop.rationale }}</p>
+    {% set ivs = (prop.facts.get('investigations') or []) + ([prop.facts.investigation] if prop.facts.get('investigation') else []) %}
+    {% if ivs %}<p style="margin:10px 0 0; font-size:13px">Investigation{{ 's' if ivs|length > 1 }}: {% for iv in ivs %}<a class="alink" href="/investigations/{{ iv.id }}">{{ iv.number }}</a> <span class="faint">({{ iv.verdict|replace('_', ' ') }}, {{ (iv.confidence*100)|int }}%)</span>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
     <p class="faint" style="font-size:12px; margin:10px 0 0">Raised {{ prop.created_at.strftime('%b %d, %Y %H:%M') }} by SABINE. {{ spec.description }}</p>
   </div>
   {% if prop.status == 'pending' %}

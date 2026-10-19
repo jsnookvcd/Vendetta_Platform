@@ -320,6 +320,13 @@ def build(db: Session, intent: Intent, user: str) -> dict:
                     facts={**base, "module": mod, "finding_id": f["id"], "severity": f.get("severity"), "title": f.get("title"),
                            "client": client_name, "platform_client_id": cid},
                     target={"module": mod, "id": f["id"], "path": f"/api/findings/{f['id']}/escalate"}, confidence=0.9)
+    if s.key == "investigate":
+        return dict(key=f"investigate:{mod}:{f['id']}",
+                    title=f"Investigate {f.get('severity')} {mod.replace('-', ' ')} finding for {client_name or 'unknown client'}",
+                    rationale=lead + f"SABINE's investigation agent works \"{f.get('title', '')}\" across every module for {client_name or 'the client'} and recommends what should happen.",
+                    facts={**base, "module": mod, "finding_id": f["id"], "severity": f.get("severity"), "title": f.get("title"),
+                           "client": client_name, "platform_client_id": cid},
+                    target={"module": mod, "id": f["id"], "platform_client_id": cid, "client": client_name}, confidence=0.9)
     if s.key == "copilot_false_positive":
         cp = f.get("copilot") or {}
         link = (reach.public_url(mod) + perception.FINDING_PATH[mod].format(id=f["id"])) if reach.public_url(mod) and mod in perception.FINDING_PATH else ""

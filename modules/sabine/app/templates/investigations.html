@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Investigations{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">SABINE's investigation agent works a finding across every module for its client through read-only tools, then recommends one skill. The recommendation is a proposal and goes through the autonomy policy{% if ceiling == 'propose' %}; every one waits for a person{% endif %}. Each step is on the ledger.
+{% if not enabled %}<br><b>The agent is off:</b> set ANTHROPIC_API_KEY to turn it on. The rules keep running without it.{% endif %}</p>
+<div class="row" style="gap:8px; margin-bottom:12px; flex-wrap:wrap">
+  {% for s, label in [('', 'All'), ('queued', 'Queued'), ('running', 'Running'), ('concluded', 'Concluded'), ('inconclusive', 'Inconclusive'), ('failed', 'Failed')] %}
+  <a class="btn btn-sm {{ 'btn-primary' if status == s else 'btn-ghost' }}" href="/investigations?status={{ s }}">{{ label }}{% if s and counts.get(s) %} {{ counts[s] }}{% endif %}</a>{% endfor %}
+</div>
+<div class="panel"><div class="table-wrap"><table>
+  <thead><tr><th>Number</th><th>Finding</th><th>Client</th><th>Status</th><th>Verdict</th><th>Recommendation</th><th>Started by</th><th>When</th></tr></thead>
+  <tbody>{% for i in rows %}<tr>
+    <td class="nowrap"><a href="/investigations/{{ i.id }}"><b>{{ i.number }}</b></a></td>
+    <td><span class="stchip st-{{ i.severity }}">{{ i.severity }}</span> {{ i.title|truncate(90) }}<div class="faint" style="font-size:12px">{{ i.module }}:{{ i.finding_id }}</div></td>
+    <td class="faint">{{ i.client }}</td>
+    <td><span class="stchip st-{{ i.status }}">{{ i.status }}</span></td>
+    <td class="nowrap">{% if i.verdict %}{{ i.verdict|replace('_', ' ') }} <span class="faint">{{ (i.confidence*100)|int }}%</span>{% endif %}</td>
+    <td class="faint">{% if i.outcome %}{{ (i.conclusion.get('recommended_action') or '')|replace('_', ' ') }}: {{ i.outcome.get('result') }}{% endif %}</td>
+    <td class="faint">{{ i.trigger }}{% if i.trigger != 'rule' %} ({{ i.requested_by }}){% endif %}</td>
+    <td class="faint nowrap">{{ i.created_at.strftime('%b %d %H:%M') }}</td>
+  </tr>{% else %}<tr><td colspan="8" class="faint">None yet. Critical and high findings with no case are investigated as they appear; you can also start one from the queue or by asking.</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

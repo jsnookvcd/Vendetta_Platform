@@ -248,7 +248,27 @@ def suggest_suppression(db: Session, p: Proposal) -> dict:
             "detail": f"suppression {d.get('id', '')} until {(d.get('expires_at') or '')[:10]}".strip()}
 
 
+def investigate(db: Session, p: Proposal) -> dict:
+    """Queue the investigation agent on the target finding. The worker runs it; its
+    recommendation comes back as its own proposal."""
+    from . import investigator
+
+    t, f = p.target or {}, p.facts or {}
+    if f.get("source") == "ask":
+        trigger, who = "ask", f.get("by") or "a person"
+    elif p.decided_by:
+        trigger, who = "person", p.decided_by
+    else:
+        trigger, who = "rule", "sabine"
+    inv, detail = investigator.queue(db, t.get("module", ""), str(t.get("id", "")), trigger=trigger, requested_by=who,
+                                     proposal_id=p.id)
+    if inv is None or inv.status == "no_model":
+        return {"ok": False, "detail": detail, "investigation": inv.id if inv else None}
+    return {"ok": True, "detail": detail, "investigation": inv.id, "number": inv.number}
+
+
 EXECUTORS = {
+    "investigate": investigate,
     "escalate_finding": escalate_finding,
     "roster_sync": roster_sync,
     "raise_work_item": raise_work_item,

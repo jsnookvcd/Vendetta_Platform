@@ -58,7 +58,8 @@ def _recently_rejected(db: Session, key: str, hours: float) -> bool:
 
 def propose(db: Session, action: str, key: str, title: str, rationale: str, facts: dict, target: dict,
             confidence: float, domain: str | None = None, work_item: WorkItem | None = None,
-            window_hours: float = 24, reject_cooldown_hours: float = 0, signature: str | None = None) -> Proposal | None:
+            window_hours: float = 24, reject_cooldown_hours: float = 0, signature: str | None = None,
+            ceiling: str | None = None) -> Proposal | None:
     """Raise a proposal unless an equivalent one is already pending, was executed
     inside the dedupe window (24 hours unless the rule says otherwise), was rejected
     inside the rule's cool-down, or the action is switched off. The action must be a
@@ -66,12 +67,17 @@ def propose(db: Session, action: str, key: str, title: str, rationale: str, fact
 
     When the proposal targets a client, the client's autonomy override applies, and
     decision memory adjusts the confidence by what people decided before on the same
-    (skill, client, signature); the adjustment is written into the facts."""
+    (skill, client, signature); the adjustment is written into the facts.
+
+    `ceiling="propose"` caps the level: the investigation agent's recommendations
+    use it so they wait for a person unless an admin has raised the ceiling."""
     skill = skills.get(action)
     pid = _client_id(facts, target)
     level = policy.autonomy(db, action, pid or None)
     if level == "off":
         return None
+    if ceiling == "propose" and level == "auto":
+        level = "propose"  # the caller caps how far this proposal may run on its own
     prior = _pending(db, key)
     if prior is not None:
         if prior.status == "executed" and prior.executed_at and (utcnow() - prior.executed_at) < dt.timedelta(hours=window_hours):
@@ -377,8 +383,15 @@ def services_rules(db: Session) -> list[Proposal]:
 def run(db: Session) -> list[Proposal]:
     from . import concierge
 
-    out = (soc_rules(db) + concierge.soc_rules(db) + admin_rules(db) + services_rules(db)
+    from . import investigator
+
+    out = (soc_rules(db) + investigator.rules(db) + concierge.soc_rules(db) + admin_rules(db) + services_rules(db)
            + concierge.services_rules(db) + concierge.business_rules(db))
+    # A finding SABINE already investigated: its conclusion goes on any proposal a
+    # rule just raised about it, so the person deciding sees both.
+    for p in out:
+        if p.action in ("escalate_finding", "host_action", "page_oncall", "copilot_false_positive"):
+            investigator.annotate_new(db, p)
     db.commit()
     return out
 

@@ -4,7 +4,7 @@ ran, whether the chain verifies, and which optional business sources (Harvest,
 HubSpot) are configured."""
 from __future__ import annotations
 
-from . import boot, brain, business, provision, reach, sso
+from . import boot, brain, business, investigator, provision, reach, sso
 from .config import settings
 
 MODULE = "sabine"
@@ -47,6 +47,10 @@ def integrations() -> dict:
         "last_cycle_detail": brain.LAST["detail"],
         # Optional business sources: "configured" or "not configured" (skipped).
         "business": business.status(),
+        # The investigation agent: on when a model is configured; its recommendations
+        # run no higher than the ceiling.
+        "investigator": {"enabled": investigator.enabled(), "ceiling": settings.investigation_autonomy_ceiling,
+                         "model": (settings.investigation_model or settings.llm_model) if investigator.enabled() else ""},
     }
 
 

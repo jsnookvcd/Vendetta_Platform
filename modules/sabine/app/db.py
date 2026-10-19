@@ -162,6 +162,63 @@ class Brief(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Investigation(Base):
+    """One run of the investigation agent on one finding. The agent reads through
+    read-only tools scoped to the finding's client, records every step, and ends
+    with a conclusion. Its recommendation becomes an ordinary proposal that goes
+    through the autonomy policy like any rule's would."""
+
+    __tablename__ = "investigations"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    number: Mapped[str] = mapped_column(String(20), unique=True)           # INV-YYYY-NNNN
+    module: Mapped[str] = mapped_column(String(40))
+    finding_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(400), default="")
+    severity: Mapped[str] = mapped_column(String(10), default="medium")
+    client: Mapped[str] = mapped_column(String(200), default="")
+    platform_client_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    trigger: Mapped[str] = mapped_column(String(20), default="rule")       # rule | person | ask
+    requested_by: Mapped[str] = mapped_column(String(320), default="sabine")
+    proposal_id: Mapped[str] = mapped_column(String(32), default="")       # the investigate proposal that queued it
+    # queued | running | concluded | inconclusive | failed | no_model
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    model: Mapped[str] = mapped_column(String(80), default="")
+    steps: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    verdict: Mapped[str] = mapped_column(String(30), default="")
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    conclusion: Mapped[dict] = mapped_column(JSON, default=dict)
+    # What happened to the recommendation: raised, enriched, already_done, refused, none.
+    outcome: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    step_rows: Mapped[list["InvestigationStep"]] = relationship(order_by="InvestigationStep.seq",
+                                                                 cascade="all, delete-orphan")
+
+
+class InvestigationStep(Base):
+    """One step of an investigation: the agent's reasoning text, a tool call, the
+    tool's result (exactly as the model saw it), or the conclusion. The ledger holds
+    the SHA-256 of each result, so this table can be checked against the chain."""
+
+    __tablename__ = "investigation_steps"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    investigation_id: Mapped[str] = mapped_column(ForeignKey("investigations.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))      # thought | tool | conclusion | note
+    tool: Mapped[str] = mapped_column(String(60), default="")
+    args: Mapped[dict] = mapped_column(JSON, default=dict)
+    text: Mapped[str] = mapped_column(Text, default="")   # reasoning, or the tool result as the model saw it
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Speech(Base):
     """Rendered audio for a piece of SABINE's text, cached by content hash so the
     same sentence is never paid for twice."""

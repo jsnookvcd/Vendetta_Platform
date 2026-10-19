@@ -13,6 +13,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 # No scheduler threads in tests; cycles run explicitly.
 os.environ.setdefault("CYCLE_INTERVAL_SECONDS", "0")
 os.environ.setdefault("PROVISION_INTERVAL_SECONDS", "0")
+os.environ.setdefault("INVESTIGATION_WORKER_SECONDS", "0")
 
 import bcrypt  # noqa: E402
 

@@ -116,8 +116,80 @@ client, the journey items and communications she raised and their state.
 
 With `ANTHROPIC_API_KEY` set, a Claude model writes the briefs, the daily summary
 and answers on the Ask page from the facts SABINE gathered, and is told it may not
-invent any. It never chooses an action. Without a key, the same documents come
-from templates.
+invent any. Narrative never chooses an action. Without a key, the same documents
+come from templates.
+
+## Investigations
+
+The rules decide when a finding is worth a look. The investigation agent
+(`app/investigator.py`) does the looking. With `ANTHROPIC_API_KEY` set, a Claude
+model works one finding in a tool-use loop the way a responder would: it reads
+the finding, pivots on its host, account or indicator across every module for
+that client (open and closed), checks the client's open cases, MDR suppressions
+and closed investigations, what people decided before about findings like it and
+SABINE's earlier investigations, and ends by calling `conclude` with a verdict
+(true positive, false positive, benign expected, duplicate, needs more), a
+confidence, the evidence it rests on, the explanations it weighed, open questions
+and one recommended skill.
+
+How one starts:
+- The `investigate` skill (low risk, default auto) is raised for each critical or
+  high finding with no IR case and no investigation in the last day, skipping
+  alerts MDR already owns and confident copilot false positives, at most
+  `INVESTIGATE_MAX_PER_CYCLE` (3) per cycle, most severe first.
+- A person presses Investigate on a queue item, asks ("investigate dw1"), or calls
+  `POST /api/investigations`. A person may re-run one finding at most every
+  `INVESTIGATION_RERUN_MINUTES` (10) and start `INVESTIGATION_USER_HOURLY_CAP`
+  (20) an hour.
+- A worker thread drains the queue every `INVESTIGATION_WORKER_SECONDS` (15),
+  most severe first, and wakes at once when a person starts one. Rows are claimed
+  atomically, so a run never happens twice.
+
+What keeps it safe:
+- Read only. Every tool reads SABINE's snapshots or a module's GET API. No tool
+  writes anywhere.
+- One client. An investigation is pinned to its finding's client. Every tool
+  filters to that client, and a finding of another client is answered exactly as a
+  missing one, so nothing about another client reaches the model.
+- Untrusted input. Tool results are handed over as data with a note saying so, and
+  the system prompt tells the model never to follow instructions inside them. The
+  model's summary is shown labelled as model-written from data an attacker may
+  have shaped.
+- SABINE builds the action. A recommendation must fit the verdict, must target a
+  finding the agent actually read in this run, for the pinned client, still
+  active. SABINE builds the path, body and scope itself. Paging needs an
+  unacknowledged critical. A suppression needs people to have already called the
+  pattern noise `SUPPRESSION_SUGGEST_AFTER` times for this client, and takes its
+  phrase and its tool or host scope from that history, never from the model.
+- A ceiling over the policy. `INVESTIGATION_AUTONOMY_CEILING` is `propose` by
+  default: every recommendation waits for a person. `auto` lets only
+  recommendations whose effect is a SABINE queue item (confirm a false positive,
+  link related findings) run on their own; escalation, paging and suppression
+  always wait, and a host action is high risk and never runs. `off` records the
+  conclusion and raises nothing. A recommendation a person rejected is not raised
+  again for 24 hours.
+- The floor stays. When a rule already raised the same proposal, the
+  investigation adds its view to it (pending proposals only) and may raise its
+  confidence; it never lowers it, changes its status or removes it. A rule that
+  raises a proposal after an investigation concluded gets the investigation's view
+  attached, including a contrary one.
+- Budgets. `INVESTIGATION_MAX_STEPS` (12) model turns,
+  `INVESTIGATION_MAX_TOOLS_PER_TURN` (5), `INVESTIGATION_MAX_TOOL_CALLS` (25),
+  `INVESTIGATION_MAX_TOTAL_TOKENS` (60,000), `INVESTIGATION_TIMEOUT_SECONDS` (240),
+  and each tool result cut to `INVESTIGATION_MAX_TOOL_CHARS` (6,000). Live history
+  is fetched once per module per run. Out of budget means inconclusive, and the
+  finding stays with the rules and a person.
+- Everything on the ledger. The start, every tool call with the SHA-256 of the
+  result exactly as the model saw it, a hash of the raw `conclude` input, the
+  conclusion, what became of the recommendation and any annotation of a proposal
+  (with the hash of the added text and the confidence before and after).
+
+The Investigations page lists every run; each one shows the verdict, the evidence,
+the recommendation and its outcome, and the full trace with every tool call and
+result. Queue items and proposals link to their investigation.
+`GET /api/investigations` and `GET /api/investigations/{id}` (with the trace) serve
+the same. Without a key nothing is investigated, the Investigate button is hidden,
+and readiness reports the agent as off.
 
 ## Ask executes
 
