@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block title %}{{ board.name }}{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 12px">Each card is an engagement; columns are its phases. Drag a card to move it, or open it for its task board, notes and time.
+<a href="/engagements#new">Open an engagement</a>.</p>
+{% include "_board.html" %}
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

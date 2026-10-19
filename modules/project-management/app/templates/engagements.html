@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% block title %}Engagements{% endblock %}
+{% block body %}
+<form method="get" class="formrow" style="margin-bottom:12px">
+  <label class="field">Practice<select name="practice"><option value="">Both</option>{% for k, v in PRACTICE_NAMES.items() %}<option value="{{ k }}" {{ 'selected' if practice==k }}>{{ v }}</option>{% endfor %}</select></label>
+  <label class="field">Status<select name="status">{% for s in ['open','active','on_hold','closed','all'] %}<option value="{{ s }}" {{ 'selected' if status==s }}>{{ s.replace('_',' ') }}</option>{% endfor %}</select></label>
+  <label class="field wide">Search<input name="q" value="{{ q }}" placeholder="code, name or client"></label>
+  <button class="btn btn-sm">Filter</button>
+</form>
+<div class="panel"><div class="table-wrap">
+{% if rows %}
+<table><thead><tr><th>Code</th><th>Engagement</th><th>Client</th><th>Phase</th><th>PM</th><th class="num">Open</th><th class="num">Overdue</th><th>Harvest</th></tr></thead><tbody>
+{% for e in rows %}<tr>
+  <td class="nowrap"><a href="/engagements/{{ e.id }}">{{ e.code }}</a></td><td>{{ e.name }}</td><td>{{ e.client or '' }}</td>
+  <td class="nowrap">{{ e.phase }}{% if e.status != 'active' %} <span class="chip">{{ STATE_NAMES[e.status] }}</span>{% endif %}</td>
+  <td class="faint nowrap">{{ e.pm }}</td><td class="num">{{ e.tasks.open }}</td>
+  <td class="num">{% if e.tasks.overdue %}<span class="due bad">{{ e.tasks.overdue }}</span>{% else %}0{% endif %}</td>
+  <td class="faint">{{ e.harvest_project or ('linked' if e.harvest_project_id else '') }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No engagements match.</p></div>{% endif %}
+</div></div>
+
+{% if not is_viewer %}
+<div class="section-head" style="margin-top:18px" id="new"><h2>Open an engagement</h2></div>
+<div class="panel pad">
+<form method="post" action="/engagements" class="stack">
+  <div class="formrow">
+    <label class="field">Practice<select name="practice">{% for k, v in PRACTICE_NAMES.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label class="field wide">Name <span class="req">*</span><input name="name" required placeholder="Ransomware response"></label>
+    <label class="field">Code<input name="code" placeholder="generated if blank"></label>
+  </div>
+  <div class="formrow">
+    <label class="field">Client<input name="client" list="clients" placeholder="from the platform roster, or type a name"></label>
+    <datalist id="clients">{% for c in clients %}<option value="{{ c.name }}">{% endfor %}</datalist>
+    <label class="field">PM<input name="pm_email" type="email" placeholder="{{ user }}"></label>
+    <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" min="0"></label>
+  </div>
+  <div class="formrow">
+    <label class="field">Starts<input name="starts_on" type="date"></label>
+    <label class="field">Planned end<input name="ends_on" type="date"></label>
+    <label class="field">Harvest project ID<input name="harvest_project_id" placeholder="link now or later"></label>
+  </div>
+  <label class="field">Description<textarea name="description" rows="2"></textarea></label>
+  <div><button class="btn btn-primary">Open engagement</button></div>
+</form>
+</div>
+{% endif %}
+{% endblock %}

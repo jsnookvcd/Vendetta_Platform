@@ -33,7 +33,8 @@ MODULE_ROLES = ("none", "viewer", "analyst", "admin")
 
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
-             "vulnerability-management", "penetration-testing", "professional-services", "sabine", "mdr"]
+             "vulnerability-management", "penetration-testing", "professional-services", "sabine", "mdr",
+             "project-management"]
 
 # profile key -> (label, description, platform role, {module: (role, config)})
 PROFILES = {
@@ -56,6 +57,7 @@ PROFILES = {
             "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
             "mdr": ("analyst", {}),
+            "project-management": ("analyst", {}),
         },
     ),
     "soc-analyst": (
@@ -92,7 +94,16 @@ PROFILES = {
         "vCISO / advisory",
         "The Office of Special Projects (engagements and deliverables) and SABINE's briefs and queue; no SOC or offensive tooling.",
         "analyst",
-        {**{m: ("none", {}) for m in GRANTABLE}, "professional-services": ("analyst", {}), "sabine": ("analyst", {})},
+        {**{m: ("none", {}) for m in GRANTABLE}, "professional-services": ("analyst", {}), "sabine": ("analyst", {}),
+         "project-management": ("analyst", {})},
+    ),
+    "project-manager": (
+        "Project manager",
+        "Runs IR and ProServ delivery in Project Management (boards, tasks, meeting notes, Harvest time), with the "
+        "Office of Special Projects and SABINE; reads the IR hub.",
+        "analyst",
+        {**{m: ("none", {}) for m in GRANTABLE}, "project-management": ("analyst", {}),
+         "professional-services": ("analyst", {}), "incident-response": ("viewer", {}), "sabine": ("analyst", {})},
     ),
     "leadership": (
         "Leadership",

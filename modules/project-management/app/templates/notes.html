@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}Meeting notes{% endblock %}
+{% block body %}
+<form method="get" class="formrow" style="margin-bottom:12px"><label class="field wide">Search<input name="q" value="{{ q }}" placeholder="title, text, decisions or attendee"></label><button class="btn btn-sm">Search</button></form>
+<div class="panel"><div class="table-wrap">
+{% if rows %}<table><thead><tr><th>Held</th><th>Meeting</th><th>Engagement</th><th>By</th><th>SharePoint</th></tr></thead><tbody>
+{% for n in rows %}<tr><td class="nowrap faint">{{ n.held_at.strftime('%Y-%m-%d') }}</td><td><a href="/notes/{{ n.id }}">{{ n.title }}</a></td>
+<td class="nowrap"><a href="/engagements/{{ n.engagement_id }}">{{ n.engagement.code }}</a></td><td class="faint">{{ n.author }}</td>
+<td class="sp-{{ n.sp_status }}">{% if n.sp_url %}<a href="{{ n.sp_url }}" target="_blank" rel="noopener">open</a>{% else %}{{ n.sp_status }}{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty"><p>No meeting notes{{ ' match' if q }}. Log one from an engagement, or ask Claude to write up a call.</p></div>{% endif %}
+</div></div>
+{% endblock %}

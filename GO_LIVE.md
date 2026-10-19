@@ -54,7 +54,7 @@ Rotating either needs a plan (keep prior public keys to verify old proofs; re-en
 stored secrets under the new key), so treat them as permanent:
 
 ```bash
-for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing sabine professional-services mdr; do
+for m in platform incident-response managed-services dark-web-monitoring vulnerability-management penetration-testing sabine professional-services mdr project-management; do
   for k in ENCRYPTION_KEY EVIDENCE_SIGNING_KEY; do
     aws ssm get-parameter --with-decryption --name /vendetta/$m/$k --query Parameter.Value --output text 2>/dev/null \
       | sed "s|^|$m $k |"
@@ -185,6 +185,26 @@ client, switch off any that do not fit, and set per-client overrides there. It n
 acts on a host: a containment hand-off links the responder to the managed-services
 alert page, where the two-person rule still applies.
 
+Project Management (`http://project-management:8000`, host `pm.`, port 8900) is
+the PM tool for the IR and ProServ practices: the two practice Kanban boards, each
+engagement's task board, meeting notes mirrored to SharePoint, and Harvest time. It
+pulls the whole client directory (not only clients with the module switched on) and
+its own staff roster, so grant it on the Staff page to the PMs and responders who
+should use it. Three things to finish before the first PM uses it:
+
+1. Integrations page (`pm.<domain>/settings/integrations`): the Harvest account ID
+   and an administrator's personal access token, then **Save and test**.
+2. On the same page, the default SharePoint delivery site. The Entra app needs the
+   Microsoft Graph application permission Sites.Selected, granted write on that
+   site and on each IR case site the provisioning flow creates (or
+   Sites.ReadWrite.All). A note whose copy fails is kept and retried every ten
+   minutes.
+3. The ALB must be on, because the Claude connector reaches `https://pm.<domain>/mcp`
+   and its OAuth metadata is built from PUBLIC_URL. Each PM then follows the
+   **Connect Claude** page. If `alb_allowed_cidrs` is restricted to office ranges,
+   the pm. host must also accept Claude's outbound addresses, or the connector
+   cannot reach it.
+
 This directory is also how the IR hub discovers its finding sources: the hub pulls
 findings from every connected finding module into its per-client view and /findings
 page automatically, with no second list to maintain. Leave the hub's
@@ -299,7 +319,7 @@ infra/redeploy.sh
 ```
 
 This brings every module up under the domain (platform., ir., msp., darkweb.,
-vuln., pentest., sabine., osp. and mdr.) and, on the redeploy, switches each module to bind for the
+vuln., pentest., sabine., osp., mdr. and pm.) and, on the redeploy, switches each module to bind for the
 load balancer, turns on secure cookies, and sets each module's public URL so the
 control plane's client page links straight into the right client in each module
 and each module links back.
@@ -333,7 +353,7 @@ redirect URI on it.
 2. Redirect URIs (Authentication > Web). Add `https://<host>/auth/callback` for
    every module host, one per line, exactly:
    `platform.<domain>`, `ir.<domain>`, `msp.<domain>`, `darkweb.<domain>`,
-   `vuln.<domain>`, `pentest.<domain>`, `sabine.<domain>`, `osp.<domain>` and `mdr.<domain>`. Each
+   `vuln.<domain>`, `pentest.<domain>`, `sabine.<domain>`, `osp.<domain>`, `mdr.<domain>` and `pm.<domain>`. Each
    module sends its own Redirect URL setting when set, and otherwise the URL it
    computes for its `/auth/callback` route from the request host; behind the ALB
    that is the public hostname, so leaving the setting blank works once the public

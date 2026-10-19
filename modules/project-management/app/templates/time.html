@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Time{% endblock %}
+{% block body %}
+{% if not harvest_on %}<div class="flash bad">Harvest is not connected. An admin sets it up on <a href="/settings/integrations">Integrations</a>.</div>{% endif %}
+{% if time_err %}<div class="flash bad">{{ time_err }}</div>{% endif %}
+<div class="tiles" style="margin-bottom:14px"><div class="tile"><div class="n">{{ week }}</div><div class="l">your hours this week</div></div></div>
+{% if harvest_on and not is_viewer %}
+<div class="section-head"><h2>Log time</h2></div>
+<div class="panel pad" style="margin-bottom:16px">
+  <form method="post" action="/time" class="formrow">
+    <label class="field">Engagement<select name="engagement">{% for e in engs %}<option value="{{ e.code }}">{{ e.code }} {{ e.name }}</option>{% endfor %}</select></label>
+    <label class="field" style="max-width:90px">Hours<input name="hours" type="number" step="0.25" min="0.25" max="24" required></label>
+    <label class="field">Harvest task<input name="task" required placeholder="e.g. Forensic Analysis"></label>
+    <label class="field">Date<input name="spent_date" type="date" value="{{ today }}"></label>
+    <label class="field wide">Notes<input name="notes"></label>
+    <button class="btn btn-primary btn-sm">Log to Harvest</button>
+  </form>
+  {% if not engs %}<p class="hint">No open engagement is linked to a Harvest project yet. Link one on its engagement page.</p>{% endif %}
+</div>
+{% endif %}
+<div class="section-head"><h2>Your entries, last two weeks</h2></div>
+<div class="panel"><div class="table-wrap">
+{% if entries %}<table><thead><tr><th>Date</th><th>Project</th><th>Task</th><th class="num">Hours</th><th>Notes</th><th></th></tr></thead><tbody>
+{% for x in entries %}<tr><td class="nowrap">{{ x.spent_date }}</td><td>{{ x.project }} <span class="faint">{{ x.client }}</span></td><td>{{ x.task }}</td><td class="num">{{ x.hours }}</td><td class="faint">{{ x.notes }}</td>
+<td>{% if not is_viewer and not x.is_locked %}<form method="post" action="/time/{{ x.id }}/delete"><button class="btn btn-xs btn-ghost danger" data-confirm="Delete this Harvest entry?">delete</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<div class="empty"><p>No entries.</p></div>{% endif %}
+</div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

@@ -21,6 +21,8 @@ DEFAULT_MODULES = [
     ("professional-services", "Office of Special Projects", "vciso", "in-progress", True, 57),
     # Port 8800, host mdr.<domain>; serves the finding model (type investigation).
     ("mdr", "Managed Detection and Response", "managed-security", "in-progress", True, 60),
+    # Port 8900, host pm.<domain>; staff-only delivery PM for IR and ProServ.
+    ("project-management", "Project Management", "internal", "in-progress", False, 65),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
 
@@ -98,6 +100,12 @@ PROBE = {
     },
     # Engagements carry no severity; the count is what the overview shows.
     "professional-services": {
+        "manifest": "/api/module",
+        "items": "/api/engagements",
+        "label": "open engagements",
+        "severity_key": "severity",
+    },
+    "project-management": {
         "manifest": "/api/module",
         "items": "/api/engagements",
         "label": "open engagements",

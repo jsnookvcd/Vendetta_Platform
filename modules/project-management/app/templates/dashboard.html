@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}My work{% endblock %}
+{% block body %}
+{% if not st.harvest or not (st.graph and st.sharepoint_site) %}
+<div class="flash bad">{% if not st.harvest %}Harvest is not connected, so time cannot be logged yet. {% endif %}{% if not (st.graph and st.sharepoint_site) %}The SharePoint mirror for meeting notes is not configured; notes are still saved here. {% endif %}<a href="/settings/integrations">Integrations</a></div>
+{% endif %}
+<div class="grid2">
+  <div>
+    <div class="section-head"><h2>Tasks assigned to you</h2><span class="count">{{ mine|length }}</span></div>
+    <div class="panel"><div class="tlist">
+      {% for t in mine %}{{ taskchip(t) }}{% else %}<div class="empty"><p>Nothing assigned to you.</p></div>{% endfor %}
+    </div></div>
+    <div class="section-head" style="margin-top:16px"><h2>Overdue across all engagements</h2><span class="count">{{ overdue|length }}</span></div>
+    <div class="panel"><div class="tlist">
+      {% for t in overdue %}{{ taskchip(t) }}{% else %}<div class="empty"><p>Nothing overdue.</p></div>{% endfor %}
+    </div></div>
+  </div>
+  <div>
+    <div class="section-head"><h2>Engagements you run</h2><span class="count">{{ engs|length }}</span></div>
+    <div class="panel"><div class="tlist">
+      {% for e in engs %}<a class="tchip" href="/engagements/{{ e.id }}"><b>{{ e.code }}</b> {{ e.name }}<br><span class="faint">{{ e.practice_name }} · {{ e.phase }} · {{ e.tasks.open }} open{% if e.tasks.overdue %}, <span class="due bad">{{ e.tasks.overdue }} overdue</span>{% endif %}</span></a>
+      {% else %}<div class="empty"><p>None yet. <a href="/engagements#new">Open one</a>.</p></div>{% endfor %}
+    </div></div>
+    <div class="section-head" style="margin-top:16px"><h2>Use it from Claude</h2></div>
+    <div class="panel pad faint" style="font-size:13px">Add this module to Claude as a connector and ask in plain words: "move the Rize scoping task to done", "log 2.5 hours to IFB analysis yesterday", "write up today's call". <a href="/connect">Connect Claude</a>.</div>
+  </div>
+</div>
+{% endblock %}

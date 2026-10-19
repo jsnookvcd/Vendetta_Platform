@@ -1,0 +1,51 @@
+# Vendetta Platform module descriptor. Status: in-progress (built and tested; host pm.,
+# port 8900). See /docs/ARCHITECTURE.md for the shared contracts.
+module:
+  name: project-management
+  display_name: Project Management
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [incident-response, professional-services]
+  status: in-progress
+  enablement: MODULE_ENABLED
+  client_portal: none                 # staff-only
+
+# Delivery project management for the IR and ProServ practices. The engagement is the
+# unit; it sits on its practice board (columns are lifecycle phases) and owns a task
+# board (columns are task states). Columns are editable on both.
+delivery_model:
+  practices: [ir, proserv]
+  practice_board_columns:
+    ir: [Intake, Engaged, Scoping and Containment, Forensics and Analysis, Recovery and Restoration,
+         Notification and Legal, Reporting, Closeout and Billing, Closed]
+    proserv: [Intake, Scoping, SOW Out, Scheduled, In Delivery, In Review, Delivered, Invoicing, Closed]
+  task_board_columns: [Backlog, To Do, In Progress, Blocked, In Review, Done]
+  ir_workstream_labels: [Scoping and Containment, Forensics and Analysis, Recovery and Restoration,
+                         Notification and Legal, Resilience and Hardening]
+  meeting_notes: stored here, mirrored to SharePoint as .docx (engagement case site or default site)
+  time: Harvest API v2 is the system of record; every write is logged locally (time_logs)
+
+roles:
+  admin: full; integrations; may log or change anyone's Harvest time
+  analyst: full on boards, tasks and notes; own Harvest time only
+  viewer: read only (web and MCP)
+
+api:
+  module_manifest: GET /api/module
+  engagements: GET|POST /api/engagements        # POST is idempotent on code; the IR hub and OSP can open one
+  tasks: GET /api/tasks
+  board: GET /api/boards/{ir|proserv|engagement}
+  time_logs: GET /api/time-logs
+  provision_sync: POST /api/provision/sync
+  deep_link: GET /clients/platform/{platform_client_id}
+  mcp: POST /mcp                                # remote MCP server (Streamable HTTP), OAuth 2.1 + PKCE
+  oauth: [/.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server,
+          /oauth/register, /oauth/authorize, /oauth/token, /oauth/revoke]
+
+deployment:
+  service_name: project-management   # on the shared docker network, port 8000 inside
+  host_port: 8900
+  hostname: pm
+  signs_evidence: false
+  escalates_to_hub: false
+  needs_public_url: true             # the Claude connector reaches /mcp over HTTPS

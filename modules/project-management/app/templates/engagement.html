@@ -1,0 +1,110 @@
+{% extends "base.html" %}{% block title %}{{ e.code }}{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:19px">{{ e.name }}</h1>
+  <span class="chip">{{ PRACTICE_NAMES[e.practice] }}</span><span class="chip">{{ d.phase }}</span>
+  {% if e.status != 'active' %}<span class="chip bad">{{ STATE_NAMES[e.status] }}</span>{% endif %}</div>
+<p class="faint" style="margin:2px 0 14px">{{ e.client_name or 'No client set' }} · PM {{ e.pm_email }}{% if e.ends_on %} · planned end {{ e.ends_on }}{% endif %}{% if e.platform_ref %} · platform ref {{ e.platform_ref }}{% endif %}
+ · tasks: {{ d.tasks.open }} open, {{ d.tasks.done }} done{% if d.tasks.overdue %}, <span class="due bad">{{ d.tasks.overdue }} overdue</span>{% endif %}</p>
+
+<div class="section-head"><h2>Task board</h2><span class="grow"></span>
+  {% if e.practice == 'ir' %}<span class="faint" style="font-size:12px">Label IR tasks with a workstream to filter by it.</span>{% endif %}</div>
+{% include "_board.html" %}
+{% if not is_viewer %}
+<details class="panel pad" style="margin-top:8px"><summary style="cursor:pointer">Add a task</summary>
+<form method="post" action="/engagements/{{ e.id }}/tasks" class="stack" style="margin-top:10px">
+  <div class="formrow">
+    <label class="field wide">Title <span class="req">*</span><input name="title" required></label>
+    <label class="field">Assignee<input name="assignee" type="email" placeholder="name@vendettacd.io"></label>
+    <label class="field">Due<input name="due_on" type="date"></label>
+  </div>
+  <div class="formrow">
+    <label class="field">Column<select name="column"><option value="">To Do</option>{% for c in board.columns %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <label class="field">Priority<select name="priority">{% for p in PRIORITIES %}<option value="{{ p }}" {{ 'selected' if p=='normal' }}>{{ p }}</option>{% endfor %}</select></label>
+    <label class="field wide">Labels<input name="labels" list="wslabels" placeholder="comma separated"></label>
+    <datalist id="wslabels">{% for w in WORKSTREAMS %}<option value="{{ w }}">{% endfor %}</datalist>
+  </div>
+  <label class="field">Description<textarea name="description" rows="2"></textarea></label>
+  <div><button class="btn btn-primary btn-sm">Add task</button></div>
+</form></details>
+{% endif %}
+
+<div class="grid2" style="margin-top:18px">
+<div>
+  <div class="section-head"><h2>Meeting notes</h2><span class="count">{{ e.notes|length }}</span></div>
+  <div class="panel"><div class="tlist">
+    {% for n in notes %}<a class="tchip" href="/notes/{{ n.id }}">{{ n.held_at.strftime('%b %d, %Y') }} · {{ n.title }} <span class="sp-{{ n.sp_status }}" style="font-size:11px">{{ {'mirrored':'in SharePoint','failed':'SharePoint copy failed','off':'','pending':'SharePoint pending'}[n.sp_status] }}</span></a>
+    {% else %}<div class="empty"><p>No notes yet.</p></div>{% endfor %}
+  </div></div>
+  {% if not is_viewer %}
+  <details class="panel pad" style="margin-top:8px"><summary style="cursor:pointer">Log a meeting</summary>
+  <form method="post" action="/engagements/{{ e.id }}/notes" class="stack" style="margin-top:10px">
+    <div class="formrow">
+      <label class="field wide">Title <span class="req">*</span><input name="title" required placeholder="Daily IR sync"></label>
+      <label class="field">Held<input name="held_at" type="datetime-local"></label>
+    </div>
+    <label class="field">Attendees<input name="attendees"></label>
+    <label class="field">Notes (markdown)<textarea name="body" rows="6"></textarea></label>
+    <label class="field">Decisions<textarea name="decisions" rows="2"></textarea></label>
+    <label class="field">Action items, one per line (optional: @owner@vendettacd.io and "due 2026-10-30")<textarea name="action_items" rows="3"></textarea></label>
+    <label class="field chk"><input type="checkbox" name="create_tasks" value="true" checked> Add action items to the task board</label>
+    <p class="hint">Saved here and written to SharePoint at {{ sp_target[0] or '(no site configured)' }}/{{ sp_target[1] }}.</p>
+    <div><button class="btn btn-primary btn-sm">Save note</button></div>
+  </form></details>
+  {% endif %}
+</div>
+<div>
+  <div class="section-head"><h2>Time</h2>{% if burn %}<span class="count">{{ burn.total_hours }}h{% if burn.budget_hours %} of {{ burn.budget_hours }}h ({{ burn.percent_used }}%){% endif %}</span>{% endif %}</div>
+  <div class="panel pad">
+    {% if not harvest_on %}<p class="faint">Harvest is not connected.</p>
+    {% elif not e.harvest_project_id %}<p class="faint">Link a Harvest project below to log time here.</p>
+    {% else %}
+      {% if time_err %}<div class="flash bad">{{ time_err }}</div>{% endif %}
+      {% if not is_viewer %}
+      <form method="post" action="/time" class="formrow">
+        <input type="hidden" name="engagement" value="{{ e.code }}"><input type="hidden" name="back_to" value="/engagements/{{ e.id }}">
+        <label class="field" style="max-width:90px">Hours<input name="hours" type="number" step="0.25" min="0.25" max="24" required></label>
+        <label class="field">Task<select name="task">{% for t in htasks %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+        <label class="field">Date<input name="spent_date" type="date" value="{{ today }}"></label>
+        <label class="field wide">Notes<input name="notes"></label>
+        <button class="btn btn-sm">Log</button>
+      </form>
+      {% endif %}
+      {% if burn and burn.by_person %}<p class="faint" style="font-size:12px;margin-top:10px">{% for k, v in burn.by_person.items() %}{{ k }} {{ v }}h{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      <table style="margin-top:8px"><tbody>{% for x in entries[:12] %}<tr><td class="nowrap faint">{{ x.spent_date }}</td><td>{{ x.user }}</td><td class="num">{{ x.hours }}</td><td class="faint">{{ x.task }}</td></tr>{% endfor %}</tbody></table>
+    {% endif %}
+  </div>
+
+  <div class="section-head" style="margin-top:16px"><h2>Engagement</h2></div>
+  <div class="panel pad">
+  {% if not is_viewer %}
+    <form method="post" action="/engagements/{{ e.id }}/move" class="formrow" style="margin-bottom:12px">
+      <label class="field">Phase<select name="phase">{% for ph in practice_phases %}<option {{ 'selected' if ph==d.phase }}>{{ ph }}</option>{% endfor %}</select></label>
+      <button class="btn btn-sm">Move</button>
+    </form>
+    <form method="post" action="/engagements/{{ e.id }}/edit" class="stack">
+      <label class="field">Name<input name="name" value="{{ e.name }}"></label>
+      <div class="formrow">
+        <label class="field">Status<select name="status">{% for s in states %}<option value="{{ s }}" {{ 'selected' if e.status==s }}>{{ STATE_NAMES[s] }}</option>{% endfor %}</select></label>
+        <label class="field">PM<input name="pm_email" value="{{ e.pm_email }}"></label>
+      </div>
+      <div class="formrow">
+        <label class="field">Client<input name="client" value="{{ e.client_name }}"></label>
+        <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" value="{{ e.budget_hours or '' }}"></label>
+      </div>
+      <div class="formrow">
+        <label class="field">Starts<input name="starts_on" type="date" value="{{ e.starts_on or '' }}"></label>
+        <label class="field">Planned end<input name="ends_on" type="date" value="{{ e.ends_on or '' }}"></label>
+      </div>
+      <label class="field">Harvest project ID<input name="harvest_project_id" value="{{ e.harvest_project_id }}">{% if e.harvest_project_name %}<span class="hint">{{ e.harvest_project_name }}</span>{% endif %}</label>
+      <label class="field">SharePoint site URL (case site; blank uses the default)<input name="sharepoint_site_url" value="{{ e.sharepoint_site_url }}" placeholder="https://vendettacd.sharepoint.com/sites/..."></label>
+      <label class="field">SharePoint folder<input name="sharepoint_folder" value="{{ e.sharepoint_folder }}" placeholder="{{ sp_target[1] }}"></label>
+      <label class="field">Platform reference (IR case or OSP engagement)<input name="platform_ref" value="{{ e.platform_ref }}"></label>
+      <label class="field">Description<textarea name="description" rows="3">{{ e.description }}</textarea></label>
+      <div><button class="btn btn-sm">Save</button></div>
+    </form>
+  {% else %}<p class="faint">{{ e.description }}</p>{% endif %}
+  </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

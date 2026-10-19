@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/pm.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+{% macro icon(name) %}
+<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+{% if name=='grid' %}<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+{% elif name=='board' %}<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/>
+{% elif name=='briefcase' %}<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+{% elif name=='note' %}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>
+{% elif name=='clock' %}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+{% elif name=='link' %}<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>
+{% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+{% endif %}
+</svg>
+{% endmacro %}
+{% macro flash() %}{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}{% endmacro %}
+{% macro taskchip(t) %}<a class="tchip" href="/tasks/{{ t.ref }}"><span class="ref">#{{ t.ref }}</span> {{ t.title }}{% if t.engagement %} <span class="faint">{{ t.engagement }}</span>{% endif %}{% if t.due_on %} <span class="due{{ ' bad' if t.overdue }}">{{ t.due_on }}</span>{% endif %}</a>{% endmacro %}
+{% set p = request.url.path if request else '/' %}
+{% if user %}
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><div class="name">Project<span>Management</span></div></div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} My work</a>
+      <a href="/boards/ir" class="{{ 'active' if p=='/boards/ir' }}">{{ icon('board') }} IR board</a>
+      <a href="/boards/proserv" class="{{ 'active' if p=='/boards/proserv' }}">{{ icon('board') }} ProServ board</a>
+      <a href="/engagements" class="{{ 'active' if p.startswith('/engagements') or p.startswith('/tasks') }}">{{ icon('briefcase') }} Engagements</a>
+      <a href="/notes" class="{{ 'active' if p.startswith('/notes') }}">{{ icon('note') }} Meeting notes</a>
+      <a href="/time" class="{{ 'active' if p=='/time' }}">{{ icon('clock') }} Time</a>
+      <div class="sep"></div>
+      <a href="/connect" class="{{ 'active' if p=='/connect' }}">{{ icon('link') }} Connect Claude</a>
+      <a href="/settings/integrations" class="{{ 'active' if p.startswith('/settings/integrations') }}">{{ icon('settings') }} Integrations</a>
+      <a href="/settings/sso" class="{{ 'active' if p.startswith('/settings/sso') }}">{{ icon('settings') }} SSO</a>
+    </nav>
+    <div class="foot"><div class="who">{{ user }}{% if is_viewer %} (read only){% endif %}</div><a href="/logout" class="faint">Sign out</a></div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
+      <span class="spacer"></span>
+      {% if shell %}
+      <div class="status-strip">
+        <span class="stat"><b>{{ shell.open }}</b> open engagements</span>
+        <span class="stat"><b>{{ shell.mine }}</b> tasks assigned to you</span>
+      </div>
+      {% endif %}
+    </header>
+    <div class="content">{{ flash() }}{% block body %}{% endblock %}</div>
+  </div>
+</div>
+{% else %}
+{% block anon %}{% endblock %}
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>
