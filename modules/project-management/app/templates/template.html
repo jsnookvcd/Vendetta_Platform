@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block title %}{{ t.name if t else 'New template' }}{% endblock %}
+{% block body %}
+<div class="title-row"><a class="faint" style="font-size:12px" href="/templates">&larr; Templates</a></div>
+<form method="post" action="/templates" class="stack">
+<div class="panel pad stack">
+  <div class="formrow">
+    <label class="field">Key<input name="key" value="{{ t.key if t else '' }}" {{ 'readonly' if t }} required placeholder="bec"></label>
+    <label class="field wide">Name<input name="name" value="{{ t.name if t else '' }}" required></label>
+    <label class="field">Practice<select name="practice">{% for k, v in PRACTICE_NAMES.items() %}<option value="{{ k }}" {{ 'selected' if t and t.practice==k }}>{{ v }}</option>{% endfor %}</select></label>
+  </div>
+  <label class="field">Description<textarea name="description" rows="2">{{ t.description if t else '' }}</textarea></label>
+  <div class="formrow">
+    <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" value="{{ t.budget_hours if t and t.budget_hours else '' }}"></label>
+    <label class="field">Duration days<input name="duration_days" type="number" value="{{ t.duration_days if t and t.duration_days else '' }}"></label>
+    <label class="field chk"><input type="checkbox" name="active" value="true" {{ 'checked' if not t or t.active }}> Active</label>
+  </div>
+</div>
+<div class="panel pad stack">
+  <label class="field">Tasks (JSON list). Each: title, owner (pm, lead, or an email), offset_days, estimate_hours, labels, priority, checklist, column.<textarea class="code" name="tasks" rows="16">{{ tasks_json }}</textarea></label>
+  <label class="field">Milestones (JSON list). Each: title, offset_days, workstream (IR), client_visible.<textarea class="code" name="milestones" rows="8">{{ ms_json }}</textarea></label>
+  <label class="field">Target days per practice-board phase (JSON). Alerts flag an engagement past its target.<textarea class="code" name="phase_days" rows="6">{{ phase_json }}</textarea></label>
+  <label class="field">Closeout items, one per line<textarea name="closeout" rows="6">{{ closeout_text }}</textarea></label>
+</div>
+{% if not is_viewer %}<div><button class="btn btn-primary">Save template</button></div>{% endif %}
+</form>
+{% endblock %}

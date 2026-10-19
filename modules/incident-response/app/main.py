@@ -801,6 +801,52 @@ async def api_declare(request: Request, user: str = Depends(auth.api_user), db: 
     return {"case_id": case.number, "id": case.id}
 
 
+_MS_STATUSES = {"planned", "in_progress", "at_risk", "done"}
+
+
+@app.post("/api/ir-cases/{ref}/milestones")
+async def api_case_milestones(ref: str, request: Request, user: str = Depends(auth.api_user),
+                              db: Session = Depends(get_db)):
+    """Project Management publishes a case's client-visible milestones here. ref is
+    the case number (VCD-IR-2026-781) or id. The list replaces the stored one; the
+    client portal shows it beside the workstreams, and each milestone that newly
+    reaches done writes one client-visible status entry to the signed timeline.
+    Body: {"source_module", "engagement_code", "milestones": [{"key", "title",
+    "workstream", "status", "due_on", "completed_on"}]}."""
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    items = payload.get("milestones") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise HTTPException(400, "milestones must be a list")
+    case = db.execute(select(Case).where((Case.number == ref) | (Case.id == ref))).scalar_one_or_none()
+    if case is None:
+        raise HTTPException(404, "no such case")
+    clean = []
+    for m in items[:100]:
+        if not isinstance(m, dict) or not str(m.get("title") or "").strip():
+            continue
+        st = str(m.get("status") or "planned")
+        ws = str(m.get("workstream") or "")
+        clean.append({"key": str(m.get("key") or "")[:64], "title": str(m["title"]).strip()[:300],
+                      "workstream": ws if ws in WORKSTREAMS else "",
+                      "status": st if st in _MS_STATUSES else "planned",
+                      "due_on": str(m.get("due_on") or "")[:10] or None,
+                      "completed_on": str(m.get("completed_on") or "")[:10] or None})
+    was_done = {m.get("key") for m in (case.pm_milestones or []) if m.get("status") == "done"}
+    reached = [m for m in clean if m["status"] == "done" and m["key"] not in was_done]
+    case.pm_milestones = clean
+    for m in reached:
+        db.add(CaseUpdate(case_id=case.id, workstream=m["workstream"], actor=user, kind="status",
+                          internal_only=False, note=f"Milestone reached: {m['title']}",
+                          payload={"source_module": str(payload.get("source_module") or "")[:60],
+                                   "milestone": m["key"]}))
+    db.commit()
+    _audit(db, user, "case.milestones", f"{case.number} {len(clean)} milestones, {len(reached)} reached")
+    return {"ok": True, "case": case.number, "milestones": len(clean), "new_completions": len(reached)}
+
+
 @app.post("/api/oncall/page")
 async def api_oncall_page(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     """Page the on-call responder through the same SNS and Teams delivery a new

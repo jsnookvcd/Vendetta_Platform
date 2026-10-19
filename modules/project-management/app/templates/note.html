@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% block title %}{{ n.title }}{% endblock %}
+{% block body %}
+<div class="title-row"><a class="faint" style="font-size:12px" href="/engagements/{{ n.engagement_id }}">&larr; {{ n.engagement.code }} {{ n.engagement.name }}</a></div>
+<div class="title-row"><h1 style="font-size:19px">{{ n.title }}</h1></div>
+<p class="faint" style="margin:2px 0 12px">{{ n.held_at.strftime('%B %d, %Y %H:%M') }} UTC · recorded by {{ n.author }}{% if n.attendees %} · {{ n.attendees }}{% endif %}</p>
+<div class="panel pad" style="margin-bottom:12px">
+  SharePoint: <b class="sp-{{ n.sp_status }}">{{ {'mirrored':'written','failed':'failed','off':'not configured','pending':'pending'}[n.sp_status] }}</b>
+  {% if n.sp_url %} · <a href="{{ n.sp_url }}" target="_blank" rel="noopener">open the document</a>{% endif %}
+  {% if n.sp_error %}<span class="faint"> · {{ n.sp_error }}</span>{% endif %}
+  {% if not is_viewer and n.sp_status != 'mirrored' %}<form method="post" action="/notes/{{ n.id }}/mirror" style="display:inline;margin-left:8px"><button class="btn btn-xs">Write to SharePoint now</button></form>{% endif %}
+</div>
+<div class="grid2">
+<div class="panel pad">
+  {% if is_viewer %}
+    <div class="notebody">{{ n.body }}</div>{% if n.decisions %}<h3>Decisions</h3><div class="notebody">{{ n.decisions }}</div>{% endif %}
+  {% else %}
+  <form method="post" action="/notes/{{ n.id }}/edit" class="stack">
+    <label class="field">Title<input name="title" value="{{ n.title }}"></label>
+    <label class="field">Attendees<input name="attendees" value="{{ n.attendees }}"></label>
+    <label class="field">Notes<textarea name="body" rows="14">{{ n.body }}</textarea></label>
+    <label class="field">Decisions<textarea name="decisions" rows="3">{{ n.decisions }}</textarea></label>
+    <div><button class="btn btn-primary btn-sm">Save and update SharePoint</button></div>
+  </form>
+  {% endif %}
+</div>
+<div>
+  <div class="section-head"><h2>Action items</h2></div>
+  <div class="panel"><div class="tlist">
+  {% for a in n.action_items %}
+    {% if a.card_ref %}<a class="tchip" href="/tasks/{{ a.card_ref }}"><span class="ref">#{{ a.card_ref }}</span> {{ a.text }}{% if a.assignee %} <span class="who">{{ a.assignee }}</span>{% endif %}</a>
+    {% else %}<div class="tchip">{{ a.text }}{% if a.assignee %} <span class="who">{{ a.assignee }}</span>{% endif %}</div>{% endif %}
+  {% else %}<div class="empty"><p>None recorded.</p></div>{% endfor %}
+  </div></div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% block title %}Microsoft 365 SSO{% endblock %}
+{% block body %}
+<div class="title-row"><h1>Microsoft 365 single sign-on</h1></div>
+<p class="faint" style="margin:2px 0 16px">Wire SSO here. Enter the Entra tenant, app client ID and secret and click Save and verify; the credentials are stored (secret encrypted) and checked against Microsoft right away, with no redeploy. These override anything set in the environment.</p>
+
+<div class="panel pad" style="margin-bottom:16px">
+  <div class="row" style="align-items:center; gap:10px">
+    {% if st.enabled and st.configured %}<span class="pill pill-ok">ENABLED</span>
+    {% elif st.configured %}<span class="pill pill-warn">CONFIGURED, OFF</span>
+    {% else %}<span class="pill">NOT CONFIGURED</span>{% endif %}
+    {% if st.verified %}<span class="pill pill-ok">VERIFIED</span>
+    {% elif st.configured %}<span class="pill pill-warn">SAVED, NOT VERIFIED</span>{% endif %}
+    <span class="faint" style="font-size:12px">source: {{ st.source }}</span>
+    <span class="grow"></span>
+    {% if st.last_tested_at %}<span class="faint" style="font-size:12px">last test {{ st.last_tested_at.strftime('%b %d %H:%M') }} UTC{% if st.last_detail %}: {{ st.last_detail }}{% endif %}</span>{% endif %}
+  </div>
+</div>
+
+<form method="post" action="/settings/sso">
+  <div class="panel pad" style="margin-bottom:14px">
+    <div class="fieldgrid">
+      <label class="field">Tenant ID <span class="req">*</span><input name="tenant_id" value="{{ st.values.tenant_id }}" placeholder="GUID or domain" autocomplete="off"></label>
+      <label class="field">Application (client) ID <span class="req">*</span><input name="client_id" value="{{ st.values.client_id }}" autocomplete="off"></label>
+      <label class="field">Client secret <span class="req">*</span><input type="password" name="client_secret" autocomplete="off" placeholder="{{ '••••••• (leave blank to keep)' if st.has_secret else 'secret value' }}"></label>
+      <label class="field">Redirect URL<input name="redirect_url" value="{{ st.values.redirect_url }}" placeholder="https://pm.vendettacyber.io/auth/callback"></label>
+    </div>
+    <p class="hint" style="margin-top:10px">In the Entra app registration set the redirect URI (Web) to the value above, grant Microsoft Graph openid, profile and email, and add a groups claim if you use the group restriction.</p>
+  </div>
+
+  <div class="section-head"><h2>Who may sign in</h2></div>
+  <div class="panel pad" style="margin-bottom:14px">
+    <div class="fieldgrid">
+      <label class="field">Internal email domains<input name="internal_email_domains" value="{{ st.values.internal_email_domains }}" placeholder="vendettacd.io"></label>
+      <label class="field">Allowed security group (object ID)<input name="allowed_group" value="{{ st.values.allowed_group }}" placeholder="optional"></label>
+      <label class="field">Extra allowed emails<input name="allowed_emails" value="{{ st.values.allowed_emails }}" placeholder="comma separated"></label>
+      <label class="field">Admin emails<input name="admin_emails" value="{{ st.values.admin_emails }}" placeholder="get the admin role; others get analyst"></label>
+    </div>
+    <label class="field chk" style="margin-top:10px"><input type="checkbox" name="enabled" value="true" {{ 'checked' if st.enabled }}> SSO enabled</label>
+  </div>
+
+  <div class="row" style="gap:8px">
+    <button class="btn btn-primary">Save and verify</button>
+  </div>
+</form>
+
+{% if st.configured %}
+<div class="row" style="margin-top:10px">
+  <form method="post" action="/settings/sso/test"><button class="btn btn-sm btn-ghost">Verify again</button></form>
+</div>
+{% endif %}
+{% endblock %}

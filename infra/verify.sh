@@ -7,7 +7,7 @@
 # secrets, sign-in possible. Read-only: it changes nothing.
 #
 #   PLATFORM=http://localhost:8300 IR=http://localhost:8100 MS=http://localhost:8200 SABINE=http://localhost:8600 \
-#   DW=http://localhost:8000 VM=http://localhost:8400 PT=http://localhost:8500 OSP=http://localhost:8700 MDR=http://localhost:8800 \
+#   DW=http://localhost:8000 VM=http://localhost:8400 PT=http://localhost:8500 OSP=http://localhost:8700 MDR=http://localhost:8800 PM=http://localhost:8900 \
 #   PLATFORM_TOKEN=<control-plane API token> bash infra/verify.sh
 #
 # The control-plane token is <ssm_prefix>/platform/API_TOKEN (also shown on its
@@ -23,6 +23,7 @@ PT="${PT:-http://localhost:8500}"
 SABINE="${SABINE:-http://localhost:8600}"
 OSP="${OSP:-http://localhost:8700}"
 MDR="${MDR:-http://localhost:8800}"
+PM="${PM:-http://localhost:8900}"
 PLATFORM_TOKEN="${PLATFORM_TOKEN:-}"
 
 pass=0; fail=0; warn=0
@@ -46,6 +47,7 @@ health "pentest"        "$PT"
 health "SABINE"         "$SABINE"
 health "OSP"            "$OSP"
 health "MDR"            "$MDR"
+health "PM"             "$PM"
 
 if [ -z "$PLATFORM_TOKEN" ]; then
   echo "Cross-module wiring"

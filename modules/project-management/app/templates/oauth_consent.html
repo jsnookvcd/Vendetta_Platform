@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Connect {{ client.client_name }}{% endblock %}
+{% block body %}
+<div class="panel pad" style="max-width:560px">
+  <h2 style="margin-top:0">Allow {{ client.client_name }} to use Project Management as you?</h2>
+  <p>It will act as <b>{{ user }}</b> with your {{ role }} access: read the IR and ProServ boards, engagements, tasks and meeting notes{% if role != 'viewer' %}, change them, and log, change and delete your Harvest time{% endif %}.</p>
+  <p class="faint" style="font-size:12px">You can revoke it any time under Connect Claude. Removing your platform access cuts it off at once.</p>
+  <form method="post" action="/oauth/authorize" class="row" style="gap:8px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% for k, v in params.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <button class="btn btn-primary" name="decision" value="approve">Allow</button>
+    <button class="btn btn-ghost" name="decision" value="deny">Deny</button>
+  </form>
+</div>
+{% endblock %}

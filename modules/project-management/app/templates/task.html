@@ -1,0 +1,76 @@
+{% extends "base.html" %}{% block title %}Task #{{ c.ref }}{% endblock %}
+{% block body %}
+<div class="title-row"><a class="faint" style="font-size:12px" href="/engagements/{{ c.engagement_id }}">&larr; {{ c.engagement.code }} {{ c.engagement.name }}</a></div>
+<div class="title-row"><h1 style="font-size:19px">#{{ c.ref }} {{ c.title }}</h1><span class="chip">{{ d.column }}</span>
+  {% if c.archived %}<span class="chip bad">archived</span>{% endif %}{% if d.overdue %}<span class="chip bad">overdue</span>{% endif %}</div>
+<div class="grid2">
+<div>
+  <div class="panel pad">
+  {% if is_viewer %}
+    <p class="notebody">{{ c.description or 'No description.' }}</p>
+  {% else %}
+  <form method="post" action="/tasks/{{ c.ref }}/edit" class="stack">
+    <label class="field">Title<input name="title" value="{{ c.title }}"></label>
+    <div class="formrow">
+      <label class="field">Column<select name="column">{% for col in columns %}<option value="{{ col.id }}" {{ 'selected' if col.id==c.column_id }}>{{ col.name }}</option>{% endfor %}</select></label>
+      <label class="field">Assignee<input name="assignee" value="{{ c.assignee }}"></label>
+      <label class="field">Due<input name="due_on" type="date" value="{{ c.due_on or '' }}"></label>
+    </div>
+    <div class="formrow">
+      <label class="field">Priority<select name="priority">{% for p in PRIORITIES %}<option {{ 'selected' if c.priority==p }}>{{ p }}</option>{% endfor %}</select></label>
+      <label class="field wide">Labels<input name="labels" value="{{ (c.labels or [])|join(', ') }}" list="wslabels"></label>
+      <datalist id="wslabels">{% for w in WORKSTREAMS %}<option value="{{ w }}">{% endfor %}</datalist>
+      <label class="field">Estimate (h)<input name="estimate_hours" type="number" step="0.5" value="{{ c.estimate_hours or '' }}"></label>
+    </div>
+    <label class="field">Description<textarea name="description" rows="5">{{ c.description }}</textarea></label>
+    <label class="field">Add a checklist item<input name="checklist_add"></label>
+    <div><button class="btn btn-primary btn-sm">Save</button></div>
+  </form>
+  {% endif %}
+  </div>
+  {% if c.checklist %}
+  <div class="section-head" style="margin-top:14px"><h2>Checklist</h2><span class="count">{{ d.checklist }}</span></div>
+  <div class="panel pad">
+    {% for it in c.checklist %}
+    <form method="post" action="/tasks/{{ c.ref }}/check/{{ loop.index0 }}" class="row" style="gap:8px;align-items:center;margin:4px 0">
+      <button class="btn btn-xs btn-ghost" {{ 'disabled' if is_viewer }}>{{ '&#9745;'|safe if it.done else '&#9744;'|safe }}</button><span {{ 'class=faint' if it.done }}>{{ it.text }}</span>
+    </form>{% endfor %}
+  </div>
+  {% endif %}
+  {% if not is_viewer and c.engagement and c.engagement.harvest_project_id and htasks %}
+  <div class="section-head" style="margin-top:14px"><h2>Log time against this task</h2></div>
+  <div class="panel pad">
+    <form method="post" action="/time" class="formrow">
+      <input type="hidden" name="engagement" value="{{ c.engagement.code }}"><input type="hidden" name="card" value="{{ c.ref }}"><input type="hidden" name="back_to" value="/tasks/{{ c.ref }}">
+      <label class="field" style="max-width:90px">Hours<input name="hours" type="number" step="0.25" min="0.25" max="24" required></label>
+      <label class="field">Harvest task<select name="task">{% for t in htasks %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+      <label class="field">Date<input name="spent_date" type="date" value="{{ today }}"></label>
+      <label class="field wide">Notes<input name="notes" placeholder="{{ c.title }}"></label>
+      <button class="btn btn-sm">Log</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+<div>
+  <div class="section-head"><h2>History</h2></div>
+  <div class="panel pad">
+    {% if not is_viewer %}
+    <form method="post" action="/tasks/{{ c.ref }}/comment" class="formrow" style="margin-bottom:8px">
+      <label class="field wide"><input name="text" placeholder="Add a comment" required></label><button class="btn btn-sm">Comment</button>
+    </form>{% endif %}
+    <ul class="history">{% for h in history %}<li><span class="faint">{{ h.at[:16].replace('T',' ') }} · {{ h.actor }} · {{ h.kind }}</span><br>{{ h.detail }}</li>{% endfor %}</ul>
+  </div>
+  {% if not is_viewer %}
+  <div class="row" style="gap:8px;margin-top:12px">
+    {% if c.archived %}
+    <form method="post" action="/tasks/{{ c.ref }}/remove"><input type="hidden" name="mode" value="restore"><button class="btn btn-sm">Restore</button></form>
+    {% else %}
+    <form method="post" action="/tasks/{{ c.ref }}/remove"><input type="hidden" name="mode" value="archive"><button class="btn btn-sm btn-ghost">Archive</button></form>
+    {% endif %}
+    <form method="post" action="/tasks/{{ c.ref }}/remove"><input type="hidden" name="mode" value="delete"><button class="btn btn-sm btn-ghost danger" data-confirm="Delete task #{{ c.ref }} for good?">Delete</button></form>
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

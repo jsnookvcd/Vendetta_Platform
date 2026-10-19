@@ -7,6 +7,13 @@
 {% if e.scope %}<div class="panel pad" style="margin-bottom:14px"><h3 style="margin:0 0 6px; font-size:13px">Scope</h3><p class="faint" style="margin:0">{{ e.scope }}</p></div>{% endif %}
 {% if exec_view and e.summary %}<div class="panel pad" style="margin-bottom:14px"><h3 style="margin:0 0 6px; font-size:13px">Executive summary</h3><p class="faint" style="margin:0; white-space:pre-wrap">{{ e.summary }}</p></div>{% endif %}
 
+{% if e.milestones %}
+<div class="section-head"><h2>Milestones</h2></div>
+<div class="panel" style="margin-bottom:14px"><div class="table-wrap"><table><tbody>
+  {% for m in e.milestones %}<tr><td>{{ m.title }}</td><td class="nowrap" style="text-transform:capitalize">{{ m.status.replace('_',' ') }}</td>
+  <td class="nowrap faint">{% if m.status == 'done' and m.completed_on %}reached {{ m.completed_on }}{% elif m.due_on %}target {{ m.due_on }}{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endif %}
 <div class="section-head"><h2>Deliverables</h2><span class="count">{{ counts.accepted }}/{{ counts.total }} accepted</span>
   <span class="grow"></span>{{ progressbar(progress) }}</div>
 <div class="panel"><div class="table-wrap">

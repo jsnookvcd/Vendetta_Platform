@@ -30,6 +30,14 @@
   <a class="btn btn-sm btn-ghost" href="#timeline">Timeline</a>
 </div>
 
+{% if case.pm_milestones %}
+<div class="section-head"><h2>Client milestones</h2><span class="count">published from Project Management; the client sees these</span></div>
+<div class="panel" style="margin-bottom:14px"><table><tbody>
+  {% for m in case.pm_milestones %}<tr><td>{{ m.title }}</td><td class="faint">{{ m.workstream }}</td>
+  <td class="nowrap" style="text-transform:capitalize">{{ m.status.replace('_',' ') }}</td>
+  <td class="nowrap faint">{{ m.completed_on or m.due_on or '' }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
 <div class="section-head" id="ws"><h2>Workstreams</h2><span class="count">status follows the board; the client sees each status and the milestone line</span></div>
 <div class="wsgrid" id="ws-grid">
   {% for w in case.workstreams %}{% set lane = lanes[loop.index0] %}

@@ -1,0 +1,74 @@
+/* Project Management additions to the shared console design system (app.css). */
+.flash { padding: 10px 14px; border-radius: var(--radius-input); margin: 0 0 14px; font-size: 13px; border: 1px solid var(--line-2); }
+.flash.ok { background: rgba(40, 185, 140, .10); border-color: rgba(40, 185, 140, .35); }
+.flash.bad { background: var(--brand-dim); border-color: rgba(224, 18, 47, .45); }
+.faint { color: var(--muted); }
+.danger { color: var(--brand-2) !important; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+.stack > * + * { margin-top: 10px; }
+.formrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.formrow .field { flex: 1; min-width: 150px; }
+.formrow .field.wide { flex: 3; min-width: 240px; }
+
+/* Kanban */
+.kanban { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+.kcol { flex: 0 0 260px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-card);
+        display: flex; flex-direction: column; max-height: calc(100vh - 210px); }
+.kcol.target { border-color: var(--info); }
+.kcol.over { border-color: var(--med); }
+.kcol.done .khead { opacity: .75; }
+.kcol.kadd { flex-basis: 220px; padding: 12px; background: transparent; border-style: dashed; }
+.khead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); position: relative; }
+.kname { font-weight: 600; font-size: 13px; flex: 1; }
+.kcount { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kcol.over .kcount { color: var(--med); font-weight: 600; }
+.kmenu summary { list-style: none; cursor: pointer; color: var(--muted); padding: 0 4px; }
+.kmenu summary::-webkit-details-marker { display: none; }
+.kmenu-body { position: absolute; right: 8px; top: 38px; z-index: 5; width: 230px; background: var(--panel-2);
+              border: 1px solid var(--line-2); border-radius: var(--radius-input); padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.kcards { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 40px; flex: 1; }
+.kcard { display: block; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--low);
+         border-radius: 8px; padding: 9px 10px; color: var(--fg); text-decoration: none; cursor: grab; }
+.kcard:hover { border-color: var(--line-2); text-decoration: none; }
+.kcard.dragging { opacity: .45; }
+.kcard.prio-high { border-left-color: var(--high); }
+.kcard.prio-urgent { border-left-color: var(--crit); }
+.kcard.prio-low { border-left-color: var(--line-2); }
+.ktitle { font-size: 13px; line-height: 1.35; }
+.kmeta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 11px; }
+.ref { color: var(--muted); font-variant-numeric: tabular-nums; }
+.who { color: var(--info); }
+.due { color: var(--muted); }
+.due.bad { color: var(--brand-2); font-weight: 600; }
+.lbl { background: var(--raise); border-radius: var(--radius-pill); padding: 1px 7px; color: var(--muted); }
+
+/* Task chips and lists */
+.tlist { display: flex; flex-direction: column; }
+.tchip { display: block; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--fg); font-size: 13px; }
+.tchip:last-child { border-bottom: 0; }
+.tchip:hover { background: var(--panel-2); text-decoration: none; }
+.history { font-size: 12px; }
+.history li { padding: 6px 0; border-bottom: 1px solid var(--line); list-style: none; }
+.history { padding: 0; margin: 0; }
+.notebody { white-space: pre-wrap; font-size: 13px; line-height: 1.55; }
+.code-box { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line-2);
+            border-radius: var(--radius-input); padding: 10px 12px; word-break: break-all; user-select: all; }
+.sp-mirrored { color: var(--ok); }
+.sp-failed { color: var(--brand-2); }
+.sp-off, .sp-pending { color: var(--muted); }
+.navcount { margin-left: auto; background: var(--brand); color: #fff; border-radius: var(--radius-pill); font-size: 11px; padding: 0 7px; font-weight: 600; }
+.sev-high-t { color: var(--brand-2); font-weight: 600; }
+.sev-medium-t { color: var(--med); font-weight: 600; }
+.sev-low-t { color: var(--muted); }
+.ms-done { color: var(--ok); } .ms-at_risk { color: var(--med); } .ms-in_progress { color: var(--info); } .ms-planned { color: var(--muted); }
+.cr-requested { color: var(--med); } .cr-approved { color: var(--ok); } .cr-rejected, .cr-withdrawn { color: var(--muted); }
+.loadbar { height: 8px; border-radius: 4px; background: var(--raise); overflow: hidden; min-width: 70px; }
+.loadbar > span { display: block; height: 100%; background: var(--ok); }
+.loadbar.warn > span { background: var(--med); } .loadbar.over > span { background: var(--brand); }
+.cellsub { font-size: 11px; color: var(--muted); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 14px; }
+.kpi .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+textarea.code { font-family: var(--mono); font-size: 12px; }

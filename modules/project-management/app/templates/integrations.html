@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}Integrations{% endblock %}
+{% block body %}
+<div class="row" style="gap:8px;margin-bottom:14px">
+  <span class="pill {{ 'pill-ok' if st.harvest else 'pill-warn' }}">HARVEST {{ 'CONNECTED' if st.harvest else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if st.graph else 'pill-warn' }}">GRAPH {{ 'READY' if st.graph else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if st.sharepoint_site else 'pill-warn' }}">SHAREPOINT SITE {{ 'SET' if st.sharepoint_site else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.integrations.mcp_public_url else 'pill-warn' }}">MCP URL {{ 'HTTPS' if ready.integrations.mcp_public_url else 'SET PUBLIC_URL' }}</span>
+</div>
+{% if not is_admin %}<p class="faint">Only an admin can change these settings.</p>{% endif %}
+<form method="post" action="/settings/integrations">
+  <div class="section-head"><h2>Harvest</h2></div>
+  <div class="panel pad" style="margin-bottom:14px">
+    <div class="fieldgrid">
+      <label class="field">Account ID<input name="harvest_account_id" value="{{ st.values.harvest_account_id }}" autocomplete="off"></label>
+      <label class="field">Personal access token<input type="password" name="harvest_token" autocomplete="off" placeholder="{{ '••••••• (leave blank to keep)' if st.has.harvest_token else 'from id.getharvest.com/developers' }}"></label>
+    </div>
+    <p class="hint">Use a token from a Harvest administrator so entries can be written as each PM (matched by email) and an admin can log for others.</p>
+  </div>
+  <div class="section-head"><h2>SharePoint mirror for meeting notes</h2></div>
+  <div class="panel pad" style="margin-bottom:14px">
+    <div class="fieldgrid">
+      <label class="field">Default site URL<input name="sharepoint_site_url" value="{{ st.values.sharepoint_site_url }}" placeholder="https://vendettacd.sharepoint.com/sites/Delivery"></label>
+      <label class="field">Default folder<input name="sharepoint_folder" value="{{ st.values.sharepoint_folder }}" placeholder="Engagements"></label>
+      <label class="field">Graph tenant ID<input name="graph_tenant_id" value="{{ st.values.graph_tenant_id }}" placeholder="blank uses the SSO app"></label>
+      <label class="field">Graph client ID<input name="graph_client_id" value="{{ st.values.graph_client_id }}" placeholder="blank uses the SSO app"></label>
+      <label class="field">Graph client secret<input type="password" name="graph_client_secret" autocomplete="off" placeholder="{{ '••••••• (leave blank to keep)' if st.has.graph_client_secret else 'blank uses the SSO app' }}"></label>
+    </div>
+    <p class="hint">The app registration needs the Microsoft Graph application permission Sites.Selected, granted write on the delivery site and on each IR case site (or Sites.ReadWrite.All). Notes go to &lt;folder&gt;/&lt;engagement code&gt;/Meeting Notes unless the engagement names its own case site.</p>
+  </div>
+  {% if is_admin %}<button class="btn btn-primary">Save and test</button>{% endif %}
+</form>
+{% endblock %}

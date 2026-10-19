@@ -1,0 +1,56 @@
+{# A Kanban board. Expects `board` (service.board_dict) and optionally `eng`. #}
+<div class="kanban" data-board="{{ board.id }}" data-readonly="{{ 'true' if is_viewer else 'false' }}">
+  {% for col in board.columns %}
+  <section class="kcol{{ ' done' if col.is_done }}{{ ' over' if col.over_wip }}" data-column="{{ col.id }}" data-name="{{ col.name }}">
+    <header class="khead">
+      <span class="kname">{{ col.name }}</span>
+      <span class="kcount">{{ col.count }}{% if col.wip_limit %}/{{ col.wip_limit }}{% endif %}</span>
+      {% if not is_viewer %}
+      <details class="kmenu"><summary title="Column options">&middot;&middot;&middot;</summary>
+        <div class="kmenu-body">
+          <form method="post" action="/boards/{{ board.id }}/columns/{{ col.id }}">
+            <input type="hidden" name="action" value="save">
+            <label class="field">Name<input name="name" value="{{ col.name }}"></label>
+            <label class="field">WIP limit<input name="wip_limit" type="number" min="0" value="{{ col.wip_limit or '' }}"></label>
+            <button class="btn btn-xs">Save</button>
+          </form>
+          <div class="row" style="gap:6px;margin-top:6px">
+            <form method="post" action="/boards/{{ board.id }}/columns/{{ col.id }}"><input type="hidden" name="action" value="left"><button class="btn btn-xs btn-ghost">&larr; Move</button></form>
+            <form method="post" action="/boards/{{ board.id }}/columns/{{ col.id }}"><input type="hidden" name="action" value="right"><button class="btn btn-xs btn-ghost">Move &rarr;</button></form>
+          </div>
+          <form method="post" action="/boards/{{ board.id }}/columns/{{ col.id }}" style="margin-top:8px">
+            <input type="hidden" name="action" value="remove">
+            {% if col.count %}
+            <label class="field">Move its cards to<select name="move_cards_to">{% for o in board.columns if o.id != col.id %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select></label>
+            {% endif %}
+            <button class="btn btn-xs btn-ghost danger">Remove column</button>
+          </form>
+        </div>
+      </details>
+      {% endif %}
+    </header>
+    <div class="kcards">
+      {% for c in col.cards %}
+      <a class="kcard prio-{{ c.priority }}" draggable="{{ 'false' if is_viewer else 'true' }}" data-ref="{{ c.ref }}"
+         href="/tasks/{{ c.ref }}">
+        <div class="ktitle">{% if board.kind == 'engagement' %}<span class="ref">#{{ c.ref }}</span> {% endif %}{{ c.title }}</div>
+        <div class="kmeta">
+          {% if c.assignee %}<span class="who">{{ c.assignee.split('@')[0] }}</span>{% endif %}
+          {% if c.due_on %}<span class="due{{ ' bad' if c.overdue }}">{{ c.due_on }}</span>{% endif %}
+          {% if c.checklist %}<span class="faint">&#10003; {{ c.checklist }}</span>{% endif %}
+          {% for l in c.labels %}<span class="lbl">{{ l }}</span>{% endfor %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  {% if not is_viewer %}
+  <section class="kcol kadd">
+    <form method="post" action="/boards/{{ board.id }}/columns">
+      <label class="field">Add a column<input name="name" placeholder="Column name" required></label>
+      <button class="btn btn-xs" style="margin-top:6px">Add</button>
+    </form>
+  </section>
+  {% endif %}
+</div>

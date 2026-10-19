@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Templates{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 12px">A template is the standard way an engagement type runs: its tasks (owner by role, due offset from the start), client milestones, budget, target days per phase and closeout list. Pick one when you open an engagement, or capture a finished engagement's board as a new one from its page.</p>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Template</th><th>Key</th><th>Practice</th><th class="num">Tasks</th><th class="num">Milestones</th><th class="num">Budget</th><th class="num">Days</th><th></th></tr></thead><tbody>
+{% for t in rows %}<tr{% if not t.active %} class="faded"{% endif %}><td><a href="/templates/{{ t.key }}">{{ t.name }}</a><div class="cellsub">{{ t.description }}</div></td><td class="mono">{{ t.key }}</td>
+<td>{{ PRACTICE_NAMES[t.practice] }}</td><td class="num">{{ t.tasks|length }}</td><td class="num">{{ t.milestones|length }}</td>
+<td class="num">{{ t.budget_hours or '' }}</td><td class="num">{{ t.duration_days or '' }}</td><td class="faint">{{ 'built in' if t.builtin }}{{ ' inactive' if not t.active }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% if not is_viewer %}<p style="margin-top:12px"><a class="btn btn-sm" href="/templates/new">New template</a></p>{% endif %}
+{% endblock %}

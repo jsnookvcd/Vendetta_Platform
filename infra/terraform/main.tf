@@ -255,9 +255,10 @@ resource "random_password" "admin" {
 locals {
   signing_modules = ["incident-response", "managed-services", "vulnerability-management", "penetration-testing", "sabine", "professional-services", "mdr"]
   finding_modules = ["dark-web-monitoring", "managed-services", "vulnerability-management", "penetration-testing", "mdr"]
-  # Modules that escalate into the IR hub: the finding modules, plus the Office of
-  # Special Projects, which opens a case from an engagement without serving findings.
-  hub_modules    = concat(local.finding_modules, ["professional-services"])
+  # Modules that call the IR hub: the finding modules, the Office of Special Projects,
+  # which opens a case from an engagement without serving findings, and Project
+  # Management, which publishes client milestones onto a case.
+  hub_modules    = concat(local.finding_modules, ["professional-services", "project-management"])
   client_modules = [for k in keys(local.deployed) : k if k != "platform"]
   # Modules that serve findings or clients, as the control plane's directory lists
   # them (SABINE is an agent over the platform, not a module the platform pushes to).
@@ -377,6 +378,15 @@ resource "aws_ssm_parameter" "mdr_signal_token" {
   value = random_password.api_token["managed-services"].result
 }
 
+# Project Management publishes ProServ client milestones to the Office of Special
+# Projects with its API token.
+resource "aws_ssm_parameter" "pm_osp_token" {
+  count = contains(keys(local.deployed), "project-management") && contains(keys(local.deployed), "professional-services") ? 1 : 0
+  name  = "${var.ssm_prefix}/project-management/OSP_TOKEN"
+  type  = "SecureString"
+  value = random_password.api_token["professional-services"].result
+}
+
 # SABINE's board: the wall-display token (open <sabine host>/board?k=<token> once on
 # the display; it keeps a cookie from then on).
 resource "random_password" "kiosk" {
@@ -443,6 +453,10 @@ resource "aws_ssm_parameter" "common" {
     # Managed services starts read-only: no tool action can fire until an operator
     # sets <prefix>/managed-services/ACTIONS_READONLY=false and redeploys.
     each.key == "managed-services" ? { ACTIONS_READONLY = "true" } : {},
+    # Project Management publishes ProServ milestones to the Office of Special Projects.
+    each.key == "project-management" && contains(keys(local.deployed), "professional-services") ? {
+      OSP_URL = local.service_url["professional-services"]
+    } : {},
     # MDR reads its signals from managed services by service name and links a
     # responder to the managed-services alert page for any containment hand-off.
     each.key == "mdr" && contains(keys(local.deployed), "managed-services") ? merge(

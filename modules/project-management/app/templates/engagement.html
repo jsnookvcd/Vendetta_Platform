@@ -1,0 +1,214 @@
+{% extends "base.html" %}{% block title %}{{ e.code }}{% endblock %}
+{% block body %}
+<div class="title-row"><h1 style="font-size:19px">{{ e.name }}</h1>
+  <span class="chip">{{ PRACTICE_NAMES[e.practice] }}</span><span class="chip">{{ d.phase }}</span>
+  {% if e.status != 'active' %}<span class="chip bad">{{ STATE_NAMES[e.status] }}</span>{% endif %}</div>
+<p class="faint" style="margin:2px 0 14px">{{ e.client_name or 'No client set' }} · PM {{ e.pm_email }}{% if e.ends_on %} · planned end {{ e.ends_on }}{% endif %}{% if e.platform_ref %} · platform ref {{ e.platform_ref }}{% endif %}
+ · tasks: {{ d.tasks.open }} open, {{ d.tasks.done }} done{% if d.tasks.overdue %}, <span class="due bad">{{ d.tasks.overdue }} overdue</span>{% endif %}</p>
+
+{% if eng_alerts %}<div class="flash bad">{% for a in eng_alerts[:5] %}<div><b>{{ a.severity }}</b> {{ a.title }}</div>{% endfor %}{% if eng_alerts|length > 5 %}<a href="/alerts?scope=all">and {{ eng_alerts|length - 5 }} more</a>{% endif %}</div>{% endif %}
+<div class="section-head"><h2>Task board</h2><span class="grow"></span>
+  {% if e.practice == 'ir' %}<span class="faint" style="font-size:12px">Label IR tasks with a workstream to filter by it.</span>{% endif %}</div>
+{% include "_board.html" %}
+{% if not is_viewer %}
+<details class="panel pad" style="margin-top:8px"><summary style="cursor:pointer">Add a task</summary>
+<form method="post" action="/engagements/{{ e.id }}/tasks" class="stack" style="margin-top:10px">
+  <div class="formrow">
+    <label class="field wide">Title <span class="req">*</span><input name="title" required></label>
+    <label class="field">Assignee<input name="assignee" type="email" placeholder="name@vendettacd.io"></label>
+    <label class="field">Due<input name="due_on" type="date"></label>
+  </div>
+  <div class="formrow">
+    <label class="field">Column<select name="column"><option value="">To Do</option>{% for c in board.columns %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <label class="field">Priority<select name="priority">{% for p in PRIORITIES %}<option value="{{ p }}" {{ 'selected' if p=='normal' }}>{{ p }}</option>{% endfor %}</select></label>
+    <label class="field wide">Labels<input name="labels" list="wslabels" placeholder="comma separated"></label>
+    <datalist id="wslabels">{% for w in WORKSTREAMS %}<option value="{{ w }}">{% endfor %}</datalist>
+  </div>
+  <label class="field">Description<textarea name="description" rows="2"></textarea></label>
+  <div><button class="btn btn-primary btn-sm">Add task</button></div>
+</form></details>
+{% endif %}
+
+<div class="grid2" style="margin-top:18px">
+<div>
+  <div class="section-head"><h2>Meeting notes</h2><span class="count">{{ e.notes|length }}</span></div>
+  <div class="panel"><div class="tlist">
+    {% for n in notes %}<a class="tchip" href="/notes/{{ n.id }}">{{ n.held_at.strftime('%b %d, %Y') }} · {{ n.title }} <span class="sp-{{ n.sp_status }}" style="font-size:11px">{{ {'mirrored':'in SharePoint','failed':'SharePoint copy failed','off':'','pending':'SharePoint pending'}[n.sp_status] }}</span></a>
+    {% else %}<div class="empty"><p>No notes yet.</p></div>{% endfor %}
+  </div></div>
+  {% if not is_viewer %}
+  <details class="panel pad" style="margin-top:8px"><summary style="cursor:pointer">Log a meeting</summary>
+  <form method="post" action="/engagements/{{ e.id }}/notes" class="stack" style="margin-top:10px">
+    <div class="formrow">
+      <label class="field wide">Title <span class="req">*</span><input name="title" required placeholder="Daily IR sync"></label>
+      <label class="field">Held<input name="held_at" type="datetime-local"></label>
+    </div>
+    <label class="field">Attendees<input name="attendees"></label>
+    <label class="field">Notes (markdown)<textarea name="body" rows="6"></textarea></label>
+    <label class="field">Decisions<textarea name="decisions" rows="2"></textarea></label>
+    <label class="field">Action items, one per line (optional: @owner@vendettacd.io and "due 2026-10-30")<textarea name="action_items" rows="3"></textarea></label>
+    <label class="field chk"><input type="checkbox" name="create_tasks" value="true" checked> Add action items to the task board</label>
+    <p class="hint">Saved here and written to SharePoint at {{ sp_target[0] or '(no site configured)' }}/{{ sp_target[1] }}.</p>
+    <div><button class="btn btn-primary btn-sm">Save note</button></div>
+  </form></details>
+  {% endif %}
+</div>
+<div>
+  <div class="section-head"><h2>Time</h2>{% if burn %}<span class="count">{{ burn.total_hours }}h{% if burn.budget_hours %} of {{ burn.budget_hours }}h ({{ burn.percent_used }}%){% endif %}</span>{% endif %}</div>
+  <div class="panel pad">
+    {% if not harvest_on %}<p class="faint">Harvest is not connected.</p>
+    {% elif not e.harvest_project_id %}<p class="faint">Link a Harvest project below to log time here.</p>
+    {% else %}
+      {% if time_err %}<div class="flash bad">{{ time_err }}</div>{% endif %}
+      {% if not is_viewer %}
+      <form method="post" action="/time" class="formrow">
+        <input type="hidden" name="engagement" value="{{ e.code }}"><input type="hidden" name="back_to" value="/engagements/{{ e.id }}">
+        <label class="field" style="max-width:90px">Hours<input name="hours" type="number" step="0.25" min="0.25" max="24" required></label>
+        <label class="field">Task<select name="task">{% for t in htasks %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+        <label class="field">Date<input name="spent_date" type="date" value="{{ today }}"></label>
+        <label class="field wide">Notes<input name="notes"></label>
+        <button class="btn btn-sm">Log</button>
+      </form>
+      {% endif %}
+      {% if burn and burn.by_person %}<p class="faint" style="font-size:12px;margin-top:10px">{% for k, v in burn.by_person.items() %}{{ k }} {{ v }}h{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      <table style="margin-top:8px"><tbody>{% for x in entries[:12] %}<tr><td class="nowrap faint">{{ x.spent_date }}</td><td>{{ x.user }}</td><td class="num">{{ x.hours }}</td><td class="faint">{{ x.task }}</td></tr>{% endfor %}</tbody></table>
+    {% endif %}
+  </div>
+
+  <div class="section-head" style="margin-top:16px"><h2>Engagement</h2></div>
+  <div class="panel pad">
+  {% if not is_viewer %}
+    <form method="post" action="/engagements/{{ e.id }}/move" class="formrow" style="margin-bottom:12px">
+      <label class="field">Phase<select name="phase">{% for ph in practice_phases %}<option {{ 'selected' if ph==d.phase }}>{{ ph }}</option>{% endfor %}</select></label>
+      <button class="btn btn-sm">Move</button>
+    </form>
+    <form method="post" action="/engagements/{{ e.id }}/edit" class="stack">
+      <label class="field">Name<input name="name" value="{{ e.name }}"></label>
+      <div class="formrow">
+        <label class="field">Technical lead<input name="lead_email" value="{{ e.lead_email }}"></label>
+        <label class="field">Type<input value="{{ e.engagement_type or 'none' }}" disabled></label>
+      </div>
+      <div class="formrow">
+        <label class="field">Status<select name="status">{% for s in states %}<option value="{{ s }}" {{ 'selected' if e.status==s }}>{{ STATE_NAMES[s] }}</option>{% endfor %}</select></label>
+        <label class="field">PM<input name="pm_email" value="{{ e.pm_email }}"></label>
+      </div>
+      <div class="formrow">
+        <label class="field">Client<input name="client" value="{{ e.client_name }}"></label>
+        <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" value="{{ e.budget_hours or '' }}"></label>
+      </div>
+      <div class="formrow">
+        <label class="field">Starts<input name="starts_on" type="date" value="{{ e.starts_on or '' }}"></label>
+        <label class="field">Planned end<input name="ends_on" type="date" value="{{ e.ends_on or '' }}"></label>
+      </div>
+      <label class="field">Harvest project ID<input name="harvest_project_id" value="{{ e.harvest_project_id }}">{% if e.harvest_project_name %}<span class="hint">{{ e.harvest_project_name }}</span>{% endif %}</label>
+      <label class="field">SharePoint site URL (case site; blank uses the default)<input name="sharepoint_site_url" value="{{ e.sharepoint_site_url }}" placeholder="https://vendettacd.sharepoint.com/sites/..."></label>
+      <label class="field">SharePoint folder<input name="sharepoint_folder" value="{{ e.sharepoint_folder }}" placeholder="{{ sp_target[1] }}"></label>
+      <label class="field">Platform reference (IR case or OSP engagement)<input name="platform_ref" value="{{ e.platform_ref }}"></label>
+      <label class="field">Description<textarea name="description" rows="3">{{ e.description }}</textarea></label>
+      <label class="field chk"><input type="checkbox" name="force" value="true"> Close even with closeout items open</label>
+      <div><button class="btn btn-sm">Save</button></div>
+    </form>
+  {% else %}<p class="faint">{{ e.description }}</p>{% endif %}
+  </div>
+</div>
+</div>
+
+<div class="grid2" style="margin-top:18px">
+<div>
+  <div class="section-head" id="milestones"><h2>Milestones</h2>
+    <span class="grow"></span><span class="faint" style="font-size:12px">{% if e.publish_status == 'failed' %}<span class="due bad">{{ e.publish_detail }}</span>{% elif e.publish_status %}{{ e.publish_detail }}{% endif %}</span></div>
+  <div class="panel"><div class="table-wrap">
+    {% if ms %}<table><tbody>{% for m in ms %}<tr>
+      <td>{{ m.title }}{% if m.workstream %}<div class="cellsub">{{ m.workstream }}</div>{% endif %}</td>
+      <td class="nowrap {{ 'due bad' if m.overdue }}">{{ m.due_on or '' }}</td>
+      <td class="nowrap ms-{{ m.status }}">{{ m.status.replace('_',' ') }}</td>
+      <td class="faint nowrap">{{ 'client sees it' if m.client_visible else 'internal' }}</td>
+      <td class="nowrap">{% if not is_viewer %}
+        <form method="post" action="/engagements/{{ e.id }}/milestones" class="row" style="gap:4px">
+          <input type="hidden" name="action" value="status"><input type="hidden" name="milestone" value="{{ m.id }}">
+          <select name="status">{% for st in ['planned','in_progress','at_risk','done'] %}<option value="{{ st }}" {{ 'selected' if m.status==st }}>{{ st.replace('_',' ') }}</option>{% endfor %}</select>
+          <button class="btn btn-xs">Set</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<div class="empty"><p>No milestones. Apply a template or add one.</p></div>{% endif %}
+  </div></div>
+  {% if not is_viewer %}
+  <details class="panel pad" style="margin-top:8px"><summary style="cursor:pointer">Add a milestone</summary>
+    <form method="post" action="/engagements/{{ e.id }}/milestones" class="formrow" style="margin-top:10px">
+      <input type="hidden" name="action" value="add">
+      <label class="field wide">Title<input name="title" required></label>
+      <label class="field">Due<input name="due_on" type="date"></label>
+      {% if e.practice == 'ir' %}<label class="field">Workstream<select name="workstream"><option value="">none</option>{% for w in WORKSTREAMS %}<option>{{ w }}</option>{% endfor %}</select></label>{% endif %}
+      <label class="field chk"><input type="checkbox" name="client_visible" value="true" checked> Client sees it</label>
+      <button class="btn btn-sm">Add</button>
+    </form>
+    <p class="hint">Client-visible milestones show on {{ 'the IR hub case' if e.practice=='ir' else 'the Office of Special Projects engagement' }} named by the platform reference{% if not e.platform_ref %} (set it below to turn this on){% endif %}.</p>
+  </details>
+  {% endif %}
+
+  <div class="section-head" id="changes" style="margin-top:16px"><h2>Scope and change control</h2></div>
+  <div class="panel pad">
+    <p style="margin:0 0 8px">Sold: <b>{{ scope.baseline_hours or 'n/a' }}h</b>{% if scope.baseline_ends_on %}, ending {{ scope.baseline_ends_on }}{% endif %}.
+       Now: <b>{{ scope.current_hours or 'n/a' }}h</b>{% if scope.current_ends_on %}, ending {{ scope.current_ends_on }}{% endif %}.
+       {% if scope.approved_hours_added %}Approved changes added {{ scope.approved_hours_added }}h.{% endif %}</p>
+    {% if crs %}<table><tbody>{% for c in crs %}<tr><td class="nowrap">{{ c.number }}</td><td>{{ c.title }}<div class="cellsub">{{ c.reason.replace('_',' ') }}{% if c.client_approval %} · client: {{ c.client_approval }}{% endif %} · by {{ c.requested_by }}</div></td>
+      <td class="num nowrap">{{ '%+g'|format(c.hours_delta) }}h{% if c.days_delta %}, {{ '%+d'|format(c.days_delta) }}d{% endif %}</td><td class="cr-{{ c.status }} nowrap">{{ c.status }}</td>
+      <td>{% if c.status == 'requested' and not is_viewer %}<form method="post" action="/engagements/{{ e.id }}/changes" class="row" style="gap:4px">
+        <input type="hidden" name="action" value="decide"><input type="hidden" name="change" value="{{ c.number }}">
+        <button class="btn btn-xs" name="decision" value="approve">Approve</button><button class="btn btn-xs btn-ghost" name="decision" value="reject">Reject</button>
+        {% if c.requested_by == user %}<button class="btn btn-xs btn-ghost" name="decision" value="withdraw">Withdraw</button>{% endif %}</form>{% endif %}</td></tr>{% endfor %}</tbody></table>{% endif %}
+    {% if not is_viewer %}
+    <details style="margin-top:8px"><summary style="cursor:pointer">Raise a change request</summary>
+      <form method="post" action="/engagements/{{ e.id }}/changes" class="stack" style="margin-top:8px">
+        <div class="formrow"><label class="field wide">Title<input name="title" required placeholder="Add 3 file servers to forensic scope"></label>
+          <label class="field" style="max-width:110px">Hours +/-<input name="hours_delta" type="number" step="0.5"></label>
+          <label class="field" style="max-width:110px">Days +/-<input name="days_delta" type="number"></label></div>
+        <div class="formrow"><label class="field">Reason<select name="reason">{% for r in ['client_request','scope_discovery','new_systems','schedule','other'] %}<option value="{{ r }}">{{ r.replace('_',' ') }}</option>{% endfor %}</select></label>
+          <label class="field wide">Client approval (who, how)<input name="client_approval" placeholder="CIO by email, Oct 20"></label></div>
+        <label class="field">Description<textarea name="description" rows="2"></textarea></label>
+        <div><button class="btn btn-sm">Raise</button> <span class="hint">A second person approves it; approval moves the budget and end date.</span></div>
+      </form></details>
+    {% endif %}
+  </div>
+</div>
+<div>
+  <div class="section-head" id="closeout"><h2>Closeout and invoicing</h2><span class="count">{{ d.closeout }}</span></div>
+  <div class="panel pad">
+    {% for it in e.closeout or [] %}
+    <form method="post" action="/engagements/{{ e.id }}/closeout" class="row" style="gap:8px;align-items:center;margin:3px 0">
+      <input type="hidden" name="item" value="{{ loop.index }}"><input type="hidden" name="action" value="{{ 'uncheck' if it.done else 'check' }}">
+      <button class="btn btn-xs btn-ghost" {{ 'disabled' if is_viewer }}>{{ '&#9745;'|safe if it.done else '&#9744;'|safe }}</button>
+      <span {{ 'class=faint' if it.done }}>{{ it.text }}</span>{% if it.done and it.by %}<span class="cellsub">{{ it.by }}</span>{% endif %}
+    </form>{% endfor %}
+    {% if not is_viewer %}<form method="post" action="/engagements/{{ e.id }}/closeout" class="formrow" style="margin-top:6px"><input type="hidden" name="action" value="add"><label class="field wide"><input name="text" placeholder="Add a closeout item"></label><button class="btn btn-xs">Add</button></form>{% endif %}
+    {% if invoices %}<p style="margin:12px 0 4px"><b>Drafted invoices</b></p>{% for i in invoices %}<div class="cellsub">{{ i.number or i.harvest_invoice_id }} · {{ i.amount }} · {{ i.state }} · {{ i.from }} to {{ i.to }} · {{ i.created_by }}</div>{% endfor %}{% endif %}
+    {% if harvest_on and e.harvest_project_id and not is_viewer and (is_admin or user == e.pm_email) %}
+    <details style="margin-top:10px"><summary style="cursor:pointer">Draft an invoice in Harvest</summary>
+      <form method="post" action="/engagements/{{ e.id }}/invoice" class="stack" style="margin-top:8px">
+        <div class="formrow"><label class="field">From<input name="start" type="date" value="{{ e.starts_on or '' }}"></label><label class="field">To<input name="end" type="date" value="{{ today }}"></label></div>
+        <div class="formrow"><label class="field">Summarize time by<select name="summary_type"><option value="task">task</option><option value="people">person</option><option value="project">project</option><option value="detailed">every entry</option></select></label>
+          <label class="field">Terms<select name="payment_term">{% for pt in ['net 30','net 15','net 45','net 60','upon receipt'] %}<option>{{ pt }}</option>{% endfor %}</select></label>
+          <label class="field">Fixed fee instead<input name="fixed_amount" type="number" step="0.01" placeholder="leave blank for hourly"></label></div>
+        <label class="field">Notes on the invoice<input name="notes"></label>
+        <div><button class="btn btn-sm btn-primary" data-confirm="Create a draft invoice in Harvest? It is not sent.">Create draft</button> <span class="hint">A draft only. Review and send it in Harvest.</span></div>
+      </form></details>
+    {% endif %}
+  </div>
+
+  {% if not is_viewer %}
+  <div class="section-head" style="margin-top:16px"><h2>Template</h2></div>
+  <div class="panel pad stack">
+    <form method="post" action="/engagements/{{ e.id }}/template" class="formrow">
+      <label class="field wide">Apply a template<select name="template">{% for t in tpl_options %}<option value="{{ t.key }}">{{ t.name }}</option>{% endfor %}</select></label>
+      <label class="field">Start<input name="start" type="date" value="{{ e.starts_on or today }}"></label>
+      <button class="btn btn-sm" data-confirm="Add this template's tasks and milestones to the engagement?">Apply</button>
+    </form>
+    <form method="post" action="/engagements/{{ e.id }}/save-template" class="formrow">
+      <label class="field">Save this board as template key<input name="key" required placeholder="bec-wire-fraud"></label>
+      <label class="field wide">Name<input name="name" required></label>
+      <button class="btn btn-sm btn-ghost">Save as template</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

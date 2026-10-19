@@ -112,6 +112,10 @@ class Case(Base):
     counsel: Mapped[str] = mapped_column(String(200), default="")
     origin: Mapped[str] = mapped_column(String(40), default="manual")  # manual | declared | escalated
     source_module: Mapped[str] = mapped_column(String(60), default="")
+    # Client milestones published by Project Management (project-management module):
+    # [{"key","title","workstream","status","due_on","completed_on"}]. Replaced whole
+    # on every publish; shown to the client beside the workstreams.
+    pm_milestones: Mapped[list] = mapped_column(JSON, default=list)
     opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -248,6 +252,7 @@ def init_db() -> None:
         conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS signature VARCHAR(160)"))
         conn.execute(text("ALTER TABLE case_updates ADD COLUMN IF NOT EXISTS key_id VARCHAR(32)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_case_updates_content_hash ON case_updates (content_hash)"))
+        conn.execute(text("ALTER TABLE cases ADD COLUMN IF NOT EXISTS pm_milestones JSON DEFAULT '[]'"))
 
 
 def next_case_number(db: Session) -> tuple[int, str]:

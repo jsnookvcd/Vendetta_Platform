@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Connect Claude{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px">Run your boards, tasks, meeting notes and Harvest time from Claude. Claude acts as you, with your access level; a viewer gets the read-only tools.</p>
+<div class="grid2">
+<div>
+  <div class="section-head"><h2>Claude (web, desktop, mobile)</h2></div>
+  <div class="panel pad">
+    <ol class="steps">
+      <li>In Claude, open Settings, then Connectors, and add a custom connector.</li>
+      <li>Name it <b>Vendetta PM</b> and paste this server URL:<div class="code-box" style="margin-top:6px">{{ mcp_url }}</div></li>
+      <li>Leave the OAuth client fields empty. Claude registers itself.</li>
+      <li>Click Connect. You sign in here with Microsoft 365 and approve access once.</li>
+      <li>In a chat, turn the connector on and ask: "what's on my plate", "log 2 hours to VCD-IR-2026-445 forensic analysis yesterday", "write up this call on the Rize engagement and add the action items".</li>
+    </ol>
+    <p class="hint">An organization owner may need to add the connector for the whole Team or Enterprise workspace first.</p>
+  </div>
+  <div class="section-head" style="margin-top:16px"><h2>Claude Code or a script</h2></div>
+  <div class="panel pad stack">
+    {% if new_token %}<div class="flash ok">Your new token. Copy it now; it is not shown again.<div class="code-box" style="margin-top:6px">{{ new_token }}</div></div>
+    <div class="code-box">claude mcp add --transport http vendetta-pm {{ mcp_url }} --header "Authorization: Bearer {{ new_token }}"</div>{% endif %}
+    <form method="post" action="/connect/tokens" class="formrow">
+      <label class="field wide">Name<input name="name" value="Claude Code"></label>
+      <label class="field" style="max-width:120px">Days valid<input name="days" type="number" min="0" value="90"></label>
+      <button class="btn btn-sm">Create token</button>
+    </form>
+    <p class="hint">Claude Code can also connect with the URL alone and sign in through the browser the same way the Claude app does.</p>
+  </div>
+</div>
+<div>
+  <div class="section-head"><h2>Your active connections</h2></div>
+  <div class="panel"><div class="table-wrap">
+    {% if tokens %}<table><thead><tr><th>Connection</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody>
+    {% for t in tokens %}<tr><td>{{ t.name or ('Claude connector' if t.kind == 'refresh' else 'token') }} <span class="faint">{{ 'OAuth' if t.kind == 'refresh' else 'personal token' }}</span></td>
+      <td class="faint nowrap">{{ t.created_at.strftime('%b %d') }}</td><td class="faint nowrap">{{ t.last_used_at.strftime('%b %d %H:%M') if t.last_used_at else '' }}</td>
+      <td><form method="post" action="/connect/tokens/{{ t.id }}/revoke"><button class="btn btn-xs btn-ghost danger" data-confirm="Revoke this connection?">revoke</button></form></td></tr>{% endfor %}
+    </tbody></table>{% else %}<div class="empty"><p>No connections yet.</p></div>{% endif %}
+  </div></div>
+  <form method="post" action="/connect/revoke-all" style="margin-top:10px"><button class="btn btn-xs btn-ghost danger" data-confirm="Sign every Claude connection out?">Revoke everything</button></form>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/board.js"></script>{% endblock %}

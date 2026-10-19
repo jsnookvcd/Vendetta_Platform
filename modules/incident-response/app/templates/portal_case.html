@@ -34,6 +34,17 @@
   </div>
   {% endif %}
 
+  {% if case.pm_milestones %}
+  <div class="section-head"><h2>Milestones</h2></div>
+  <div class="panel" style="margin-bottom:14px"><table><tbody>
+    {% for m in case.pm_milestones %}<tr>
+      <td>{{ m.title }}{% if m.workstream %}<div class="faint" style="font-size:11.5px">{{ m.workstream }}</div>{% endif %}</td>
+      <td class="nowrap" style="text-transform:capitalize">{{ m.status.replace('_',' ') }}</td>
+      <td class="nowrap faint">{% if m.status == 'done' and m.completed_on %}reached {{ m.completed_on }}{% elif m.due_on %}target {{ m.due_on }}{% endif %}</td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+
   <div class="section-head"><h2>Progress</h2></div>
   <div class="wsgrid">
     {% for w in case.workstreams %}{% set l = lanes[loop.index0] %}

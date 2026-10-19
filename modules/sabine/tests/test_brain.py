@@ -216,3 +216,22 @@ def test_console_and_api(client, world):
 
 def db_first_pending() -> str:
     return SessionLocal().query(Proposal).filter_by(status="pending").first().id
+
+
+def test_project_management_alerts_are_queued(world):
+    """Delivery alerts from Project Management: high and medium ones join the
+    services queue with a link into the module; low ones stay with the PM; an alert
+    that clears in the module leaves the queue."""
+    db = SessionLocal()
+    summary = brain.cycle(db)
+    assert summary["seen"]["alerts:project-management"] is True
+    assert ("project-management", "GET", "/api/alerts", "Bearer pmtok", "sabine") in world.calls
+    items = {w.key: w for w in db.query(WorkItem).all()}
+    a = items["pm_alert:burn_over:eng1"]
+    assert a.kind == "pm_alert" and a.domain == "services" and a.severity == "high"
+    assert a.link == "https://pm.example/engagements/eng1" and a.platform_client_id == "plat-rb"
+    assert a.payload["engagement"] == "VCD-IR-2026-001"
+    assert "pm_alert:task_due_soon:c9" not in items
+    world.pm_alerts.clear()
+    brain.cycle(db)
+    assert db.query(WorkItem).filter_by(key="pm_alert:burn_over:eng1").one().state == "gone"

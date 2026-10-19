@@ -83,6 +83,8 @@ DIRECTORY = {
     "vulnerability-management": {"base_url": "http://vulnerability-management:8000", "token": "vtok", "public_url": "https://vuln.example"},
     "professional-services": {"base_url": "http://professional-services:8000", "token": "osptok", "public_url": "https://osp.example"},
     "mdr": {"base_url": "http://mdr:8800", "token": "mdrtok", "public_url": "https://mdr.example"},
+    "project-management": {"base_url": "http://project-management:8000", "token": "pmtok",
+                           "public_url": "https://pm.example"},
 }
 
 
@@ -182,6 +184,15 @@ class World:
         self.communications: dict[str, list[dict]] = {"plat-rb": [], "plat-hp": []}
         self.pages = []
         self.page_sent = {"teams": "sent"}
+        self.pm_alerts = [
+            {"key": "burn_over:eng1", "kind": "burn_over", "severity": "high",
+             "title": "VCD-IR-2026-001 is over budget: 52.0h of 40h (130%)", "detail": "", "owner": "pm@vendettacd.io",
+             "link": "/engagements/eng1", "first_seen": OLD, "engagement": "VCD-IR-2026-001",
+             "client": "Riverbend Credit Union", "platform_client_id": "plat-rb", "practice": "ir"},
+            {"key": "task_due_soon:c9", "kind": "task_due_soon", "severity": "low", "title": "Due tomorrow: #9",
+             "detail": "", "owner": "pm@vendettacd.io", "link": "/tasks/9", "first_seen": FRESH,
+             "engagement": "VCD-IR-2026-001", "client": "Riverbend Credit Union", "platform_client_id": "plat-rb",
+             "practice": "ir"}]
         self._n = 0
 
     # ------------------------------------------------------------ platform helpers
@@ -283,6 +294,8 @@ class World:
             return httpx.Response(200, json={"sent": dict(self.page_sent)})
         if path == "/api/ir-cases":
             return httpx.Response(200, json=self.cases)
+        if host == "project-management" and path == "/api/alerts":
+            return httpx.Response(200, json={"alerts": self.pm_alerts})
         if path == "/api/engagements":
             assert req.url.params["status"] == "open"
             return httpx.Response(200, json=self.engagements)
