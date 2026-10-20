@@ -163,3 +163,62 @@ def test_override_from_db_disables_and_rerates(fresh_db, now):
     ingest([finding(fid="a1", at=now), finding(fid="b1", pid="plat-bravo", client="Bravo", at=now)], now=now)
     invs = SessionLocal().query(Investigation).filter_by(rule_key="ransomware-behavior").all()
     assert [(i.platform_client_id, i.severity) for i in invs] == [("plat-bravo", "high")]
+
+
+def _two_sources(ms_rows, ingest_rows, ingest_status=200, seen=None):
+    import httpx
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        host = req.url.host
+        if seen is not None:
+            seen.append((host, req.headers.get("authorization")))
+        if host == "ingest":
+            return httpx.Response(ingest_status, json=ingest_rows)
+        return httpx.Response(200, json=ms_rows)
+    return httpx.MockTransport(handler)
+
+
+def _ingest_finding(fid="d1", title="Password spray from one source IP (203.0.113.9, 10 in 10 min)",
+                    severity="high", kind="sigma", tool="entra"):
+    f = finding(tool=tool, kind=kind, severity=severity, title=title, host="", fid=fid)
+    f["module"] = "ingest"
+    f["evidence"] = [{"id": "e1", "sha256": "ab" * 32, "captured_at": None,
+                      "storage_uri": "https://ingest.example/api/events/e1/proof", "sealed": True}]
+    return f
+
+
+def test_ingest_is_a_second_signal_source(fresh_db, ms, monkeypatch):
+    """Sigma detections from Telemetry Ingest open investigations through the
+    telemetry-sigma rule, with ids that never collide with managed-services ids."""
+    monkeypatch.setattr(settings, "ingest_url", "http://ingest:8000")
+    monkeypatch.setattr(settings, "ingest_token", "ingtok")
+    make_client()
+    seen = []
+    ms_row = finding(fid="d1")  # same raw id as the ingest finding below
+    summ = detect.run(SessionLocal(), transport=_two_sources([ms_row], [_ingest_finding()], seen=seen))
+    assert ("managed-services", "Bearer mstok") in seen and ("ingest", "Bearer ingtok") in seen
+    assert summ["signals"] == 2
+    db = SessionLocal()
+    assert db.get(Signal, "d1") is not None and db.get(Signal, "ing-d1") is not None
+    s = db.get(Signal, "ing-d1")
+    assert s.type == "sigma" and s.tool == "entra"
+    rules = {i.rule_key for i in db.execute(select(Investigation)).scalars()}
+    assert "telemetry-sigma" in rules
+
+
+def test_one_failing_source_does_not_stop_the_other(fresh_db, ms, monkeypatch):
+    monkeypatch.setattr(settings, "ingest_url", "http://ingest:8000")
+    make_client()
+    summ = detect.run(SessionLocal(), transport=_two_sources([finding()], [], ingest_status=503))
+    assert summ["signals"] == 1
+    st = detect.state()
+    assert st["last_ok"] is True and st["source_errors"] == ["ingest HTTP 503"]
+
+
+def test_ingest_alone_is_enough(fresh_db, monkeypatch):
+    monkeypatch.setattr(settings, "managed_services_url", "")
+    monkeypatch.setattr(settings, "ingest_url", "http://ingest:8000")
+    make_client()
+    assert detect.configured()
+    summ = detect.run(SessionLocal(), transport=_two_sources([], [_ingest_finding(fid="x9")]))
+    assert summ["signals"] == 1

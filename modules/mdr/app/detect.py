@@ -18,7 +18,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from . import engine as eng
-from .config import OPEN_STATUSES, SEV_RANK, TOOL_NAMES, settings
+from .config import INGEST_PREFIX, OPEN_STATUSES, SEV_RANK, TOOL_NAMES, settings
 from .db import (Client, Counter, Investigation, InvestigationSignal, Rule, RuleOverride, Signal,
                  Suppression, record, utcnow)
 
@@ -35,7 +35,61 @@ class DetectError(Exception):
 
 
 def configured() -> bool:
-    return bool(settings.managed_services_url)
+    return bool(settings.managed_services_url or settings.ingest_url)
+
+
+def _sources() -> list[tuple[str, str, str]]:
+    """(name, base url, token) for every configured signal source."""
+    out = []
+    if settings.managed_services_url:
+        out.append(("managed-services", settings.managed_services_url, settings.managed_services_token))
+    if settings.ingest_url:
+        out.append(("ingest", settings.ingest_url, settings.ingest_token))
+    return out
+
+
+def _fetch_one(name: str, base: str, token: str, transport: httpx.BaseTransport | None) -> list[dict]:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers["X-Vendetta-Actor"] = "mdr"
+    url = f"{base.rstrip('/')}/api/findings"
+    try:
+        with httpx.Client(timeout=30.0, transport=transport, headers=headers) as http:
+            r = http.get(url, params={"status": "all"})
+    except Exception as e:  # noqa: BLE001
+        raise DetectError(f"{name} unreachable: {type(e).__name__}") from e
+    if r.status_code in (401, 403):
+        raise DetectError(f"{name} rejected the token")
+    if r.status_code != 200:
+        raise DetectError(f"{name} HTTP {r.status_code}")
+    body = r.json()
+    if isinstance(body, dict):  # tolerate a wrapped list
+        body = body.get("findings") or body.get("items") or []
+    rows = body if isinstance(body, list) else []
+    if name == "ingest":
+        rows = [dict(f, id=INGEST_PREFIX + str(f.get("id") or "")) for f in rows if f.get("id")]
+    return rows
+
+
+def fetch_signals(transport: httpx.BaseTransport | None = None) -> list[dict]:
+    """Read every finding from every configured source. One source failing does not
+    stop the others; DetectError is raised only when every source failed."""
+    if not configured():
+        raise DetectError("no signal source set (MANAGED_SERVICES_URL or INGEST_URL)")
+    rows: list[dict] = []
+    errors: list[str] = []
+    for name, base, token in _sources():
+        try:
+            rows.extend(_fetch_one(name, base, token, transport))
+        except DetectError as e:
+            errors.append(str(e))
+            log.warning("signal source %s failed: %s", name, e)
+    SOURCE_ERRORS[:] = errors
+    if errors and len(errors) == len(_sources()):
+        raise DetectError("; ".join(errors))
+    return rows
+
+
+SOURCE_ERRORS: list[str] = []
 
 
 def _parse_ts(value) -> dt.datetime | None:
@@ -48,28 +102,6 @@ def _parse_ts(value) -> dt.datetime | None:
     except ValueError:
         return None
     return v if v.tzinfo else v.replace(tzinfo=dt.timezone.utc)
-
-
-def fetch_signals(transport: httpx.BaseTransport | None = None) -> list[dict]:
-    """Read every managed-services finding. Raises DetectError on any failure."""
-    if not configured():
-        raise DetectError("MANAGED_SERVICES_URL not set")
-    headers = {"Authorization": f"Bearer {settings.managed_services_token}"} if settings.managed_services_token else {}
-    headers["X-Vendetta-Actor"] = "mdr"
-    url = f"{settings.managed_services_url.rstrip('/')}/api/findings"
-    try:
-        with httpx.Client(timeout=30.0, transport=transport, headers=headers) as http:
-            r = http.get(url, params={"status": "all"})
-    except Exception as e:  # noqa: BLE001
-        raise DetectError(f"managed-services unreachable: {type(e).__name__}") from e
-    if r.status_code in (401, 403):
-        raise DetectError("managed-services rejected the token")
-    if r.status_code != 200:
-        raise DetectError(f"managed-services HTTP {r.status_code}")
-    body = r.json()
-    if isinstance(body, dict):  # tolerate a wrapped list
-        body = body.get("findings") or body.get("items") or []
-    return body if isinstance(body, list) else []
 
 
 def upsert_signals(db: Session, rows: list[dict]) -> dict:
@@ -233,6 +265,9 @@ def state() -> dict:
     return {
         "configured": configured(),
         "token_set": bool(settings.managed_services_token),
+        "ingest_configured": bool(settings.ingest_url),
+        "ingest_token_set": bool(settings.ingest_token),
+        "source_errors": list(SOURCE_ERRORS),
         "public_url_set": bool(settings.managed_services_public_url),
         "interval_seconds": int(settings.detect_interval_seconds or 0),
         "last_ok": LAST["ok"],

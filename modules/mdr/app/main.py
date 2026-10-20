@@ -221,6 +221,7 @@ def settings_page(request: Request, user: str = auth.RequireUser):
     return render(request, "settings.html", user=user, api_token=auth.api_token(), sso_enabled=sso.enabled(),
                   platform_url=settings.platform_url or "not set", hub=settings.platform_hub_url or "not connected",
                   ms_url=settings.managed_services_url or "not set",
+                  ingest_url=settings.ingest_url or "not set",
                   ms_public=settings.managed_services_public_url or "not set",
                   detect_state=detect.state(), interval=settings.detect_interval_seconds,
                   noise_days=settings.noise_suppression_days)
@@ -894,7 +895,7 @@ def api_rules(user: str = Depends(auth.api_user), db: Session = Depends(get_db))
 @app.post("/api/detect/run")
 def api_detect_run(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
     if not detect.configured():
-        return JSONResponse({"ok": False, "detail": "MANAGED_SERVICES_URL not set"}, status_code=409)
+        return JSONResponse({"ok": False, "detail": "no signal source set (MANAGED_SERVICES_URL or INGEST_URL)"}, status_code=409)
     try:
         summ = detect.run(db)
     except detect.DetectError as e:

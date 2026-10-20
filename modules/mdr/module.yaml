@@ -20,6 +20,12 @@ signal_source:
   schedule: DETECT_INTERVAL_SECONDS                          # default 120; POST /api/detect/run on demand
   tools: [sentinelone, crowdstrike, huntress, acronis, superops, entra, aws]
   containment_handoff: "{MANAGED_SERVICES_PUBLIC_URL}/alerts/{alert_ref}"   # MDR never acts on a host
+  second_source:
+    module: ingest
+    read: GET {INGEST_URL}/api/findings?status=all            # Bearer INGEST_TOKEN
+    signal_ids: "ing-<detection id>"                          # never collide with managed-services ids
+    types: [sigma, alert]                                      # Sigma detections and vendor detections
+    note: either source alone is enough; one failing does not stop the other
 
 detection:
   rules: data                      # admin-editable, every edit versioned and attributed

@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     managed_services_url: str = ""
     managed_services_token: str = ""
     managed_services_public_url: str = ""
+    # Telemetry Ingest: the second signal source. Its Sigma detections and the
+    # vendors' own detections arrive in the same finding shape, each with links to
+    # the signed receipts of the events behind it. Blank leaves MDR on
+    # managed-services alone.
+    ingest_url: str = ""
+    ingest_token: str = ""
+    ingest_public_url: str = ""
     # Seconds between scheduled detection runs (0 disables the schedule; POST
     # /api/detect/run still works).
     detect_interval_seconds: int = 120
@@ -83,13 +90,19 @@ SEVERITIES = ["low", "medium", "high", "critical"]
 SEV_RANK = {"info": 0, "low": 0, "medium": 1, "high": 2, "critical": 3}
 
 # Signal sources, as managed-services names them in the finding's `reason` field.
-TOOLS = ["sentinelone", "crowdstrike", "huntress", "acronis", "superops", "entra", "aws"]
+TOOLS = ["sentinelone", "crowdstrike", "huntress", "acronis", "superops", "entra", "aws", "defender", "okta",
+         "m365", "google", "network"]
 TOOL_NAMES = {
     "sentinelone": "SentinelOne", "crowdstrike": "CrowdStrike", "huntress": "Huntress",
     "acronis": "Acronis", "superops": "SuperOps", "entra": "Entra ID", "aws": "AWS",
+    "defender": "Microsoft Defender", "okta": "Okta", "m365": "Microsoft 365", "google": "Google Workspace",
+    "network": "Network and firewall",
 }
 # Managed-services alert kinds, carried in the finding's `type` field.
-SIGNAL_TYPES = ["threat", "detection", "incident", "backup", "rmm"]
+SIGNAL_TYPES = ["threat", "detection", "incident", "backup", "rmm", "sigma", "alert"]
+# Signal ids from Telemetry Ingest carry this prefix so they never collide with a
+# managed-services id.
+INGEST_PREFIX = "ing-"
 
 # Investigation lifecycle and analyst verdicts.
 STATUSES = ["new", "investigating", "contained", "closed"]

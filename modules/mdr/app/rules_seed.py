@@ -2,7 +2,7 @@
 
 Each rule matches the managed-services signal shape: `tools` against the finding's
 `reason` (the source tool), `types` against its `type` (threat, detection, incident,
-backup, rmm), `title_any` as case-insensitive substrings of the title, and
+backup, rmm, and sigma or alert from Telemetry Ingest), `title_any` as case-insensitive substrings of the title, and
 `min_severity`. Correlation groups matching signals by host, client or title and
 opens an investigation once `threshold` of them land inside `window_minutes`.
 
@@ -101,4 +101,8 @@ STARTER_RULES: list[dict] = [
           "Five or more medium-or-higher signals from any tool on one host inside thirty minutes. "
           "Correlation catches the attack that no single alert describes.",
           "high", [], "isolate_host", min_severity="medium", group_by="host", window_minutes=30, threshold=5),
+    _rule("telemetry-sigma", "Telemetry detection (Sigma)",
+          "A Sigma rule in Telemetry Ingest fired at medium or above on the client's normalized telemetry. "
+          "One investigation per detection title; repeats attach. The events behind it carry signed receipts.",
+          "high", [], "none", types=["sigma"], min_severity="medium", group_by="title", window_minutes=240),
 ]
