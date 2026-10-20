@@ -82,7 +82,7 @@ INSTANCE=$(terraform output -raw instance_id)
 aws ssm start-session --target "$INSTANCE" \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["8300"],"localPortNumber":["8300"]}' &
-# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP), 8800 (MDR) the same way, then:
+# forward 8100 (IR), 8200 (managed services), 8000 (dark web), 8400 (vuln), 8500 (pentest), 8600 (SABINE), 8700 (OSP), 8800 (MDR), 9000 (Telemetry Ingest) the same way, then:
 PLATFORM_TOKEN=$(aws ssm get-parameter --with-decryption --query Parameter.Value --output text --name /vendetta/platform/API_TOKEN)
 PLATFORM_TOKEN=$PLATFORM_TOKEN bash infra/verify.sh
 ```
@@ -300,6 +300,27 @@ nothing else changes.
 Wire SentinelOne or CrowdStrike the same way on the Integrations page (paste
 credentials, Connect and test), map the client's site IDs or child CID, sync.
 Confirm threats and host state render. Still no action can fire.
+
+## 7b. Start Telemetry Ingest for that client
+
+Telemetry Ingest (ingest.<domain>, port 9000) reads the same tools directly and
+keeps a signed, provable record of everything it receives.
+
+1. Set a dedicated signing key once:
+   `aws ssm put-parameter --type SecureString --name /vendetta/ingest/EVIDENCE_SIGNING_KEY --value $(openssl rand -hex 32)`
+   (Terraform generates it on apply; this is only for a host built before that.)
+   Publish the public key shown on Settings to clients and auditors.
+2. On Connectors, add the client's Entra sign-ins and audit connectors (app
+   registration with AuditLog.Read.All and Directory.Read.All, admin consent) and
+   press Pull now. Confirm events appear under Events and the connector shows healthy.
+3. Add the client's EDR connector the same way. Turn off that tool's alert sync in
+   managed services for this client so MDR does not see each alert twice.
+4. Press Seal now on Receipts, then open any event and download its proof. Run
+   `python receipts.py proof-<id>.json` against it. It must print VERIFIED.
+5. In MDR, confirm Settings shows the telemetry source and that the next detection
+   run lists ingest signals.
+6. Turn the client's portal on in Telemetry Ingest and have them export their chain
+   and run the verifier themselves.
 
 ## 8. Turn actions on
 
@@ -533,6 +554,12 @@ client has no enabled terms.
 - The scanner-to-API path exposes POST /api/scans with a reference adapter
   (modules/vulnerability-management/scripts), but has not run against the live Go
   scanner service yet; the first real scan is its shakeout.
+- Telemetry Ingest connectors are tested against recorded fixtures and mocks only;
+  several vendor field names are marked unsure in the connector code (Huntress most
+  of all). The first live pull per vendor is its shakeout.
+- The multi-account AWS design in infra/aws (Organizations, Security Lake, ECS,
+  OpenSearch, evidence account) validates but has never been applied. infra/aws/README.md
+  gives the apply order and the cutover from the single host.
 - The first `terraform plan` against the real account is the shakeout for the
   Terraform itself; CI validates it but has never applied it.
   infra/terraform/PLAN.md says how to run it and what a clean plan shows.

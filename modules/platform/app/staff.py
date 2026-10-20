@@ -34,7 +34,7 @@ MODULE_ROLES = ("none", "viewer", "analyst", "admin")
 # Modules a grant can name: every module that is not merely planned.
 GRANTABLE = ["incident-response", "managed-services", "dark-web-monitoring",
              "vulnerability-management", "penetration-testing", "professional-services", "sabine", "mdr",
-             "project-management"]
+             "project-management", "ingest"]
 
 # profile key -> (label, description, platform role, {module: (role, config)})
 PROFILES = {
@@ -58,6 +58,7 @@ PROFILES = {
             "sabine": ("analyst", {}),
             "mdr": ("analyst", {}),
             "project-management": ("analyst", {}),
+            "ingest": ("analyst", {}),
         },
     ),
     "soc-analyst": (
@@ -73,6 +74,7 @@ PROFILES = {
             "professional-services": ("none", {}),
             "sabine": ("analyst", {}),
             "mdr": ("analyst", {}),
+            "ingest": ("analyst", {}),
         },
     ),
     "offensive-security": (
@@ -88,6 +90,7 @@ PROFILES = {
             "professional-services": ("none", {}),
             "sabine": ("none", {}),
             "mdr": ("none", {}),
+            "ingest": ("none", {}),
         },
     ),
     "vciso-advisory": (

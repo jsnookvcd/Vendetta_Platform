@@ -92,6 +92,11 @@ variable "modules" {
       port   = 8900
       deploy = true
     }
+    ingest = {
+      subdir = "modules/ingest"
+      port   = 9000
+      deploy = true
+    }
   }
 }
 
@@ -109,6 +114,7 @@ variable "listener_priorities" {
     professional-services    = 157
     mdr                      = 160
     project-management       = 165
+    ingest                   = 167
     network-operations       = 170
   }
 }
@@ -171,6 +177,7 @@ variable "module_hosts" {
     professional-services    = "osp"
     mdr                      = "mdr"
     project-management       = "pm"
+    ingest                   = "ingest"
   }
 }
 

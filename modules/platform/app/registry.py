@@ -23,6 +23,9 @@ DEFAULT_MODULES = [
     ("mdr", "Managed Detection and Response", "managed-security", "in-progress", True, 60),
     # Port 8900, host pm.<domain>; staff-only delivery PM for IR and ProServ.
     ("project-management", "Project Management", "internal", "in-progress", False, 65),
+    # Port 9000, host ingest.<domain>; serves Sigma and vendor detections as findings
+    # and receives vendor pushes at /api/ingest/{connector}.
+    ("ingest", "Telemetry Ingest", "managed-security", "in-progress", True, 62),
     ("network-operations", "Network Operations", "managed-it", "planned", False, 70),
 ]
 
@@ -32,7 +35,7 @@ DEFAULT_MODULES = [
 # delivers engagements, not detections, and escalates live risk to the IR hub instead
 # of feeding the finding model.
 FINDING_MODULES = {"dark-web-monitoring", "managed-services", "vulnerability-management",
-                   "penetration-testing", "mdr"}
+                   "penetration-testing", "mdr", "ingest"}
 
 # Who may read the module directory (GET /api/platform/modules?module=<caller>) and
 # which modules, with their tokens, each caller receives. The incident-response
@@ -96,6 +99,13 @@ PROBE = {
         "manifest": "/api/module",
         "items": "/api/findings?status=active",
         "label": "open investigations",
+        "severity_key": "severity",
+    },
+    # Telemetry Ingest serves open detections as findings (type sigma or alert).
+    "ingest": {
+        "manifest": "/api/module",
+        "items": "/api/findings?status=active",
+        "label": "open detections",
         "severity_key": "severity",
     },
     # Engagements carry no severity; the count is what the overview shows.

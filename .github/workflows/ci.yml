@@ -49,6 +49,9 @@ jobs:
           - module: project-management
             role: pmtool
             db: pmtool_test
+          - module: ingest
+            role: ingest
+            db: ingest_test
 
     services:
       postgres:
@@ -104,7 +107,7 @@ jobs:
       matrix:
         module: [platform, incident-response, managed-services, dark-web-monitoring,
                  vulnerability-management, penetration-testing, sabine, professional-services, mdr,
-                 project-management]
+                 project-management, ingest]
     steps:
       - uses: actions/checkout@v4
       - name: Build the module image the host builds
@@ -144,3 +147,22 @@ jobs:
             printf 'SECRET_KEY=ci\n' > "$m/.env"
             docker compose -f "$m/docker-compose.yml" --project-name "ci-$(basename "$m")" config -q
           done
+
+  infra-aws:
+    name: infra/aws fmt and validate (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [org, network, lake, ingest, soc-apps, evidence]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: terraform fmt
+        run: terraform -chdir=infra/aws fmt -check -recursive -diff
+      - name: terraform init
+        run: terraform -chdir=infra/aws/${{ matrix.stack }} init -backend=false -input=false
+      - name: terraform validate
+        run: terraform -chdir=infra/aws/${{ matrix.stack }} validate

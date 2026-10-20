@@ -134,6 +134,23 @@ modules:
       hand-off to managed services; MDR never acts on a host. Publishes MTTD, MTTA
       and MTTR per client. Client portal. Port 8800, host mdr.
 
+
+  - name: ingest
+    display_name: Telemetry Ingest
+    service_lines: [managed-security, incident-response, litigation-support]
+    status: in-progress
+    enablement: MODULE_ENABLED
+    manifest: /api/module
+    findings: /api/findings
+    escalation: /api/findings/{id}/escalate
+    provisioning: /api/provision/sync
+    notes: >-
+      The SOC's front door for data (port 9000, host ingest.). Pull, push, bucket and
+      syslog doors for EDR, identity, email, cloud and network tools; every record
+      normalized once to OCSF, stamped with the client's platform id, and sealed into
+      a signed RFC 6962 Merkle chain per client with daily WORM anchors and an offline
+      verifier. Sigma rules run over the stream; Sigma and vendor detections are served
+      as findings, which MDR reads as its second signal source.
   - name: managed-services
     display_name: Managed Services
     service_lines: [managed-security, managed-it]
