@@ -1,0 +1,8 @@
+# Copy to backend-prod.hcl / backend-staging.hcl (git-ignored), one per
+# environment, and run: tofu init -reconfigure -backend-config=backend-prod.hcl
+# use_lockfile needs Terraform >= 1.10 or OpenTofu >= 1.10.
+bucket       = "vcd-platform-tfstate-715841340804"
+key          = "soc/soc-apps/prod/terraform.tfstate" # soc/soc-apps/staging/terraform.tfstate for staging
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

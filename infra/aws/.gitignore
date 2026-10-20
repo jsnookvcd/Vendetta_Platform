@@ -1,0 +1,5 @@
+# Filled-in backend configs and variable files stay local.
+**/backend*.hcl
+!**/backend.hcl.example
+**/*.tfvars
+**/.terraform/

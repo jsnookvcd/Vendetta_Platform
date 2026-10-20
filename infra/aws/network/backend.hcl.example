@@ -1,0 +1,7 @@
+# Copy to backend.hcl (git-ignored) and run: tofu init -backend-config=backend.hcl
+# use_lockfile needs Terraform >= 1.10 or OpenTofu >= 1.10.
+bucket       = "vcd-platform-tfstate-715841340804"
+key          = "soc/network/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true

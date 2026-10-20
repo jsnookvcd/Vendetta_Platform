@@ -1,0 +1,9 @@
+# Copy to backend.hcl (git-ignored) and run: tofu init -backend-config=backend.hcl
+# The state bucket is the existing one in the management account. use_lockfile
+# (S3 native locking) needs Terraform >= 1.10 or OpenTofu >= 1.10; on older
+# binaries drop it and use dynamodb_table = "vcd-platform-tfstate-lock".
+bucket       = "vcd-platform-tfstate-715841340804"
+key          = "soc/org/terraform.tfstate"
+region       = "us-east-1"
+encrypt      = true
+use_lockfile = true
