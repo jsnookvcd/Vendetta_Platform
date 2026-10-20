@@ -1,0 +1,55 @@
+{
+  "AccountId": "111122223333",
+  "Region": "eu-west-1",
+  "Partition": "aws",
+  "SchemaVersion": "2.0",
+  "Id": "a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1",
+  "Arn": "arn:aws:guardduty:eu-west-1:111122223333:detector/34cd/finding/a2b4c6d8e0f1a3b5c7d9e1f3a5b7c9d1",
+  "Type": "Recon:EC2/PortProbeUnprotectedPort",
+  "Resource": {
+    "ResourceType": "Instance",
+    "InstanceDetails": {
+      "InstanceId": "i-0fedcba9876543210",
+      "InstanceType": "t3.micro",
+      "Platform": "Linux",
+      "NetworkInterfaces": [
+        {
+          "PrivateDnsName": "ip-10-1-2-3.eu-west-1.compute.internal",
+          "PrivateIpAddress": "10.1.2.3"
+        }
+      ]
+    }
+  },
+  "Service": {
+    "ServiceName": "guardduty",
+    "DetectorId": "34cd",
+    "Archived": false,
+    "Count": 12,
+    "Action": {
+      "ActionType": "PORT_PROBE",
+      "PortProbeAction": {
+        "Blocked": false,
+        "PortProbeDetails": [
+          {
+            "LocalPortDetails": {
+              "Port": 22,
+              "PortName": "SSH"
+            },
+            "RemoteIpDetails": {
+              "IpAddressV4": "192.0.2.45",
+              "Country": {
+                "CountryName": "United States"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "ResourceRole": "TARGET"
+  },
+  "Severity": 2,
+  "CreatedAt": "2026-10-18T02:00:00.000Z",
+  "UpdatedAt": "2026-10-18T02:00:00.000Z",
+  "Title": "Unprotected port on EC2 instance i-0fedcba9876543210 is being probed.",
+  "Description": "EC2 instance has an unprotected port which is being probed by a known malicious host."
+}

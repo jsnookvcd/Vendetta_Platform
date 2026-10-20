@@ -1,0 +1,22 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T18:11:42",
+  "Id": "c4b3a291-0f1e-4d2c-9b8a-7f6e5d4c3b2a",
+  "Operation": "FileDownloaded",
+  "RecordType": 6,
+  "ResultStatus": null,
+  "UserKey": "i:0h.f|membership|10032001a2b3c4d5@live.com",
+  "UserId": "mlee@acme.example",
+  "Workload": "SharePoint",
+  "ClientIP": "198.51.100.61",
+  "ObjectId": "https://acme.sharepoint.com/sites/Finance/Shared Documents/Payroll 2026.xlsx",
+  "ItemType": "File",
+  "SiteUrl": "https://acme.sharepoint.com/sites/Finance/",
+  "SourceFileName": "Payroll 2026.xlsx",
+  "SourceRelativeUrl": "Shared Documents",
+  "SourceFileExtension": "xlsx",
+  "ListItemUniqueId": "9f8e7d6c-5b4a-4321-9876-543210fedcba",
+  "UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/129.0"
+}

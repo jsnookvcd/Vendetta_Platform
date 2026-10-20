@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}{{ client.name }}{% endblock %}
+{% block body %}
+<p class="page-intro">Tenant <span class="mono">{{ client.platform_client_id or 'not provisioned' }}</span>{% if platform_public_url and client.platform_client_id %} · <a href="{{ platform_public_url }}/clients/platform/{{ client.platform_client_id }}">open on the platform</a>{% endif %}</p>
+<div class="panel pad" style="margin-bottom:14px"><dl class="kv">
+  <dt>Chain head</dt><dd>{% if head %}batch {{ head.batch_seq }}, sealed {{ ts(head.sealed_at) }} · <span class="mono" style="font-size:12px">{{ head.batch_hash[:24] }}…</span> · <a href="/receipts/{{ client.platform_client_id }}/verify">verify</a>{% else %}nothing sealed yet{% endif %}</dd>
+  <dt>Portal</dt><dd><form method="post" action="/clients/{{ client.id }}/portal" class="row"><label><input type="checkbox" name="portal_enabled" value="true" {{ 'checked' if client.portal_enabled }}> client can download proofs and the chain</label><button class="btn btn-sm">Save</button></form></dd>
+</dl></div>
+<div class="section-head"><h2>Connectors</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Connector</th><th>Source</th><th>Last success</th><th>State</th></tr></thead><tbody>
+{% for c in conns %}<tr><td><a href="/connectors/{{ c.id }}">{{ c.name }}</a></td><td class="mono" style="font-size:12px">{{ c.source }}</td><td class="faint">{{ ts(c.last_ok_at) or 'never' }}</td><td>{% if c.last_error %}<span class="bad-txt">{{ c.last_error }}</span>{% elif c.enabled %}<span class="ok-txt">ok</span>{% else %}paused{% endif %}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">No connectors for this client.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="section-head"><h2>Detections</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Detection</th><th>Severity</th><th>Status</th><th>Last seen</th></tr></thead><tbody>
+{% for d in dets %}<tr><td><a href="/detections/{{ d.id }}">{{ d.title }}</a></td><td>{{ sev(d.severity) }}</td><td>{{ dstatus(d.status) }}</td><td class="faint">{{ ts(d.last_event_at) }}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">None.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

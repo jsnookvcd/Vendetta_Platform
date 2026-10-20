@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% block title %}Connectors{% endblock %}
+{% block body %}
+<p class="page-intro">A connector is one client's feed from one tool. Pull connectors read the vendor's API on a schedule; push connectors receive webhooks, Event Hubs relays and syslog through Vector; bucket connectors read files the vendor drops in S3. Credentials are encrypted at rest and never shown again after they are saved.</p>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Connector</th><th>Client</th><th>Source</th><th>Last success</th><th>Newest event</th><th class="num">Events</th><th>State</th></tr></thead><tbody>
+{% for c in rows %}<tr class="{{ 'faded' if not c.enabled }}">
+  <td><a href="/connectors/{{ c.id }}">{{ c.name }}</a></td><td>{{ names.get(c.client_id, '') }}</td>
+  <td class="mono" style="font-size:12px">{{ c.source }}</td>
+  <td class="faint nowrap">{{ ts(c.last_ok_at) or 'never' }}</td><td class="faint nowrap">{{ ts(c.newest_event_at) or 'none yet' }}</td>
+  <td class="num">{{ '{:,}'.format(c.events_total or 0) }}</td>
+  <td>{% if not c.enabled %}<span class="faint">paused</span>{% elif c.last_error %}<span class="bad-txt">{{ c.last_error }}</span>{% else %}<span class="ok-txt">ok</span>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="7" class="empty">No connectors yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+{% if ident and ident.is_admin %}
+<div class="section-head"><h2>Add a connector</h2></div>
+<div class="panel pad">
+<form method="post" action="/connectors">
+  <div class="row">
+    <label>Client<br><select name="client_id" required>{% for c in clients %}{% if c.platform_client_id %}<option value="{{ c.id }}">{{ c.name }}</option>{% endif %}{% endfor %}</select></label>
+    <label>Source<br><select name="source" required>{% for m in catalog %}<option value="{{ m.key }}">{{ m.name }} ({{ m.doors|join(', ') }})</option>{% endfor %}</select></label>
+    <label>Name<br><input name="name" placeholder="optional"></label>
+  </div>
+  <p class="muted" style="margin:14px 0 6px">Fill the fields the chosen source needs. Leave the rest blank.</p>
+  {% for m in catalog %}{% if m.spec.config or m.spec.credentials %}
+  <details style="margin:6px 0"><summary>{{ m.name }}</summary>
+    <div class="row" style="margin-top:8px">
+    {% for k, help in m.spec.config.items() %}<label>{{ k }}<br><input name="config.{{ k }}" title="{{ help }}" placeholder="{{ help[:40] }}"></label>{% endfor %}
+    {% for k, help in m.spec.credentials.items() %}<label>{{ k }} <span class="faint">(secret)</span><br><input type="password" name="cred.{{ k }}" title="{{ help }}" autocomplete="off"></label>{% endfor %}
+    </div></details>
+  {% endif %}{% endfor %}
+  <details style="margin:6px 0"><summary>Bucket delivery (CloudTrail, Falcon Data Replicator, GuardDuty export)</summary>
+    <div class="row" style="margin-top:8px"><label>bucket<br><input name="config.bucket"></label><label>prefix<br><input name="config.prefix"></label></div></details>
+  <p style="margin-top:14px"><button class="btn btn-primary">Add connector</button></p>
+</form>
+</div>
+{% endif %}
+
+<div class="section-head"><h2>Catalog</h2><span class="count">{{ catalog|length }} sources</span></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Source</th><th>Family</th><th>Doors</th><th>OCSF classes</th></tr></thead><tbody>
+{% for m in catalog %}<tr><td>{{ m.name }} <div class="faint mono" style="font-size:11px">{{ m.key }}</div></td><td>{{ m.family }}</td><td>{{ m.doors|join(', ') }}</td><td class="faint" style="font-size:12px">{{ m.classes|join(', ') }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

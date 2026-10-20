@@ -1,0 +1,25 @@
+title: Entra ID domain federation settings changed
+id: 8d937b3b-8234-4cc9-9665-f09d850af55e
+status: stable
+description: Federation or authentication settings were changed on a domain. An attacker who federates a domain to an identity provider they control can mint tokens for any user in it (Golden SAML style trust modification).
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - attack.t1484.002
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection:
+    api.operation|startswith:
+      - Set federation settings on domain
+      - Set domain authentication
+  condition: selection
+fields:
+  - actor.user.name
+  - resources.name
+falsepositives:
+  - Planned migrations to or from a federated identity provider.
+level: high

@@ -1,0 +1,32 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T12:59:59",
+  "Id": "77aa88bb-99cc-4dde-8eff-001122334455",
+  "Operation": "UserLoginFailed",
+  "RecordType": 15,
+  "ResultStatus": "Failed",
+  "UserKey": "6f1d6a0e-0b23-4a75-9e4c-2f0c6b7d8e9f",
+  "UserId": "mlee@acme.example",
+  "Workload": "AzureActiveDirectory",
+  "ClientIP": "203.0.113.200",
+  "ObjectId": "00000002-0000-0ff1-ce00-000000000000",
+  "ApplicationId": "00000002-0000-0ff1-ce00-000000000000",
+  "LogonError": "InvalidUserNameOrPassword",
+  "ActorIpAddress": "203.0.113.200",
+  "ExtendedProperties": [
+    {
+      "Name": "ResultStatusDetail",
+      "Value": "Success"
+    },
+    {
+      "Name": "UserAgent",
+      "Value": "python-requests/2.32.3"
+    },
+    {
+      "Name": "RequestType",
+      "Value": "OAuth2:Token"
+    }
+  ]
+}

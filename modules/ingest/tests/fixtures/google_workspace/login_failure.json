@@ -1,0 +1,38 @@
+{
+  "kind": "admin#reports#activity",
+  "id": {
+    "time": "2026-10-18T13:09:40.000Z",
+    "uniqueQualifier": "4400112233445566",
+    "applicationName": "login",
+    "customerId": "C03az79cb"
+  },
+  "etag": "\"JDMC8884sebSctZ17CIssbQ/6dPkh2h6BWKDFumBp9Vk3c1rqT0\"",
+  "actor": {
+    "email": "mlee@acme.example",
+    "profileId": "114522700230943134567",
+    "callerType": "USER"
+  },
+  "ipAddress": "203.0.113.200",
+  "events": [
+    {
+      "type": "login",
+      "name": "login_failure",
+      "parameters": [
+        {
+          "name": "login_type",
+          "value": "google_password"
+        },
+        {
+          "name": "login_failure_type",
+          "value": "login_failure_invalid_password"
+        },
+        {
+          "name": "login_challenge_method",
+          "multiValue": [
+            "password"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "version": "0",
+  "id": "c8c4daa7-a20c-2f03-0070-b7393dd542ad",
+  "detail-type": "GuardDuty Finding",
+  "source": "aws.guardduty",
+  "account": "111122223333",
+  "time": "2026-10-18T14:10:00Z",
+  "region": "us-east-1",
+  "resources": [],
+  "detail": {
+    "schemaVersion": "2.0",
+    "accountId": "111122223333",
+    "region": "us-east-1",
+    "partition": "aws",
+    "id": "16afba5c5c43e07c9e3e5e2e544e95df",
+    "arn": "arn:aws:guardduty:us-east-1:111122223333:detector/12abc34d567e8fa901bc2d34e56789f0/finding/16afba5c5c43e07c9e3e5e2e544e95df",
+    "type": "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS",
+    "resource": {
+      "resourceType": "AccessKey",
+      "accessKeyDetails": {
+        "accessKeyId": "ASIAEXAMPLEKEY000009",
+        "principalId": "AROA4EXAMPLEROLEID999:i-0abc1234def567890",
+        "userName": "app-server-role",
+        "userType": "AssumedRole"
+      },
+      "instanceDetails": {
+        "instanceId": "i-0abc1234def567890",
+        "instanceType": "m6i.large",
+        "platform": null,
+        "networkInterfaces": [
+          {
+            "privateDnsName": "ip-10-0-1-25.ec2.internal",
+            "privateIpAddress": "10.0.1.25",
+            "publicIp": "54.0.0.10"
+          }
+        ]
+      }
+    },
+    "service": {
+      "serviceName": "guardduty",
+      "detectorId": "12abc34d567e8fa901bc2d34e56789f0",
+      "action": {
+        "actionType": "AWS_API_CALL",
+        "awsApiCallAction": {
+          "api": "ListBuckets",
+          "serviceName": "s3.amazonaws.com",
+          "callerType": "Remote IP",
+          "remoteIpDetails": {
+            "ipAddressV4": "203.0.113.200",
+            "organization": {
+              "asn": "64500",
+              "asnOrg": "EXAMPLE-HOSTING",
+              "isp": "Example Hosting"
+            },
+            "country": {
+              "countryName": "Netherlands"
+            },
+            "city": {
+              "cityName": "Amsterdam"
+            },
+            "geoLocation": {
+              "lat": 52.37,
+              "lon": 4.89
+            }
+          }
+        }
+      },
+      "archived": false,
+      "count": 3,
+      "eventFirstSeen": "2026-10-18T13:58:00Z",
+      "eventLastSeen": "2026-10-18T14:05:00Z",
+      "resourceRole": "TARGET",
+      "additionalInfo": {}
+    },
+    "severity": 8,
+    "createdAt": "2026-10-18T14:00:01.000Z",
+    "updatedAt": "2026-10-18T14:09:30.000Z",
+    "title": "Credentials for instance role app-server-role used from external IP address.",
+    "description": "Credentials created exclusively for an EC2 instance using instance role app-server-role have been used from external IP address 203.0.113.200."
+  }
+}

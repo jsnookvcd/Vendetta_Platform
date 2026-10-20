@@ -1,0 +1,42 @@
+title: Ransomware recovery inhibition by shadow copy deletion or boot recovery disabled
+id: 6f02d275-9880-4f0f-ad4e-1cbe175ce62e
+status: stable
+description: A process deleted volume shadow copies or the backup catalog (vssadmin delete shadows, wmic shadowcopy delete, Win32_ShadowCopy Delete, wbadmin delete catalog) or disabled Windows boot recovery with bcdedit. Ransomware does this immediately before encryption so the victim cannot roll back.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.impact
+  - attack.t1490
+logsource:
+  category: process_creation
+detection:
+  vssadmin:
+    process.cmd_line|contains|all:
+      - vssadmin
+      - delete
+      - shadows
+  wmic:
+    process.cmd_line|contains|all:
+      - wmic
+      - shadowcopy
+      - delete
+  wmi_object:
+    process.cmd_line|contains|all:
+      - win32_shadowcopy
+      - .delete(
+  wbadmin:
+    process.cmd_line|contains|all:
+      - wbadmin
+      - delete
+      - catalog
+  bcdedit:
+    - process.cmd_line|re: '(?i)bcdedit.*recoveryenabled\s+(no|off|false|0)\b'
+    - process.cmd_line|re: '(?i)bcdedit.*bootstatuspolicy\s+ignoreallfailures'
+  condition: 1 of them
+fields:
+  - device.hostname
+  - actor.user.name
+  - process.cmd_line
+falsepositives:
+  - Backup software pruning old shadow copies; baseline by parent process and schedule.
+level: critical

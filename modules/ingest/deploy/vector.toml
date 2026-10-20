@@ -1,0 +1,91 @@
+# Vector: the syslog door of Vendetta Telemetry Ingest.
+#
+# One Vector per collection point (a client site or a Vendetta collector) receives
+# syslog over TLS on 6514 (RFC 5425 style, one message per line), wraps each line as
+# {"message": "<line>", "timestamp": "<received>", "peer": "<sender>"} and posts
+# batches to the push endpoint of the client's CEF connector:
+#
+#   POST http://ingest:8000/api/ingest/{connector_id}
+#
+# Authentication. The push endpoint accepts either
+#   X-Vendetta-Timestamp: <unix seconds>
+#   X-Vendetta-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>.<body>" under the webhook secret>
+# or
+#   Authorization: Bearer <webhook secret>
+#
+# Vector cannot produce the HMAC form. VRL has an hmac() function, but VRL runs on
+# each event before the sink batches and encodes them, so it never sees the request
+# body, and the http sink's request headers are fixed strings rather than values
+# computed per request. This config therefore uses the Bearer form with the
+# connector's webhook secret from the environment. Keep the hop between Vector and
+# ingest on the private network (or put Vector behind TLS to ingest) because the
+# secret travels in the header.
+#
+# Environment:
+#   VENDETTA_CONNECTOR_ID     the CEF connector's id from the ingest console
+#   VENDETTA_WEBHOOK_SECRET   that connector's webhook secret
+#   SYSLOG_TLS_CRT / SYSLOG_TLS_KEY / SYSLOG_TLS_CA   listener certificate, key and client CA
+
+data_dir = "/var/lib/vector"
+
+[sources.syslog_tls]
+# A raw TLS socket rather than Vector's `syslog` source: the syslog parser takes the
+# "CEF" before the first colon as the RFC 3164 app name and strips "CEF:" from the
+# message, which loses the CEF version and breaks parsing. The socket source keeps the
+# whole line, syslog header included, and the CEF mapper reads the header itself. The
+# raw line is also what the receipt hashes, so nothing is rewritten before ingest.
+type = "socket"
+mode = "tcp"
+address = "0.0.0.0:6514"
+framing.method = "newline_delimited"
+framing.newline_delimited.max_length = 102400
+decoding.codec = "bytes"
+tls.enabled = true
+tls.crt_file = "${SYSLOG_TLS_CRT}"
+tls.key_file = "${SYSLOG_TLS_KEY}"
+tls.ca_file = "${SYSLOG_TLS_CA}"
+# Require client certificates from the senders (firewalls, appliances) when they support it.
+tls.verify_certificate = false
+
+[transforms.wrap]
+type = "remap"
+inputs = ["syslog_tls"]
+# .message is the full line. .timestamp is Vector's receive time: an RFC 3164 header has
+# no year and a mapper may not read the clock, so the mapper falls back to it when the
+# CEF extension has no rt, start or end and the header is not RFC 5424. .host is the
+# sender's address, kept as "peer" (the mapper takes the host name from the header).
+source = '''
+line = to_string(.message) ?? ""
+t = timestamp(.timestamp) ?? now()
+. = {"message": line, "timestamp": to_string(t), "peer": to_string(.host) ?? ""}
+'''
+
+[transforms.cef_only]
+type = "filter"
+inputs = ["wrap"]
+# Lines without a CEF payload would only be rejected by the mapper; drop them here.
+condition = 'contains(string!(.message), "CEF:")'
+
+[sinks.ingest]
+type = "http"
+inputs = ["cef_only"]
+uri = "http://ingest:8000/api/ingest/${VENDETTA_CONNECTOR_ID}"
+method = "post"
+# With the json codec the http sink sends each batch as one JSON array of the
+# wrapped events, one array element per syslog line.
+encoding.codec = "json"
+compression = "none"
+request.headers.Content-Type = "application/json"
+request.headers.Authorization = "Bearer ${VENDETTA_WEBHOOK_SECRET}"
+request.timeout_secs = 30
+request.retry_attempts = 10
+request.retry_initial_backoff_secs = 1
+request.retry_max_duration_secs = 60
+batch.max_events = 500
+batch.max_bytes = 1048576
+batch.timeout_secs = 2
+
+[sinks.ingest.buffer]
+type = "disk"
+max_size = 1073741824
+when_full = "block"

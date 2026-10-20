@@ -1,0 +1,24 @@
+title: AWS AdministratorAccess attached to an IAM user
+id: 7275c58c-2566-43b5-9500-0aec80614837
+status: stable
+description: AttachUserPolicy attached the AdministratorAccess managed policy to an IAM user. Attackers create a user and make it an administrator to keep access that survives credential rotation.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098.003
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    api.operation: AttachUserPolicy
+    unmapped.request_parameters|contains: AdministratorAccess
+  condition: selection
+fields:
+  - actor.user.name
+  - unmapped.request_parameters
+falsepositives:
+  - Account bootstrap by an administrator; prefer role based access and treat each case as a finding.
+level: high

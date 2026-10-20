@@ -1,0 +1,24 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T19:00:00",
+  "Id": "aa00bb11-cc22-4d33-8e44-ff5566778899",
+  "Operation": "Remove-TransportRule",
+  "RecordType": 1,
+  "ResultStatus": "True",
+  "UserId": "it-admin@acme.example",
+  "Workload": "Exchange",
+  "ClientIP": "10.20.4.99",
+  "ObjectId": "Block external auto-forward",
+  "Parameters": [
+    {
+      "Name": "Identity",
+      "Value": "Block external auto-forward"
+    },
+    {
+      "Name": "Confirm",
+      "Value": "False"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+title: AWS CloudTrail logging or GuardDuty detection disabled
+id: 2f81a977-9772-4104-908c-2e681282f60e
+status: stable
+description: A CloudTrail trail was stopped, deleted or reconfigured (StopLogging, DeleteTrail, UpdateTrail, PutEventSelectors), or a GuardDuty detector was deleted or disabled. Attackers blind logging and threat detection before acting in an account.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.defense_evasion
+  - attack.t1562.008
+  - attack.t1562.001
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  cloudtrail_tamper:
+    api.service.name: cloudtrail.amazonaws.com
+    api.operation:
+      - StopLogging
+      - DeleteTrail
+      - UpdateTrail
+      - PutEventSelectors
+  guardduty_delete:
+    api.service.name: guardduty.amazonaws.com
+    api.operation: DeleteDetector
+  guardduty_disable:
+    - api.service.name: guardduty.amazonaws.com
+      api.operation: UpdateDetector
+      unmapped.request_parameters.enable: false
+    - api.service.name: guardduty.amazonaws.com
+      api.operation: UpdateDetector
+      unmapped.request_parameters|re: '"enable"\s*:\s*false'
+  condition: cloudtrail_tamper or 1 of guardduty_*
+fields:
+  - actor.user.name
+  - api.operation
+  - src_endpoint.ip
+falsepositives:
+  - Infrastructure as code pipelines that rebuild trails or detectors; confirm the principal is the deployment role.
+level: high

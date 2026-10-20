@@ -1,0 +1,31 @@
+title: Okta MFA fatigue against one user
+id: bf5f84fe-faf5-4459-b338-b5906d795bc2
+status: stable
+description: Five or more denied Okta Verify pushes or failed MFA authentications for one user within 10 minutes. Attackers holding a valid password flood the user with prompts until one is accepted.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.credential_access
+  - attack.t1621
+logsource:
+  product: okta
+detection:
+  selection_deny_push:
+    api.operation: user.mfa.okta_verify.deny_push
+  selection_failed_mfa:
+    class_uid: 3002
+    status_id: 2
+    is_mfa: true
+  condition: 1 of selection_*
+timeframe: 10m
+vendetta:
+  threshold:
+    count: 5
+    group_by:
+      - user.name
+fields:
+  - user.name
+  - src_endpoint.ip
+falsepositives:
+  - A user with a broken authenticator app retrying repeatedly.
+level: high

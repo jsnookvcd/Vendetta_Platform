@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Sigma rules{% endblock %}
+{% block body %}
+<p class="page-intro">Detection rules are Sigma, written against OCSF fields, readable by any analyst and by the client. Every edit is versioned and attributed. An admin can dry-run a change over stored events before saving it.</p>
+{% if ident and ident.is_admin %}<p><a class="btn" href="/rules/new">New rule</a></p>{% endif %}
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Rule</th><th>Level</th><th>Logsource</th><th>Correlation</th><th>ATT&amp;CK</th><th class="num">Hits</th><th>Ver</th></tr></thead><tbody>
+{% for r in rows %}{% set c = parsed.get(r.id) %}<tr class="{{ 'faded' if not r.enabled }}">
+  <td><a href="/rules/{{ r.id }}">{{ r.title }}</a><div class="faint mono" style="font-size:11px">{{ r.id }} · {{ r.origin }}{% if not r.enabled %} · disabled{% endif %}{% if not c %} · <span class="bad-txt">does not compile</span>{% endif %}</div></td>
+  <td>{{ sev(c.severity() if c else 'low') }}</td>
+  <td class="faint" style="font-size:12px">{% if c %}{% for k, v in c.logsource.items() %}{{ k }}={{ v }} {% endfor %}{% endif %}</td>
+  <td class="faint nowrap" style="font-size:12px">{% if c and c.threshold %}{{ c.threshold.count }} {{ 'distinct ' ~ c.threshold.distinct if c.threshold.distinct }} in {{ c.timeframe_seconds // 60 }}m{% else %}single event{% endif %}</td>
+  <td>{{ mitre(c.mitre if c else []) }}</td><td class="num">{{ r.hits_total }}</td><td class="num faint">v{{ r.version }}</td>
+</tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

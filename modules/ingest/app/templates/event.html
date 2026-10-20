@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Event{% endblock %}
+{% block body %}
+<p class="page-intro">{{ ev.title }} · {{ client.name if client else ev.tenant }} · {{ CLASS_NAMES.get(ev.class_uid, ev.class_uid) }} · {{ ev.time.isoformat() }}</p>
+<div class="panel pad" style="margin-bottom:14px"><dl class="kv">
+  <dt>Event id</dt><dd class="mono">{{ ev.id }}</dd>
+  <dt>Source</dt><dd>{{ ev.source }}</dd>
+  <dt>Received</dt><dd>{{ ev.received_at.isoformat() }}</dd>
+  <dt>Raw SHA-256</dt><dd class="mono" style="font-size:12px">{{ ev.raw_sha256 }}</dd>
+  <dt>Event SHA-256</dt><dd class="mono" style="font-size:12px">{{ ev.event_sha256 }}</dd>
+  <dt>Receipt</dt><dd>{% if batch %}<span class="ok-txt">sealed</span> in batch {{ batch.batch_seq }} of tenant {{ batch.tenant }}, leaf {{ ev.leaf_index }} of {{ batch.size }}, {{ ts(batch.sealed_at) }}
+     · <a href="/events/{{ ev.id }}/proof">download proof</a> · <a href="/verifier/receipts.py">verifier</a>{% else %}<span class="faint">waiting for the next seal</span>{% endif %}</dd>
+</dl></div>
+<div class="row" style="align-items:flex-start">
+  <div class="panel pad" style="flex:1;min-width:340px"><h3 class="muted" style="margin:0 0 8px;font-size:13px">Normalized (OCSF)</h3><pre class="body">{{ event_json }}</pre></div>
+  <div class="panel pad" style="flex:1;min-width:340px"><h3 class="muted" style="margin:0 0 8px;font-size:13px">Raw record as received</h3><pre class="body">{{ raw_json }}</pre></div>
+</div>
+{% endblock %}

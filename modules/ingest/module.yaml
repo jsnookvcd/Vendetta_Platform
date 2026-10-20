@@ -1,0 +1,78 @@
+# Vendetta Platform module descriptor. Status: built (service name ingest, host
+# ingest., port 9000). See /docs/ARCHITECTURE.md for the shared contracts.
+module:
+  name: ingest
+  display_name: Telemetry Ingest
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  service_lines: [managed-security, incident-response, litigation-support]
+  status: in-progress
+  enablement: MODULE_ENABLED
+  client_portal: per-client
+
+# The SOC's front door for data. Connectors read each client's own tools; every
+# record is normalized once to OCSF, stamped with the client's platform id, hashed
+# as received and after normalization, and sealed into a signed Merkle chain per
+# client. Sigma rules run over the normalized stream; detections are served to MDR.
+doors:
+  pull: [crowdstrike_alerts, sentinelone_threats, defender_alerts, huntress_incidents, entra_signins,
+         entra_audit, okta_system_log, m365_audit, google_workspace]
+  push: POST /api/ingest/{connector_id}   # Bearer <connector secret> or HMAC-SHA256 timestamped signature
+  bucket: SQS notifications for allowlisted buckets (cloudtrail, crowdstrike_fdr, guardduty)
+  syslog: Vector (deploy/vector.toml) to the push door (cef)
+schema: OCSF 1.3 (classes 1001, 1007, 2002, 2004, 3001, 3002, 3003, 3005, 3006, 4001, 4002, 4003, 4009, 6001, 6003)
+
+receipts:
+  scheme: vcd-telemetry-merkle-v1
+  tree: RFC 6962 (leaf = sha256(0x00 || raw_sha256 || event_sha256))
+  batch: per tenant, every SEAL_INTERVAL_SECONDS, at most SEAL_MAX_EVENTS events
+  signature: Ed25519 over the canonical header hash (EVIDENCE_SIGNING_KEY)
+  chain: each header carries the previous batch hash of the same tenant
+  anchor: daily signed document of every chain head, written to ANCHOR_BUCKET (Object Lock)
+  verifier: app/receipts.py, standalone (python receipts.py proof.json [raw.json])
+
+detection:
+  rules: Sigma (YAML), versioned, admin-edited, dry run over stored events before save
+  starter_rules: 20
+  vendor_detections: one per vendor finding id, updated in place on vendor update or close
+
+finding_model:
+  type: [sigma, alert]
+  severity: [low, medium, high, critical]
+  status: [new, reviewing, confirmed, false_positive, closed]
+  evidence: event ids with event_sha256 and a link to each event's signed proof
+  extra_fields: [rule, rule_title, kind, mitre, events, last_event_at, user, alert_refs]
+
+roles:
+  admin: full                      # connectors, credentials, rules
+  analyst: full                    # pull now, detections, escalation
+  viewer: read_only
+  client: own chain export, own event proofs
+
+api:
+  module_manifest: GET /api/module
+  findings: GET /api/findings
+  escalate: POST /api/findings/{id}/escalate
+  catalog: GET /api/catalog
+  connectors: GET /api/connectors
+  connector_run: POST /api/connectors/{id}/run
+  events: GET /api/events?platform_client_id=   # tenant required
+  proof: GET /api/events/{id}/proof
+  chain: GET /api/chain/{tenant}
+  chain_verify: GET /api/chain/{tenant}/verify
+  seal: POST /api/seal
+  stream_run: POST /api/stream/run
+  provision_sync: POST /api/provision/sync
+  deep_link: GET /clients/platform/{platform_client_id}
+
+deployment:
+  service_name: ingest
+  host_port: 9000
+  hostname: ingest                 # public: vendor pushes arrive here
+  signs_evidence: true
+  escalates_to_hub: true
+  read_by: [mdr]                   # MDR reads /api/findings with INGEST_TOKEN
+
+escalation:
+  enabled_when: PLATFORM_HUB_URL
+  workstream: "Scoping and Containment"

@@ -1,0 +1,25 @@
+title: Entra ID conditional access policy deleted or updated
+id: 1984f7a7-7c51-4b93-a73d-377a91cc2859
+status: stable
+description: A conditional access policy was deleted or modified. Weakening or removing conditional access disables MFA and location controls that stand between a stolen password and the tenant.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.defense_evasion
+  - attack.persistence
+  - attack.t1556.009
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection:
+    api.operation|startswith:
+      - Update conditional access policy
+      - Delete conditional access policy
+  condition: selection
+fields:
+  - actor.user.name
+  - resources.name
+falsepositives:
+  - Planned policy changes by identity administrators.
+level: high

@@ -1,0 +1,5 @@
+{
+  "message": "<14>Oct 18 14:22:05 PA-FW01 CEF:0|Palo Alto Networks|PAN-OS|10.2|end|TRAFFIC|3|src=10.0.0.1 dst=10.0.0.2",
+  "peer": "10.20.0.1",
+  "timestamp": "2026-10-18T14:22:05.655077622Z"
+}

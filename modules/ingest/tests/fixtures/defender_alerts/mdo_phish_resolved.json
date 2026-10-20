@@ -1,0 +1,39 @@
+{
+  "id": "fa1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809",
+  "providerAlertId": "1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809",
+  "incidentId": "28290",
+  "status": "resolved",
+  "severity": "medium",
+  "classification": "truePositive",
+  "determination": "phishing",
+  "serviceSource": "microsoftDefenderForOffice365",
+  "detectionSource": "microsoftDefenderForOffice365",
+  "title": "Email messages containing malicious URL removed after delivery",
+  "description": "Emails with a malicious URL were delivered and later removed by zero-hour auto purge.",
+  "category": "InitialAccess",
+  "mitreTechniques": [
+    "T1566.002"
+  ],
+  "createdDateTime": "2026-10-18T07:40:00.0000000Z",
+  "lastUpdateDateTime": "2026-10-18T09:12:44.1000000Z",
+  "resolvedDateTime": "2026-10-18T09:12:44.1000000Z",
+  "evidence": [
+    {
+      "@odata.type": "#microsoft.graph.security.mailboxEvidence",
+      "primaryAddress": "ap@acme.example",
+      "displayName": "Accounts Payable"
+    },
+    {
+      "@odata.type": "#microsoft.graph.security.userEvidence",
+      "userAccount": {
+        "accountName": "ap",
+        "userPrincipalName": "ap@acme.example",
+        "azureAdUserId": "0c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f"
+      }
+    },
+    {
+      "@odata.type": "#microsoft.graph.security.urlEvidence",
+      "url": "https://login-acme-example.badexample.net/o365"
+    }
+  ]
+}

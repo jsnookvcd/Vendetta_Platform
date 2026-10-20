@@ -1,0 +1,39 @@
+{
+  "id": "2041100000000000777",
+  "threatInfo": {
+    "threatId": "2041100000000000777",
+    "threatName": "AnyDeskPortable.exe",
+    "classification": "PUA",
+    "confidenceLevel": "suspicious",
+    "analystVerdict": "suspicious",
+    "incidentStatus": "resolved",
+    "mitigationStatus": "mitigated",
+    "detectionType": "static",
+    "engines": [
+      "SentinelOne Cloud"
+    ],
+    "createdAt": "2026-10-17T08:15:00.000000Z",
+    "updatedAt": "2026-10-17T10:40:12.500000Z",
+    "filePath": "\\Device\\HarddiskVolume3\\Users\\kpatel\\Downloads\\AnyDeskPortable.exe",
+    "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+    "processUser": "ACME\\kpatel"
+  },
+  "agentRealtimeInfo": {
+    "agentId": "1987654321098765000",
+    "agentComputerName": "ACME-WS101",
+    "agentOsName": "Windows 10 Enterprise",
+    "siteName": "Acme Corp"
+  },
+  "agentDetectionInfo": {
+    "agentIpV4": "10.30.5.101",
+    "agentMitigationMode": "protect"
+  },
+  "indicators": [],
+  "mitigationStatus": [
+    {
+      "action": "quarantine",
+      "status": "success",
+      "mitigationEndedAt": "2026-10-17T08:15:03.000000Z"
+    }
+  ]
+}

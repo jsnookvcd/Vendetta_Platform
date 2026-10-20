@@ -1,0 +1,22 @@
+title: Okta administrator privilege granted
+id: 21a85839-a62c-449b-9090-e850000fdcc0
+status: stable
+description: An Okta user was granted an administrator role (user.account.privilege.grant). Attackers in the Okta admin console grant admin roles to accounts they control.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098.003
+logsource:
+  product: okta
+detection:
+  selection:
+    api.operation: user.account.privilege.grant
+  condition: selection
+fields:
+  - actor.user.name
+  - user.name
+falsepositives:
+  - Planned administrator onboarding.
+level: high

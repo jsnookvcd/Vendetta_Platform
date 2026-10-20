@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Detection{% endblock %}
+{% block body %}
+<p class="page-intro">{{ d.title }}</p>
+<div class="panel pad" style="margin-bottom:14px"><dl class="kv">
+  <dt>Client</dt><dd>{% if client %}<a href="/clients/{{ client.id }}">{{ client.name }}</a>{% endif %}</dd>
+  <dt>Severity</dt><dd>{{ sev(d.severity) }}</dd>
+  <dt>Status</dt><dd>{{ dstatus(d.status) }}{% if d.escalated_case %} · IR case {{ d.escalated_case }}{% endif %}</dd>
+  <dt>Kind</dt><dd>{{ d.kind }}{% if rule %} · <a href="/rules/{{ rule.id }}">{{ rule.title }}</a>{% endif %} · {{ d.source }}</dd>
+  <dt>ATT&amp;CK</dt><dd>{{ mitre(d.mitre) or 'none' }}</dd>
+  <dt>Host / user</dt><dd>{{ d.host or '-' }} / {{ d.user or '-' }}</dd>
+  <dt>Window</dt><dd>{{ d.first_event_at.isoformat() }} to {{ d.last_event_at.isoformat() }} · {{ d.count }} events</dd>
+  {% if d.note %}<dt>Notes</dt><dd><pre class="body" style="max-height:200px">{{ d.note }}</pre></dd>{% endif %}
+</dl></div>
+<div class="row" style="margin-bottom:14px">
+  <form method="post" action="/detections/{{ d.id }}/status" class="row">
+    <select name="status">{% for s in FINDING_STATUSES %}<option {{ 'selected' if d.status==s }}>{{ s }}</option>{% endfor %}</select>
+    <input name="note" placeholder="note" style="min-width:260px"><button class="btn">Update</button></form>
+  <form method="post" action="/detections/{{ d.id }}/escalate"><button class="btn btn-primary">Escalate to IR</button></form>
+</div>
+<div class="section-head"><h2>Evidence</h2><span class="count">{{ evs|length }} events{% if missing %}, {{ missing }} aged out of the hot store{% endif %}</span></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Time</th><th>What</th><th>Host</th><th>User</th><th>Event SHA-256</th><th>Proof</th></tr></thead><tbody>
+{% for e in evs %}<tr><td class="nowrap faint">{{ e.time.strftime('%b %d %H:%M:%S') }}</td><td><a href="/events/{{ e.id }}">{{ e.title }}</a></td><td>{{ e.host }}</td><td>{{ e.user }}</td>
+<td class="mono faint" style="font-size:11px">{{ e.event_sha256[:16] }}…</td>
+<td>{% if e.batch_id %}<a href="/events/{{ e.id }}/proof">download</a>{% else %}<span class="faint">pending seal</span>{% endif %}</td></tr>
+{% endfor %}</tbody></table></div></div>
+{% endblock %}

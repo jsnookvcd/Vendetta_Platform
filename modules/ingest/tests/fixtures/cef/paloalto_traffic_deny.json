@@ -1,0 +1,5 @@
+{
+  "message": "<14>Oct 18 14:22:05 PA-FW01 CEF:0|Palo Alto Networks|PAN-OS|10.2.4|end|TRAFFIC|3|rt=Oct 18 2026 14:22:05 GMT deviceExternalId=013201004321 src=10.20.4.42 dst=203.0.113.77 sourceTranslatedAddress=198.51.100.23 spt=50122 dpt=4444 proto=TCP act=deny-drop suser=corp\\\\jdoe app=unknown-tcp cs1Label=Rule cs1=block-outbound-high-ports cs2Label=Source Zone cs2=trust in=0 out=74 cat=end",
+  "host": "PA-FW01",
+  "timestamp": "2026-10-18T14:22:05.120Z"
+}

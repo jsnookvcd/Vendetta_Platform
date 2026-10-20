@@ -1,0 +1,80 @@
+{
+  "uuid": "1f9a2b3c-8d4e-11f1-9c2b-31a5e7f0a002",
+  "published": "2026-10-18T13:00:58.002Z",
+  "eventType": "user.session.start",
+  "version": "0",
+  "severity": "WARN",
+  "legacyEventType": null,
+  "displayMessage": "User login to Okta",
+  "actor": {
+    "id": "unknown",
+    "type": "User",
+    "alternateId": "mlee@acme.example",
+    "displayName": "unknown",
+    "detailEntry": null
+  },
+  "client": {
+    "userAgent": {
+      "rawUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36",
+      "os": "Windows 10",
+      "browser": "CHROME"
+    },
+    "zone": "null",
+    "device": "Computer",
+    "id": null,
+    "ipAddress": "203.0.113.200",
+    "geographicalContext": {
+      "city": "Harrisburg",
+      "state": "Pennsylvania",
+      "country": "United States",
+      "postalCode": "17101",
+      "geolocation": {
+        "lat": 40.2732,
+        "lon": -76.8867
+      }
+    }
+  },
+  "device": null,
+  "authenticationContext": {
+    "authenticationProvider": null,
+    "credentialProvider": null,
+    "credentialType": null,
+    "issuer": null,
+    "interface": null,
+    "authenticationStep": 0,
+    "externalSessionId": "102Xb7cN1TQSmeCoYk9_2yZqQ"
+  },
+  "outcome": {
+    "result": "FAILURE",
+    "reason": "INVALID_CREDENTIALS"
+  },
+  "securityContext": {
+    "asNumber": 7922,
+    "asOrg": "comcast",
+    "isp": "comcast cable communications llc",
+    "domain": "comcast.net",
+    "isProxy": false
+  },
+  "debugContext": {
+    "debugData": {
+      "requestId": "Zx1aBcDeFgHiJkLmNoPq",
+      "requestUri": "/api/v1/authn",
+      "url": "/api/v1/authn?"
+    }
+  },
+  "transaction": {
+    "type": "WEB",
+    "id": "Zx1aBcDeFgHiJkLmNoPq",
+    "detail": {}
+  },
+  "target": null,
+  "request": {
+    "ipChain": [
+      {
+        "ip": "203.0.113.200",
+        "version": "V4",
+        "source": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+title: AWS security group ingress opened to the internet
+id: 94261e43-c5ae-4f27-880b-086347b26c20
+status: stable
+description: AuthorizeSecurityGroupIngress added a rule allowing traffic from 0.0.0.0/0 or ::/0. Opening management ports to the whole internet exposes instances to scanning and brute force.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.defense_evasion
+  - attack.t1562.007
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    api.operation: AuthorizeSecurityGroupIngress
+    unmapped.request_parameters|contains:
+      - 0.0.0.0/0
+      - '::/0'
+  condition: selection
+fields:
+  - actor.user.name
+  - unmapped.request_parameters
+falsepositives:
+  - Public web load balancers that intentionally accept 80 and 443 from anywhere.
+level: medium

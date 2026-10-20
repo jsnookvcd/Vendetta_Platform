@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" type="image/png" href="/static/logo.png">
+</head>
+<body>
+{% macro icon(name) %}
+<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+{% if name=='grid' %}<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+{% elif name=='search' %}<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+{% elif name=='rules' %}<path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/>
+{% elif name=='mute' %}<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M23 9l-6 6M17 9l6 6"/>
+{% elif name=='target' %}<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>
+{% elif name=='plug' %}<path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0V8zM12 18v4"/>
+{% elif name=='list' %}<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+{% elif name=='lock' %}<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+{% elif name=='shield' %}<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+{% elif name=='clients' %}<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>
+{% elif name=='settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+{% endif %}
+</svg>
+{% endmacro %}
+{% macro flash() %}{% if msg %}<div class="flash ok">{{ msg }}</div>{% endif %}{% if err %}<div class="flash bad">{{ err }}</div>{% endif %}{% endmacro %}
+{% macro sev(s) %}<span class="sev sev-{{ s }}">{{ s }}</span>{% endmacro %}
+{% macro dstatus(s) %}<span class="state state-{{ s }}">{{ s.replace('_', ' ') }}</span>{% endmacro %}
+{% macro mitre(ids) %}{% for t in ids %}<span class="tchip">{{ t }}</span> {% endfor %}{% endmacro %}
+{% macro ok(v) %}<span class="dot {{ 'ok' if v else 'bad' }}"></span>{% endmacro %}
+{% macro ts(v) %}{{ v.strftime('%b %d %H:%M') if v else '' }}{% endmacro %}
+{% set p = request.url.path if request else '/' %}
+{% if portal or user %}
+<div class="app{{ ' portal' if portal }}">
+  <aside class="rail">
+    {% if portal %}
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Vendetta<span>Telemetry</span></div></div>
+    <nav class="nav">
+      <a href="/portal" class="{{ 'active' if p.startswith('/portal') }}">{{ icon('lock') }} Proven telemetry</a>
+    </nav>
+    <div class="foot"><div class="who">{{ client.name if client else user }}</div><a href="/logout" class="faint">Sign out</a></div>
+    {% else %}
+    <div class="brand"><img class="logo" src="/static/logo.png" alt="Vendetta"><div class="name">Telemetry<span>Ingest</span></div></div>
+    <nav class="nav">
+      <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} Overview</a>
+      <a href="/detections" class="{{ 'active' if p.startswith('/detections') }}">{{ icon('target') }} Detections</a>
+      <a href="/events" class="{{ 'active' if p.startswith('/events') }}">{{ icon('search') }} Events</a>
+      <a href="/connectors" class="{{ 'active' if p.startswith('/connectors') }}">{{ icon('plug') }} Connectors</a>
+      <a href="/rules" class="{{ 'active' if p.startswith('/rules') }}">{{ icon('rules') }} Sigma rules</a>
+      <a href="/receipts" class="{{ 'active' if p.startswith('/receipts') }}">{{ icon('lock') }} Receipts</a>
+      <a href="/clients" class="{{ 'active' if p.startswith('/client') }}">{{ icon('clients') }} Clients</a>
+      <div class="sep"></div>
+      <a href="/settings" class="{{ 'active' if p=='/settings' }}">{{ icon('settings') }} Settings</a>
+      <a href="/settings/sso" class="{{ 'active' if p.startswith('/settings/sso') }}">{{ icon('settings') }} SSO</a>
+    </nav>
+    <div class="foot"><div class="who">{{ user }}{% if ident and ident.is_viewer %} <span class="chip">viewer</span>{% endif %}</div><a href="/logout" class="faint">Sign out</a></div>
+    {% endif %}
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{{ self.title() }}{% endblock %}</h1>
+      <span class="spacer"></span>
+      {% if portal %}
+        {% if exec_view %}<span class="chip">Executive view</span>{% endif %}
+      {% elif shell %}
+      <div class="status-strip">
+        <span class="stat"><b>{{ '{:,}'.format(shell.events_24h) }}</b> events 24h</span>
+        <span class="stat"><b>{{ shell.open }}</b> open detections</span>
+        <span class="stat"><span class="dot {{ 'bad' if shell.failing else 'ok' }}"></span><b>{{ shell.failing }}</b> connectors failing</span>
+        <span class="stat"><span class="dot {{ 'ok' if shell.stream.last_ok else ('bad' if shell.stream.last_ok == False else 'warn') }}"></span>detection {{ 'ok' if shell.stream.last_ok else ('failing' if shell.stream.last_ok == False else 'not run') }}</span>
+      </div>
+      {% endif %}
+    </header>
+    <div class="content">{{ flash() }}{% block body %}{% endblock %}</div>
+  </div>
+</div>
+{% else %}
+{% block anon %}{% endblock %}
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,24 @@
+title: Okta MFA factor reset or deactivated
+id: 33524a0d-6c6a-42db-a3bf-d0157aed3011
+status: stable
+description: An Okta user's MFA factor was deactivated or all factors were reset. Social engineering of the help desk to reset MFA is a common route to account takeover.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.defense_evasion
+  - attack.t1556.006
+logsource:
+  product: okta
+detection:
+  selection:
+    api.operation:
+      - user.mfa.factor.deactivate
+      - user.mfa.factor.reset_all
+  condition: selection
+fields:
+  - actor.user.name
+  - user.name
+falsepositives:
+  - Help desk resets after a verified identity check for a lost device.
+level: medium

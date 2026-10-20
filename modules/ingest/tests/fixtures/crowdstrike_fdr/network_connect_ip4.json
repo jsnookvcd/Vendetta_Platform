@@ -1,0 +1,16 @@
+{
+  "event_simpleName": "NetworkConnectIP4",
+  "id": "d8c3f2e4-3d4e-11f1-8a9b-0a1b2c3d4e5f",
+  "timestamp": "1792333331117",
+  "aid": "4d2e9c1b7a5f4e3d8c6b2a1f0e9d8c7b",
+  "cid": "8f1c2a7e4b6d4e1f9a0b3c5d7e9f1a2b",
+  "event_platform": "Win",
+  "ComputerName": "ACME-WS042",
+  "LocalAddressIP4": "10.20.4.42",
+  "LocalPort": "50122",
+  "RemoteAddressIP4": "203.0.113.77",
+  "RemotePort": "443",
+  "Protocol": "6",
+  "ConnectionDirection": "0",
+  "ContextProcessId": "51539607999"
+}

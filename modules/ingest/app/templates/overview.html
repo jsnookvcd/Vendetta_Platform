@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% block title %}Overview{% endblock %}
+{% block body %}
+<p class="page-intro">Every record from every client tool lands here once, normalized to OCSF, stamped with its client, and sealed into a signed Merkle chain. Detections run over the normalized stream and feed MDR.</p>
+<div class="tiles">
+  <div class="tile"><div class="n">{{ '{:,}'.format(total24) }}</div><div class="l">events in the last 24 hours</div></div>
+  <div class="tile {{ 'alert' if dets }}"><div class="n">{{ dets|length }}</div><div class="l">open detections (latest 25)</div></div>
+  <div class="tile"><div class="n">{{ health|length }}</div><div class="l">enabled connectors</div></div>
+  <div class="tile {{ 'alert' if health|selectattr('error')|list }}"><div class="n">{{ health|selectattr('error')|list|length }}</div><div class="l">connectors failing</div></div>
+  <div class="tile"><div class="n">{{ '{:,}'.format(batches) }}</div><div class="l">sealed batches · {{ '{:,}'.format(unsealed) }} events waiting</div></div>
+  <div class="tile"><div class="n">{{ ts(last_anchor.created_at) if last_anchor else 'none' }}</div><div class="l">last daily anchor</div></div>
+</div>
+
+<div class="section-head"><h2>Open detections</h2><span class="grow"></span>
+  <form method="post" action="/stream/run"><button class="btn btn-sm">Run detection now</button></form></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Detection</th><th>Client</th><th>Severity</th><th>Kind</th><th>Events</th><th>Last seen</th></tr></thead><tbody>
+{% for d in dets %}<tr>
+  <td><a href="/detections/{{ d.id }}">{{ d.title }}</a></td>
+  <td>{{ clients[d.client_id].name if d.client_id in clients else d.tenant }}</td>
+  <td>{{ sev(d.severity) }}</td><td><span class="chip">{{ d.kind }}</span></td>
+  <td class="num">{{ d.count }}</td><td class="nowrap faint">{{ ts(d.last_event_at) }}</td>
+</tr>{% else %}<tr><td colspan="6" class="empty">No open detections.</td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-head"><h2>Connector health</h2><span class="grow"></span><a href="/connectors" class="faint">all connectors</a></div>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Connector</th><th>Client</th><th>Last success</th><th>Newest event</th><th>State</th></tr></thead><tbody>
+{% for h in health %}<tr>
+  <td><a href="/connectors/{{ h.id }}">{{ h.source }}</a></td>
+  <td>{{ clients[h.client_id].name if h.client_id in clients else '' }}</td>
+  <td class="faint nowrap">{{ h.last_ok_at or 'never' }}</td><td class="faint nowrap">{{ h.newest_event_at or 'none yet' }}</td>
+  <td>{% if h.error %}<span class="bad-txt">{{ h.error }}</span>{% elif h.stale %}<span class="state state-reviewing">stale</span>{% else %}<span class="ok-txt">healthy</span>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="5" class="empty">No connectors yet. <a href="/connectors">Add one.</a></td></tr>{% endfor %}
+</tbody></table></div></div>
+
+<div class="section-head"><h2>Last 24 hours by client and class</h2></div>
+<div class="row" style="align-items:flex-start">
+<div class="panel" style="flex:1;min-width:280px"><div class="table-wrap"><table><thead><tr><th>Client</th><th class="num">Events</th></tr></thead><tbody>
+{% for cid, n in by_client.items() %}<tr><td>{{ clients[cid].name if cid in clients else cid }}</td><td class="num">{{ '{:,}'.format(n) }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing received.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="panel" style="flex:1;min-width:280px"><div class="table-wrap"><table><thead><tr><th>OCSF class</th><th class="num">Events</th></tr></thead><tbody>
+{% for uid, n in by_class %}<tr><td>{{ CLASS_NAMES.get(uid, uid) }} <span class="faint">{{ uid }}</span></td><td class="num">{{ '{:,}'.format(n) }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing received.</td></tr>{% endfor %}
+</tbody></table></div></div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T17:00:00",
+  "Id": "8d6f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a62",
+  "Operation": "Add-MailboxPermission",
+  "RecordType": 1,
+  "ResultStatus": "True",
+  "UserKey": "NT AUTHORITY\\SYSTEM (Microsoft.Exchange.ServiceHost)",
+  "UserId": "it-admin@acme.example",
+  "Workload": "Exchange",
+  "ClientIP": "10.20.4.99",
+  "ObjectId": "ceo@acme.example",
+  "Parameters": [
+    {
+      "Name": "Identity",
+      "Value": "ceo@acme.example"
+    },
+    {
+      "Name": "User",
+      "Value": "mlee@acme.example"
+    },
+    {
+      "Name": "AccessRights",
+      "Value": "FullAccess"
+    },
+    {
+      "Name": "InheritanceType",
+      "Value": "All"
+    }
+  ]
+}

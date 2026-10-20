@@ -1,0 +1,44 @@
+{
+  "kind": "admin#reports#activity",
+  "id": {
+    "time": "2026-10-18T15:30:00.000Z",
+    "uniqueQualifier": "5566778899",
+    "applicationName": "token",
+    "customerId": "C03az79cb"
+  },
+  "etag": "\"JDMC8884sebSctZ17CIssbQ/6dPkh2h6BWKDFumBp9Vk3c1rqT0\"",
+  "actor": {
+    "email": "mlee@acme.example",
+    "profileId": "114522700230943134567",
+    "callerType": "USER"
+  },
+  "ipAddress": "198.51.100.61",
+  "events": [
+    {
+      "type": "auth",
+      "name": "authorize",
+      "parameters": [
+        {
+          "name": "client_id",
+          "value": "1234567890-abcdefg.apps.googleusercontent.com"
+        },
+        {
+          "name": "app_name",
+          "value": "Mail Organizer Pro"
+        },
+        {
+          "name": "client_type",
+          "value": "WEB"
+        },
+        {
+          "name": "scope",
+          "multiValue": [
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+title: LSASS memory dump via comsvcs MiniDump or ProcDump
+id: 3a3d2d9c-58c9-4034-b99c-49edbcb05ab4
+status: stable
+description: A command line dumped LSASS process memory with rundll32 comsvcs.dll MiniDump or with ProcDump -ma lsass. The dump holds credentials and Kerberos tickets for every user logged on to the host.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.credential_access
+  - attack.t1003.001
+logsource:
+  category: process_creation
+detection:
+  comsvcs:
+    process.cmd_line|contains|all:
+      - comsvcs
+      - minidump
+  procdump:
+    process.cmd_line|windash|contains|all:
+      - ' -ma '
+      - lsass
+  condition: comsvcs or procdump
+fields:
+  - device.hostname
+  - actor.user.name
+  - process.cmd_line
+falsepositives:
+  - Support engineers capturing LSASS dumps for a Microsoft case; these should still be reviewed.
+level: critical

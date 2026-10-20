@@ -1,0 +1,42 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T16:20:31",
+  "Id": "8d6f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b",
+  "Operation": "New-InboxRule",
+  "RecordType": 1,
+  "ResultStatus": "True",
+  "UserKey": "10032001A2B3C4D5",
+  "UserId": "ap@acme.example",
+  "Workload": "Exchange",
+  "ClientIP": "203.0.113.200:51234",
+  "ObjectId": "ap@acme.example\\Invoices",
+  "ExternalAccess": false,
+  "Parameters": [
+    {
+      "Name": "Mailbox",
+      "Value": "ap@acme.example"
+    },
+    {
+      "Name": "Name",
+      "Value": "Invoices"
+    },
+    {
+      "Name": "From",
+      "Value": "billing@vendor.example"
+    },
+    {
+      "Name": "ForwardTo",
+      "Value": "ap.archive@freemail.example"
+    },
+    {
+      "Name": "MarkAsRead",
+      "Value": "True"
+    },
+    {
+      "Name": "StopProcessingRules",
+      "Value": "True"
+    }
+  ]
+}

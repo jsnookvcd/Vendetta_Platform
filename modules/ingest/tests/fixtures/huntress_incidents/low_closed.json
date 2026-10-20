@@ -1,0 +1,21 @@
+{
+  "id": 1843990,
+  "organization_id": 55012,
+  "agent_id": 7781300,
+  "status": "closed",
+  "severity": "low",
+  "platform": "darwin",
+  "subject": "LOW - Incident on ACME-MBP-07 (Acme Corp)",
+  "summary": "Adware persistence via a LaunchAgent was found and remediated.",
+  "indicator_types": [
+    "footholds"
+  ],
+  "indicator_counts": {
+    "footholds": 1
+  },
+  "remediations": [],
+  "sent_at": "2026-10-16T19:00:00Z",
+  "status_updated_at": "2026-10-17T15:30:00Z",
+  "updated_at": "2026-10-17T15:30:00Z",
+  "closed_at": "2026-10-17T15:30:00Z"
+}

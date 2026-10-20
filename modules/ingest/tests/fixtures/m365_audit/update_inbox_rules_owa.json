@@ -1,0 +1,31 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T16:25:02",
+  "Id": "8d6f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a60",
+  "Operation": "UpdateInboxRules",
+  "RecordType": 2,
+  "ResultStatus": "Succeeded",
+  "UserKey": "10032001A2B3C4D5",
+  "UserId": "ap@acme.example",
+  "Workload": "Exchange",
+  "ClientIP": "[2001:db8:41::17]:443",
+  "ClientIPAddress": "2001:db8:41::17",
+  "ClientInfoString": "Client=OWA;Action=ViaProxy",
+  "ObjectId": "ap@acme.example",
+  "OperationProperties": [
+    {
+      "Name": "RuleName",
+      "Value": "."
+    },
+    {
+      "Name": "RuleActions",
+      "Value": "[{\"ActionType\":\"MoveToFolder\",\"Folder\":\"RSS Feeds\"},{\"ActionType\":\"Delete\"}]"
+    },
+    {
+      "Name": "RuleOperation",
+      "Value": "AddMailboxRule"
+    }
+  ]
+}

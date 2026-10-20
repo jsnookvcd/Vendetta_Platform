@@ -1,0 +1,29 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T16:40:00",
+  "Id": "8d6f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a61",
+  "Operation": "Set-Mailbox",
+  "RecordType": 1,
+  "ResultStatus": "True",
+  "UserKey": "10032001A2B3C4D5",
+  "UserId": "ap@acme.example",
+  "Workload": "Exchange",
+  "ClientIP": "203.0.113.200",
+  "ObjectId": "ap@acme.example",
+  "Parameters": [
+    {
+      "Name": "Identity",
+      "Value": "ap@acme.example"
+    },
+    {
+      "Name": "ForwardingSmtpAddress",
+      "Value": "smtp:ap.archive@freemail.example"
+    },
+    {
+      "Name": "DeliverToMailboxAndForward",
+      "Value": "False"
+    }
+  ]
+}

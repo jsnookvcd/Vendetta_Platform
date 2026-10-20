@@ -1,0 +1,22 @@
+title: M365 mailbox permission granted
+id: 9d3fa433-b93c-4fd2-9955-4388c18e23d3
+status: stable
+description: Add-MailboxPermission granted a user or application access to another mailbox. Attackers grant FullAccess on executive or finance mailboxes to read mail from an account they control.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.t1098.002
+logsource:
+  product: m365
+  service: exchange
+detection:
+  selection:
+    api.operation: Add-MailboxPermission
+  condition: selection
+fields:
+  - actor.user.name
+  - unmapped.parameters
+falsepositives:
+  - Delegate access set up for assistants and shared mailboxes.
+level: medium

@@ -1,0 +1,37 @@
+title: Entra ID privileged role assigned
+id: 7fe347ef-90af-4f49-91e7-772e5635ae13
+status: stable
+description: A user or service principal was added to a highly privileged Entra ID directory role (Global Administrator, Privileged Role Administrator, Security Administrator or Exchange Administrator). Attackers who reach an admin session grant themselves or a backdoor account one of these roles to keep control of the tenant.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098.003
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection:
+    class_uid: 3005
+    activity_id: 1
+  privileged_role:
+    privileges:
+      - Global Administrator
+      - Company Administrator
+      - Privileged Role Administrator
+      - Security Administrator
+      - Exchange Administrator
+      - 62e90394-69f5-4237-9190-012177145e10
+      - e8611ab8-c189-46e8-94e1-60213ab1f814
+      - 194ae4cb-b126-40b2-bd5b-6091b380977d
+      - 29232cdf-9323-42fd-ade2-1d097af3e4de
+  condition: selection and privileged_role
+fields:
+  - actor.user.name
+  - user.name
+  - privileges
+falsepositives:
+  - Planned role assignments by identity administrators; confirm against a change ticket.
+  - Privileged Identity Management activations if PIM writes them as role additions.
+level: high

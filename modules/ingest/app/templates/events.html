@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Events{% endblock %}
+{% block body %}
+<form class="row" method="get" action="/events" style="margin-bottom:14px">
+  <label>Client<br><select name="tenant"><option value="">all</option>{% for c in clients %}<option value="{{ c.platform_client_id }}" {{ 'selected' if f.tenant==c.platform_client_id }}>{{ c.name }}</option>{% endfor %}</select></label>
+  <label>Source<br><select name="source"><option value="">all</option>{% for m in catalog %}<option value="{{ m.key }}" {{ 'selected' if f.source==m.key }}>{{ m.name }}</option>{% endfor %}</select></label>
+  <label>Class<br><select name="class_uid"><option value="0">all</option>{% for uid, name in CLASS_NAMES.items() %}<option value="{{ uid }}" {{ 'selected' if f.class_uid==uid }}>{{ name }}</option>{% endfor %}</select></label>
+  <label>Search<br><input name="q" value="{{ f.q }}" placeholder="host, user, IP or title"></label>
+  <label>Hours<br><input name="hours" type="number" min="1" max="2160" value="{{ f.hours }}" style="width:80px"></label>
+  <button class="btn">Search</button>
+</form>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Time</th><th>Client</th><th>Class</th><th>What</th><th>Host</th><th>User</th><th>Source IP</th><th>Seal</th></tr></thead><tbody>
+{% for e in rows %}<tr>
+  <td class="nowrap faint">{{ e.time.strftime('%b %d %H:%M:%S') }}</td><td>{{ names.get(e.tenant, e.tenant) }}</td>
+  <td class="nowrap" style="font-size:12px">{{ CLASS_NAMES.get(e.class_uid, e.class_uid) }}</td>
+  <td class="trunc" style="max-width:420px"><a href="/events/{{ e.id }}">{{ e.title or '(untitled)' }}</a></td>
+  <td>{{ e.host }}</td><td>{{ e.user }}</td><td class="mono" style="font-size:12px">{{ e.src_ip }}</td>
+  <td>{% if e.batch_id %}<span class="ok-txt" title="sealed">sealed</span>{% else %}<span class="faint">pending</span>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="8" class="empty">No events match.</td></tr>{% endfor %}
+</tbody></table></div></div>
+<p class="faint" style="margin-top:8px">Showing at most 200 events. The hot store keeps recent events; older ones are in the lake and the raw archive.</p>
+{% endblock %}

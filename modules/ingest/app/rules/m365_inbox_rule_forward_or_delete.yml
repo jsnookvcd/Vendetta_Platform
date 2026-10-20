@@ -1,0 +1,33 @@
+title: M365 inbox rule forwards, redirects or deletes mail
+id: 78bd353a-ed9b-4b51-8eb4-7db30007bf81
+status: stable
+description: An inbox rule was created or changed that forwards, redirects or deletes messages. Business email compromise actors use these rules to exfiltrate mail and hide replies from the victim.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.collection
+  - attack.defense_evasion
+  - attack.t1114.003
+  - attack.t1564.008
+logsource:
+  product: m365
+  service: exchange
+detection:
+  operation:
+    api.operation:
+      - New-InboxRule
+      - Set-InboxRule
+      - UpdateInboxRules
+  action:
+    unmapped.parameters|contains:
+      - ForwardTo
+      - ForwardAsAttachmentTo
+      - RedirectTo
+      - DeleteMessage
+  condition: operation and action
+fields:
+  - actor.user.name
+  - unmapped.parameters
+falsepositives:
+  - Users who forward mail to a personal assistant or delete newsletters with a rule.
+level: high

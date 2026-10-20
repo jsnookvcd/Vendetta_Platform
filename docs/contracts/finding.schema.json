@@ -29,6 +29,7 @@
         "vulnerability-management",
         "penetration-testing",
         "mdr",
+        "ingest",
         "network-operations"
       ]
     },

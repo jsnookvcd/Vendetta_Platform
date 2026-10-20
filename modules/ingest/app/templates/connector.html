@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
+{% block body %}
+<p class="page-intro">{{ mapper.name if mapper else c.source }} for <a href="/clients/{{ client.id }}">{{ client.name }}</a> · tenant <span class="mono">{{ client.platform_client_id }}</span></p>
+{% if secret %}<div class="flash ok">Push secret (shown once): <span class="mono" style="word-break:break-all">{{ secret }}</span></div>{% endif %}
+<div class="tiles">
+  <div class="tile"><div class="n">{{ '{:,}'.format(c.events_total or 0) }}</div><div class="l">events stored</div></div>
+  <div class="tile {{ 'alert' if c.rejected_total }}"><div class="n">{{ '{:,}'.format(c.rejected_total or 0) }}</div><div class="l">records rejected</div></div>
+  <div class="tile"><div class="n">{{ ts(c.last_ok_at) or 'never' }}</div><div class="l">last success</div></div>
+  <div class="tile"><div class="n">{{ ts(c.newest_event_at) or 'none' }}</div><div class="l">newest event</div></div>
+</div>
+{% if c.last_error %}<div class="flash bad">Last run: {{ c.last_error }}</div>{% endif %}
+<div class="row" style="margin-bottom:14px">
+  {% if can_pull %}<form method="post" action="/connectors/{{ c.id }}/run"><button class="btn">Pull now</button></form>{% endif %}
+  {% if ident and ident.is_admin %}
+  <form method="post" action="/connectors/{{ c.id }}/toggle"><button class="btn">{{ 'Pause' if c.enabled else 'Enable' }}</button></form>
+  <form method="post" action="/connectors/{{ c.id }}/rotate"><button class="btn">Issue a new push secret</button></form>
+  {% endif %}
+</div>
+
+<div class="section-head"><h2>Delivery</h2></div>
+<div class="panel pad"><dl class="kv">
+  <dt>Push URL</dt><dd class="mono" style="word-break:break-all">{{ push_url }}</dd>
+  <dt>Push auth</dt><dd>Bearer &lt;push secret&gt;, or HMAC-SHA256 headers (see Settings) · secret {{ 'set' if red.has_webhook_secret else 'missing' }}</dd>
+  <dt>Pull</dt><dd>{{ 'API polling every ' ~ (c.interval_seconds or 'default') ~ ' seconds' if can_pull else 'not available for this source' }} · credentials {{ 'stored' if red.has_credentials else 'none' }}</dd>
+  <dt>Settings</dt><dd class="mono" style="font-size:12px">{{ c.config|tojson }}</dd>
+</dl>
+{% if ident and ident.is_admin and can_pull %}
+<form method="post" action="/connectors/{{ c.id }}/credentials" style="margin-top:12px">
+  <p class="muted" style="margin:0 0 6px">Replace stored values. Blank secret fields keep the stored secret.</p>
+  <div class="row">
+  {% for k, help in spec_config.items() %}<label>{{ k }}<br><input name="config.{{ k }}" value="{{ c.config.get(k, '') }}" title="{{ help }}"></label>{% endfor %}
+  {% for k, help in spec_creds.items() %}<label>{{ k }} <span class="faint">(secret)</span><br><input type="password" name="cred.{{ k }}" autocomplete="off" title="{{ help }}"></label>{% endfor %}
+  <button class="btn">Save</button></div>
+</form>{% endif %}
+</div>
+
+<div class="section-head"><h2>Recent runs</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Started</th><th>Trigger</th><th class="num">Received</th><th class="num">Stored</th><th class="num">Duplicates</th><th class="num">Rejected</th><th>Result</th></tr></thead><tbody>
+{% for r in runs %}<tr><td class="nowrap">{{ ts(r.started_at) }}</td><td>{{ r.trigger }}</td><td class="num">{{ r.received }}</td><td class="num">{{ r.stored }}</td><td class="num">{{ r.duplicates }}</td><td class="num">{{ r.rejected }}</td><td>{% if r.ok %}<span class="ok-txt">ok</span>{% else %}<span class="bad-txt">{{ r.error }}</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No runs yet.</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% if rejected %}
+<div class="section-head"><h2>Rejected records</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>When</th><th>Reason</th><th>Raw SHA-256</th></tr></thead><tbody>
+{% for r in rejected %}<tr><td class="nowrap">{{ ts(r.at) }}</td><td>{{ r.reason }}</td><td class="mono faint" style="font-size:11px">{{ r.raw_sha256 }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
+{% endblock %}

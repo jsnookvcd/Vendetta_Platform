@@ -1,0 +1,31 @@
+{
+  "eventVersion": "1.09",
+  "userIdentity": {
+    "type": "Root",
+    "principalId": "111122223333",
+    "arn": "arn:aws:iam::111122223333:root",
+    "accountId": "111122223333"
+  },
+  "eventTime": "2026-10-18T03:14:15Z",
+  "eventSource": "signin.amazonaws.com",
+  "eventName": "ConsoleLogin",
+  "awsRegion": "us-east-1",
+  "sourceIPAddress": "203.0.113.200",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/131.0",
+  "errorMessage": "Failed authentication",
+  "requestParameters": null,
+  "responseElements": {
+    "ConsoleLogin": "Failure"
+  },
+  "additionalEventData": {
+    "LoginTo": "https://console.aws.amazon.com/console/home",
+    "MobileVersion": "No",
+    "MFAUsed": "No"
+  },
+  "eventID": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "readOnly": false,
+  "eventType": "AwsConsoleSignIn",
+  "managementEvent": true,
+  "recipientAccountId": "111122223333",
+  "eventCategory": "Management"
+}

@@ -1,0 +1,27 @@
+title: Entra ID MFA method deleted for a user
+id: af4a222c-68b3-4b60-ab90-2d92020295a8
+status: stable
+description: A user's registered MFA method (security info) was deleted. Attackers remove the victim's method and register their own so that later MFA prompts reach the attacker.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.persistence
+  - attack.defense_evasion
+  - attack.t1556.006
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection_class:
+    class_uid: 3001
+    activity_id: 11
+  selection_operation:
+    api.operation|contains: deleted security info
+  condition: 1 of selection_*
+fields:
+  - actor.user.name
+  - user.name
+falsepositives:
+  - Users replacing a lost or upgraded phone.
+  - Help desk resetting methods during a verified recovery.
+level: medium

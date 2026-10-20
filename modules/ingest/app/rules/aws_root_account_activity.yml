@@ -1,0 +1,30 @@
+title: AWS root account console login or access key creation
+id: 3a4c6267-cf62-492f-9e0a-c74f6d8183ca
+status: stable
+description: The AWS root user signed in to the console or created an access key. Root should be locked away; its use, and above all a root access key, gives unrestricted and hard to revoke control of the account.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.initial_access
+  - attack.persistence
+  - attack.t1078.004
+  - attack.t1098.001
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  root:
+    - actor.user.type: Root
+    - user.type: Root
+  operation:
+    api.operation:
+      - ConsoleLogin
+      - CreateAccessKey
+  condition: root and operation
+fields:
+  - src_endpoint.ip
+  - api.operation
+  - cloud.account.uid
+falsepositives:
+  - Break glass procedures and the few tasks that require root, such as closing an account.
+level: high

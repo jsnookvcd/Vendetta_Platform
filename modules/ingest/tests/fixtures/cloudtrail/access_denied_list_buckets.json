@@ -1,0 +1,26 @@
+{
+  "eventVersion": "1.10",
+  "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEUSERID0002",
+    "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+    "accountId": "111122223333",
+    "accessKeyId": "AKIAEXAMPLEKEY000002",
+    "userName": "ci-deployer"
+  },
+  "eventTime": "2026-10-18T05:00:01Z",
+  "eventSource": "s3.amazonaws.com",
+  "eventName": "ListBuckets",
+  "awsRegion": "eu-west-1",
+  "sourceIPAddress": "2001:db8:41::17",
+  "userAgent": "[Boto3/1.35.90 md/Botocore#1.35.90]",
+  "errorCode": "AccessDenied",
+  "errorMessage": "Access Denied",
+  "requestID": "8GHRZQ1EXAMPLE",
+  "eventID": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+  "readOnly": true,
+  "eventType": "AwsApiCall",
+  "managementEvent": true,
+  "recipientAccountId": "111122223333",
+  "eventCategory": "Management"
+}

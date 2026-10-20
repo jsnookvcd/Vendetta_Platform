@@ -1,0 +1,60 @@
+{
+  "kind": "admin#reports#activity",
+  "id": {
+    "time": "2026-10-18T16:00:00.000Z",
+    "uniqueQualifier": "-7788990011",
+    "applicationName": "drive",
+    "customerId": "C03az79cb"
+  },
+  "etag": "\"JDMC8884sebSctZ17CIssbQ/6dPkh2h6BWKDFumBp9Vk3c1rqT0\"",
+  "actor": {
+    "email": "mlee@acme.example",
+    "profileId": "114522700230943134567",
+    "callerType": "USER"
+  },
+  "ipAddress": "198.51.100.61",
+  "events": [
+    {
+      "type": "acl_change",
+      "name": "change_document_visibility",
+      "parameters": [
+        {
+          "name": "primary_event",
+          "boolValue": true
+        },
+        {
+          "name": "doc_id",
+          "value": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+        },
+        {
+          "name": "doc_type",
+          "value": "spreadsheet"
+        },
+        {
+          "name": "doc_title",
+          "value": "Customer list 2026"
+        },
+        {
+          "name": "visibility",
+          "value": "people_with_link"
+        },
+        {
+          "name": "owner",
+          "value": "mlee@acme.example"
+        },
+        {
+          "name": "old_value",
+          "multiValue": [
+            "private"
+          ]
+        },
+        {
+          "name": "new_value",
+          "multiValue": [
+            "people_with_link"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+title: M365 mailbox forwarding to an external address
+id: 601a5afc-0042-4051-8708-2d2b452c0eab
+status: stable
+description: Set-Mailbox set ForwardingSmtpAddress, which forwards every message in the mailbox to an SMTP address that may be outside the organization.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.collection
+  - attack.t1114.003
+logsource:
+  product: m365
+  service: exchange
+detection:
+  selection:
+    api.operation: Set-Mailbox
+    unmapped.parameters|contains: ForwardingSmtpAddress
+  condition: selection
+fields:
+  - actor.user.name
+  - unmapped.parameters
+falsepositives:
+  - Administrators forwarding a departed employee's mailbox to a manager.
+level: high

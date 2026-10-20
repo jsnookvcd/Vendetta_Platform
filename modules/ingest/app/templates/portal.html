@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Proven telemetry{% endblock %}
+{% block body %}
+<p class="page-intro">Everything Vendetta collects from your tools is sealed into a signed chain that belongs to you. You can export that chain at any time and check it yourself with the open verifier, without asking us and without trusting us.</p>
+<div class="tiles">
+  <div class="tile"><div class="n">{{ '{:,}'.format(sealed) }}</div><div class="l">events sealed for {{ client.name }}</div></div>
+  <div class="tile"><div class="n">{{ head.batch_seq if head else 0 }}</div><div class="l">batches in your chain</div></div>
+  <div class="tile"><div class="n">{{ conns|length }}</div><div class="l">tools connected</div></div>
+  <div class="tile"><div class="n">{{ 'yes' if anchored else 'not yet' }}</div><div class="l">chain anchored to write-once storage</div></div>
+</div>
+{% if head %}<div class="panel pad" style="margin-bottom:14px"><dl class="kv">
+  <dt>Chain head</dt><dd class="mono" style="font-size:12px;word-break:break-all">{{ head.batch_hash }}</dd>
+  <dt>Sealed</dt><dd>{{ head.sealed_at.isoformat() }}</dd>
+  <dt>Signing key</dt><dd class="mono" style="font-size:12px;word-break:break-all">{{ head.public_key }}</dd>
+</dl></div>{% endif %}
+{% if not exec_view %}<div class="row" style="margin-bottom:14px"><a class="btn btn-primary" href="/portal/chain.json">Export my chain</a><a class="btn" href="/verifier/receipts.py">Download the verifier</a></div>
+<p class="muted">Run <span class="mono">python receipts.py chain.json</span> to check every batch signature and link. Proofs for individual events are attached to the investigations and reports that cite them.</p>{% endif %}
+<div class="section-head"><h2>Last 7 days by tool</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Source</th><th class="num">Events</th></tr></thead><tbody>
+{% for s, n in by_source %}<tr><td>{{ s }}</td><td class="num">{{ '{:,}'.format(n) }}</td></tr>{% else %}<tr><td colspan="2" class="empty">Nothing received in the last 7 days.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

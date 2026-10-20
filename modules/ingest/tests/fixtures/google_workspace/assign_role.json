@@ -1,0 +1,36 @@
+{
+  "kind": "admin#reports#activity",
+  "id": {
+    "time": "2026-10-18T14:00:00.000Z",
+    "uniqueQualifier": "-1122334455667788",
+    "applicationName": "admin",
+    "customerId": "C03az79cb"
+  },
+  "etag": "\"JDMC8884sebSctZ17CIssbQ/6dPkh2h6BWKDFumBp9Vk3c1rqT0\"",
+  "actor": {
+    "email": "it-admin@acme.example",
+    "profileId": "114522700230943134567",
+    "callerType": "USER"
+  },
+  "ipAddress": "198.51.100.61",
+  "events": [
+    {
+      "type": "DELEGATED_ADMIN_SETTINGS",
+      "name": "ASSIGN_ROLE",
+      "parameters": [
+        {
+          "name": "ROLE_NAME",
+          "value": "_SEED_ADMIN_ROLE"
+        },
+        {
+          "name": "USER_EMAIL",
+          "value": "mlee@acme.example"
+        },
+        {
+          "name": "ROLE_ID",
+          "value": "02ce457p6conzyd"
+        }
+      ]
+    }
+  ]
+}

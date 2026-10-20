@@ -1,0 +1,25 @@
+title: Entra ID consent granted to an application
+id: d264d503-9b27-47e0-8998-c43c7af1e913
+status: stable
+description: A user or administrator consented to an application in Entra ID. Illicit consent grants give an attacker controlled application persistent delegated access to mail, files and directory data without a password.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.credential_access
+  - attack.persistence
+  - attack.t1528
+  - attack.t1550.001
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection:
+    class_uid: 3003
+    api.operation|startswith: Consent to application
+  condition: selection
+fields:
+  - actor.user.name
+  - unmapped.targets.name
+falsepositives:
+  - Users consenting to approved business applications; review the application name, publisher and requested scopes.
+level: medium

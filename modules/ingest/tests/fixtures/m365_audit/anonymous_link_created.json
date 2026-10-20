@@ -1,0 +1,16 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T18:15:00",
+  "Id": "c4b3a291-0f1e-4d2c-9b8a-7f6e5d4c3b2b",
+  "Operation": "AnonymousLinkCreated",
+  "RecordType": 14,
+  "UserId": "mlee@acme.example",
+  "Workload": "OneDrive",
+  "ClientIP": "198.51.100.61",
+  "ObjectId": "https://acme-my.sharepoint.com/personal/mlee_acme_example/Documents/Exports/customers.csv",
+  "ItemType": "File",
+  "SourceFileName": "customers.csv",
+  "EventData": "<Type>View</Type>"
+}

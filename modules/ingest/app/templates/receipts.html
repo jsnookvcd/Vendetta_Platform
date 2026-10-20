@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Receipts{% endblock %}
+{% block body %}
+<p class="page-intro">Every event is hashed as received and again after normalization. Each tenant's events are sealed into Merkle batches whose signed headers chain to one another, and every chain head is anchored daily to write-once storage. Any single event can be proven to a client, an auditor, a carrier or a court with its proof file and the offline verifier, without revealing any other event.</p>
+<div class="tiles">
+  <div class="tile"><div class="n">{{ heads|length }}</div><div class="l">tenant chains</div></div>
+  <div class="tile"><div class="n">{{ '{:,}'.format(unsealed) }}</div><div class="l">events waiting for a seal</div></div>
+  <div class="tile"><div class="n mono" style="font-size:18px">{{ key_id }}</div><div class="l">signing key id</div></div>
+</div>
+<div class="row" style="margin-bottom:14px"><form method="post" action="/seal"><button class="btn">Seal now</button></form><a class="btn" href="/verifier/receipts.py">Download the offline verifier</a></div>
+<div class="section-head"><h2>Chains</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Client</th><th>Tenant</th><th class="num">Batches</th><th class="num">Events sealed</th><th>Last seal</th><th></th></tr></thead><tbody>
+{% for t, seq, n, at in heads %}<tr><td>{{ names.get(t, '') }}</td><td class="mono">{{ t }}</td><td class="num">{{ seq }}</td><td class="num">{{ '{:,}'.format(n or 0) }}</td><td class="faint">{{ ts(at) }}</td>
+<td class="nowrap"><a href="/receipts/{{ t }}/verify">verify</a> · <a href="/receipts/{{ t }}/chain.json">export</a></td></tr>
+{% else %}<tr><td colspan="6" class="empty">Nothing sealed yet.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="section-head"><h2>Recent batches</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Tenant</th><th class="num">Seq</th><th class="num">Size</th><th>Root</th><th>Batch hash</th><th>Sealed</th><th>Anchored</th></tr></thead><tbody>
+{% for b in recent %}<tr><td class="mono">{{ b.tenant }}</td><td class="num">{{ b.batch_seq }}</td><td class="num">{{ b.size }}</td><td class="mono faint" style="font-size:11px">{{ b.root[:16] }}…</td><td class="mono faint" style="font-size:11px">{{ b.batch_hash[:16] }}…</td><td class="faint">{{ ts(b.sealed_at) }}</td><td class="faint">{{ ts(b.anchored_at) or 'pending' }}</td></tr>{% endfor %}
+</tbody></table></div></div>
+<div class="section-head"><h2>Daily anchors</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Created</th><th>Digest</th><th class="num">Tenants</th><th>Stored</th></tr></thead><tbody>
+{% for a in anchors %}<tr><td class="faint">{{ ts(a.created_at) }}</td><td class="mono" style="font-size:11px">{{ a.digest }}</td><td class="num">{{ (a.document.tenants or {})|length }}</td><td class="faint" style="font-size:12px">{{ a.stored_at or 'database only' }}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">No anchors yet. The first is written a day after the first seal, or on the next seal round when none exists.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

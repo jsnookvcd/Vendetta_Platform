@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ingest
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ingest}
+      POSTGRES_DB: ingest
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=60", "-c", "work_mem=16MB"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ingest"]
+      interval: 15s
+      retries: 10
+    networks: [internal]
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://ingest:${POSTGRES_PASSWORD:-ingest}@db:5432/ingest
+      # One process runs everything on the single host. On ECS the web, worker and
+      # stream services split these roles (infra/aws/ingest).
+      WORKER_ROLES: ${WORKER_ROLES:-all}
+    depends_on:
+      db: {condition: service_healthy}
+    # Loopback by default (SSM port-forward). Set WEB_BIND=0.0.0.0 behind an ALB,
+    # which vendor pushes need: they arrive at https://ingest.<domain>/api/ingest/<id>.
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:9000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # Shared cross-module network: other modules reach this one as http://ingest:8000
+    networks:
+      internal:
+      vendetta:
+        aliases: [ingest]
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+  # Created once on the host (docker network create vendetta); shared by every module stack.
+  vendetta:
+    external: true

@@ -1,0 +1,88 @@
+{
+  "uuid": "1f9a2b3c-8d4e-11f1-9c2b-31a5e7f0a009",
+  "published": "2026-10-18T13:02:00.000Z",
+  "eventType": "user.authentication.sso",
+  "version": "0",
+  "severity": "INFO",
+  "legacyEventType": null,
+  "displayMessage": "User single sign on to app",
+  "actor": {
+    "id": "00u8k2l3m4N5o6P7q8r9",
+    "type": "User",
+    "alternateId": "mlee@acme.example",
+    "displayName": "Morgan Lee",
+    "detailEntry": null
+  },
+  "client": {
+    "userAgent": {
+      "rawUserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36",
+      "os": "Windows 10",
+      "browser": "CHROME"
+    },
+    "zone": "null",
+    "device": "Computer",
+    "id": null,
+    "ipAddress": "198.51.100.61",
+    "geographicalContext": {
+      "city": "Harrisburg",
+      "state": "Pennsylvania",
+      "country": "United States",
+      "postalCode": "17101",
+      "geolocation": {
+        "lat": 40.2732,
+        "lon": -76.8867
+      }
+    }
+  },
+  "device": null,
+  "authenticationContext": {
+    "authenticationProvider": null,
+    "credentialProvider": null,
+    "credentialType": null,
+    "issuer": null,
+    "interface": null,
+    "authenticationStep": 0,
+    "externalSessionId": "102Xb7cN1TQSmeCoYk9_2yZqQ"
+  },
+  "outcome": {
+    "result": "SUCCESS",
+    "reason": null
+  },
+  "securityContext": {
+    "asNumber": 7922,
+    "asOrg": "comcast",
+    "isp": "comcast cable communications llc",
+    "domain": "comcast.net",
+    "isProxy": false
+  },
+  "debugContext": {
+    "debugData": {
+      "requestId": "Zx1aBcDeFgHiJkLmNoPq",
+      "requestUri": "/api/v1/authn",
+      "url": "/api/v1/authn?"
+    }
+  },
+  "transaction": {
+    "type": "WEB",
+    "id": "Zx1aBcDeFgHiJkLmNoPq",
+    "detail": {}
+  },
+  "target": [
+    {
+      "id": "0oa9app0123ABCdef4",
+      "type": "AppInstance",
+      "alternateId": "Salesforce.com",
+      "displayName": "Salesforce.com",
+      "detailEntry": null
+    }
+  ],
+  "request": {
+    "ipChain": [
+      {
+        "ip": "198.51.100.61",
+        "version": "V4",
+        "source": null
+      }
+    ]
+  }
+}

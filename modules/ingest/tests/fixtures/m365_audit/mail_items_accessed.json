@@ -1,0 +1,40 @@
+{
+  "OrganizationId": "11111111-2222-3333-4444-555555555555",
+  "UserType": 0,
+  "Version": 1,
+  "CreationTime": "2026-10-18T17:05:10",
+  "Id": "8d6f1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a63",
+  "Operation": "MailItemsAccessed",
+  "RecordType": 50,
+  "ResultStatus": "Succeeded",
+  "UserKey": "10032001A2B3C4D5",
+  "UserId": "mlee@acme.example",
+  "Workload": "Exchange",
+  "ClientIPAddress": "198.51.100.61",
+  "ClientInfoString": "Client=REST;Client=RESTSystem;",
+  "MailboxOwnerUPN": "ceo@acme.example",
+  "OperationProperties": [
+    {
+      "Name": "MailAccessType",
+      "Value": "Bind"
+    },
+    {
+      "Name": "IsThrottled",
+      "Value": "False"
+    }
+  ],
+  "Folders": [
+    {
+      "Id": "LgAAAAA",
+      "Path": "\\Inbox",
+      "FolderItems": [
+        {
+          "InternetMessageId": "<a1@acme.example>"
+        },
+        {
+          "InternetMessageId": "<a2@acme.example>"
+        }
+      ]
+    }
+  ]
+}

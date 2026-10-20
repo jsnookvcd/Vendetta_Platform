@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Detections{% endblock %}
+{% block body %}
+<p class="page-intro">Sigma rules over the normalized stream, and the vendors' own detections, one per vendor alert. MDR reads every detection here as a signal and opens investigations from them.</p>
+<form class="row" method="get" action="/detections" style="margin-bottom:14px">
+  <label>Status<br><select name="status">{% for s in ['open','all'] + FINDING_STATUSES %}<option {{ 'selected' if f.status==s }}>{{ s }}</option>{% endfor %}</select></label>
+  <label>Severity<br><select name="severity"><option value="">any</option>{% for s in SEVERITIES %}<option {{ 'selected' if f.severity==s }}>{{ s }}</option>{% endfor %}</select></label>
+  <label>Kind<br><select name="kind"><option value="">any</option><option {{ 'selected' if f.kind=='sigma' }}>sigma</option><option {{ 'selected' if f.kind=='vendor' }}>vendor</option></select></label>
+  <button class="btn">Filter</button>
+</form>
+<div class="panel"><div class="table-wrap"><table>
+<thead><tr><th>Detection</th><th>Client</th><th>Severity</th><th>Status</th><th>ATT&amp;CK</th><th class="num">Events</th><th>Last seen</th></tr></thead><tbody>
+{% for d in rows %}<tr>
+  <td><a href="/detections/{{ d.id }}">{{ d.title }}</a><div class="faint" style="font-size:11px">{{ d.kind }}{% if d.rule_title %} · {{ d.rule_title }}{% endif %} · {{ d.source }}</div></td>
+  <td>{{ names.get(d.tenant, d.tenant) }}</td><td>{{ sev(d.severity) }}</td><td>{{ dstatus(d.status) }}</td>
+  <td>{{ mitre(d.mitre) }}</td><td class="num">{{ d.count }}</td><td class="nowrap faint">{{ ts(d.last_event_at) }}</td>
+</tr>{% else %}<tr><td colspan="7" class="empty">No detections match.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

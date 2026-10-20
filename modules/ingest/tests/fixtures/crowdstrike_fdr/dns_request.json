@@ -1,0 +1,11 @@
+{
+  "event_simpleName": "DnsRequest",
+  "id": "c7b2e1d3-3d4e-11f1-8a9b-0a1b2c3d4e5f",
+  "timestamp": "1792333330002",
+  "aid": "4d2e9c1b7a5f4e3d8c6b2a1f0e9d8c7b",
+  "cid": "8f1c2a7e4b6d4e1f9a0b3c5d7e9f1a2b",
+  "event_platform": "Win",
+  "DomainName": "update-cdn.badexample.net",
+  "RequestType": "1",
+  "ContextProcessId": "51539607999"
+}

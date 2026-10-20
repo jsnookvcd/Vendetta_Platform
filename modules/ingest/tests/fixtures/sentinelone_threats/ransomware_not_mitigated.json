@@ -1,0 +1,95 @@
+{
+  "id": "2041188273648812345",
+  "threatInfo": {
+    "threatId": "2041188273648812345",
+    "threatName": "invoice_viewer.exe",
+    "classification": "Ransomware",
+    "confidenceLevel": "malicious",
+    "analystVerdict": "undefined",
+    "incidentStatus": "unresolved",
+    "mitigationStatus": "not_mitigated",
+    "detectionType": "dynamic",
+    "engines": [
+      "DBT - Executables"
+    ],
+    "initiatedBy": "agent_policy",
+    "createdAt": "2026-10-18T15:02:44.118204Z",
+    "updatedAt": "2026-10-18T15:02:46.002113Z",
+    "identifiedAt": "2026-10-18T15:02:40.000000Z",
+    "filePath": "\\Device\\HarddiskVolume3\\Users\\mlee\\AppData\\Local\\Temp\\invoice_viewer.exe",
+    "sha1": "3395856ce81f2b7382dee72602f798b642f14140",
+    "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "md5": "44d88612fea8a8f36de82e1278abb02f",
+    "originatorProcess": "explorer.exe",
+    "processUser": "ACME\\mlee",
+    "storyline": "A1B2C3D4E5F60718",
+    "maliciousProcessArguments": "invoice_viewer.exe --silent",
+    "mitigatedPreemptively": false
+  },
+  "agentRealtimeInfo": {
+    "agentId": "1987654321098765432",
+    "agentComputerName": "ACME-LT017",
+    "agentOsName": "Windows 11 Pro",
+    "agentOsType": "windows",
+    "agentVersion": "24.2.3.471",
+    "agentDomain": "ACME",
+    "agentMachineType": "laptop",
+    "siteName": "Acme Corp",
+    "accountName": "Vendetta MSSP",
+    "groupName": "Default Group"
+  },
+  "agentDetectionInfo": {
+    "agentIpV4": "10.30.2.17",
+    "externalIp": "198.51.100.40",
+    "agentLastLoggedInUserName": "mlee",
+    "agentOsName": "Windows 11 Pro",
+    "agentDomain": "ACME",
+    "agentMitigationMode": "detect",
+    "siteName": "Acme Corp"
+  },
+  "indicators": [
+    {
+      "category": "Ransomware",
+      "description": "Mass file modification with entropy increase",
+      "ids": [
+        41
+      ],
+      "tactics": [
+        {
+          "name": "Impact",
+          "source": "MITRE",
+          "techniques": [
+            {
+              "name": "T1486",
+              "link": "https://attack.mitre.org/techniques/T1486/"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Evasion",
+      "description": "Shadow copy deletion attempt",
+      "ids": [
+        77
+      ],
+      "tactics": [
+        {
+          "name": "Impact",
+          "source": "MITRE",
+          "techniques": [
+            {
+              "name": "T1490",
+              "link": "https://attack.mitre.org/techniques/T1490/"
+            },
+            {
+              "name": "T1486",
+              "link": "https://attack.mitre.org/techniques/T1486/"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "mitigationStatus": []
+}

@@ -1,0 +1,30 @@
+{
+  "id": 1844201,
+  "organization_id": 55012,
+  "agent_id": 7781234,
+  "status": "sent",
+  "severity": "critical",
+  "platform": "windows",
+  "subject": "CRITICAL - Incident on ACME-WS042 (Acme Corp)",
+  "summary": "Huntress detected Cobalt Strike beacon persistence via a scheduled task on ACME-WS042.",
+  "body": "Our SOC observed a scheduled task \\Microsoft\\Windows\\Update\\Refresh launching rundll32 with a beacon DLL. Isolate the host and reset the user's credentials.",
+  "indicator_types": [
+    "footholds",
+    "process_detections"
+  ],
+  "indicator_counts": {
+    "footholds": 1,
+    "process_detections": 2
+  },
+  "remediations": [
+    {
+      "type": "delete_scheduled_task",
+      "status": "pending",
+      "details": "\\Microsoft\\Windows\\Update\\Refresh"
+    }
+  ],
+  "sent_at": "2026-10-18T13:05:00Z",
+  "status_updated_at": "2026-10-18T13:05:00Z",
+  "updated_at": "2026-10-18T13:05:00Z",
+  "closed_at": null
+}

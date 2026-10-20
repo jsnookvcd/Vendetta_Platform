@@ -1,0 +1,25 @@
+{
+  "eventVersion": "1.09",
+  "userIdentity": {
+    "type": "IAMUser",
+    "principalId": "AIDAEXAMPLEUSERID0001",
+    "arn": "arn:aws:iam::111122223333:user/breakglass",
+    "accountId": "111122223333",
+    "userName": "breakglass"
+  },
+  "eventTime": "2026-10-18T03:20:00Z",
+  "eventSource": "signin.amazonaws.com",
+  "eventName": "ConsoleLogin",
+  "awsRegion": "us-east-1",
+  "sourceIPAddress": "198.51.100.61",
+  "responseElements": {
+    "ConsoleLogin": "Success"
+  },
+  "additionalEventData": {
+    "MFAUsed": "Yes",
+    "MobileVersion": "No"
+  },
+  "eventID": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5e",
+  "eventType": "AwsConsoleSignIn",
+  "recipientAccountId": "111122223333"
+}

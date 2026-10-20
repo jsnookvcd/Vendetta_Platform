@@ -1,0 +1,21 @@
+{
+  "event_simpleName": "ProcessRollup2",
+  "id": "b6a1f0c2-3d4e-11f1-8a9b-0a1b2c3d4e5f",
+  "timestamp": "1792333325441",
+  "aid": "4d2e9c1b7a5f4e3d8c6b2a1f0e9d8c7b",
+  "aip": "198.51.100.23",
+  "cid": "8f1c2a7e4b6d4e1f9a0b3c5d7e9f1a2b",
+  "event_platform": "Win",
+  "ComputerName": "ACME-WS042",
+  "ImageFileName": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
+  "CommandLine": "cmd.exe /c whoami /all > C:\\Users\\Public\\w.txt",
+  "SHA256HashData": "b99d61d874728edc0918ca0eb10eab93d381e7367e377406e65963366c874450",
+  "MD5HashData": "911d039e71583a07320b32bde22f8e22",
+  "ParentBaseFileName": "powershell.exe",
+  "ParentProcessId": "51539607575",
+  "TargetProcessId": "51539607999",
+  "RawProcessId": "7420",
+  "UserName": "jdoe",
+  "UserSid": "S-1-5-21-1004336348-1177238915-682003330-1104",
+  "IntegrityLevel": "8192"
+}

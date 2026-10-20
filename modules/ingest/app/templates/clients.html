@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block title %}Clients{% endblock %}
+{% block body %}
+<p class="page-intro">Clients come from the control plane. A client needs a platform id before any connector can store events for it, because every event is stamped with that id.</p>
+{% if platform_configured %}<form method="post" action="/clients/pull" style="margin-bottom:14px"><button class="btn">Pull roster now</button></form>{% endif %}
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Client</th><th>Platform id</th><th class="num">Connectors</th><th class="num">Events 24h</th></tr></thead><tbody>
+{% for c in clients %}<tr><td><a href="/clients/{{ c.id }}">{{ c.name }}</a></td><td class="mono faint">{{ c.platform_client_id or 'not provisioned' }}</td><td class="num">{{ conn.get(c.id, 0) }}</td><td class="num">{{ '{:,}'.format(ev.get(c.id, 0)) }}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">No clients yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

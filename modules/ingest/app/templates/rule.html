@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}{{ r.title if r else 'New rule' }}{% endblock %}
+{% block body %}
+{% if r %}<p class="page-intro">{{ r.origin }} rule · version {{ r.version }} · updated by {{ r.updated_by }} {{ ts(r.updated_at) }} · {{ r.hits_total }} hits · {{ 'enabled' if r.enabled else 'disabled' }}</p>{% endif %}
+<form method="post" action="/rules/save">
+  <input type="hidden" name="original_id" value="{{ r.id if r else '' }}">
+  <textarea name="body" rows="28" style="width:100%;font-family:var(--mono, monospace);font-size:12.5px" {{ 'readonly' if not (ident and ident.is_admin) }}>{{ body }}</textarea>
+  {% if ident and ident.is_admin %}
+  <div class="row" style="margin-top:10px">
+    <input name="note" placeholder="what changed and why" style="min-width:320px">
+    <button class="btn" name="action" value="test">Dry run over stored events</button>
+    <button class="btn btn-primary" name="action" value="save">Save new version</button>
+  </div>{% endif %}
+</form>
+{% if r and ident and ident.is_admin %}<form method="post" action="/rules/{{ r.id }}/toggle" style="margin-top:10px"><button class="btn">{{ 'Disable' if r.enabled else 'Enable' }}</button></form>{% endif %}
+{% if test %}
+<div class="section-head"><h2>Dry run</h2><span class="count">{{ test.count }} of {{ test.scanned }} events matched</span></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Tenant</th><th>What</th><th>Host</th><th>User</th></tr></thead><tbody>
+{% for m in test.matched %}<tr><td class="faint nowrap">{{ m.time }}</td><td>{{ m.tenant }}</td><td><a href="/events/{{ m.id }}">{{ m.title }}</a></td><td>{{ m.host }}</td><td>{{ m.user }}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">Nothing in the stored events matches.</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+{% if versions %}
+<div class="section-head"><h2>History</h2></div>
+<div class="panel"><div class="table-wrap"><table><thead><tr><th>Version</th><th>When</th><th>By</th><th>Note</th></tr></thead><tbody>
+{% for v in versions %}<tr><td>v{{ v.version }}</td><td class="faint">{{ ts(v.changed_at) }}</td><td>{{ v.changed_by }}</td><td>{{ v.note }}</td></tr>{% endfor %}
+</tbody></table></div></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,5 @@
+{
+  "message": "CEF:0|Acme Security|Sentry\\|EDR|4.1|MAL-2001|Ransomware note written|9|rt=1792333325441 dvchost=sentry-mgr01 msg=Ransom note README\\=DECRYPT.txt written by svc\\\\proc on host ACME-WS042 fname=README=DECRYPT.txt filePath=C:\\\\Users\\\\Public",
+  "host": "",
+  "timestamp": "2026-10-18T14:22:06Z"
+}

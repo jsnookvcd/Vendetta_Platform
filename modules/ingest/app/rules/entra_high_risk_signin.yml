@@ -1,0 +1,23 @@
+title: Entra ID sign-in with high risk
+id: 3d6c3c82-94fd-4dc7-bf16-57085733a212
+status: stable
+description: Entra ID Protection scored a sign-in as high risk (for example anomalous token, impossible travel or leaked credentials). High risk sign-ins are strong indicators of a compromised account.
+author: Vendetta Cyber
+date: 2026-10-19
+tags:
+  - attack.initial_access
+  - attack.t1078.004
+logsource:
+  product: azure
+  service: signinlogs
+detection:
+  selection:
+    unmapped.risk_level: high
+  condition: selection
+fields:
+  - user.name
+  - src_endpoint.ip
+  - src_endpoint.location.country
+falsepositives:
+  - Users travelling or connecting through a new VPN provider.
+level: high
