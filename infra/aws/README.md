@@ -146,6 +146,17 @@ queue and DLQ, the webhook HTTP API through a VPC link to an internal ALB, the
 syslog NLB (TLS 6514) to Vector, and the four ECS services with least-privilege
 task roles.
 
+How the Telemetry Ingest module splits across the two accounts: its console and
+client portal run in soc-apps (host `ingest.`, the module's own Postgres database
+on the shared RDS), and so does low-volume push for webhook vendors. The ingest
+account carries the high-volume side: the connector worker, the streaming
+detection service, Vector for syslog, and the API Gateway webhook path, all with
+`WORKER_ROLES` set per service (`connectors,seal,bucket` on the worker, `stream`
+on the detection service, empty on the web tasks). Those services reach the same
+ingest database over the Transit Gateway. Decision still open: whether to keep one
+database for both accounts (simplest, current design) or give the ingest account its
+own RDS and publish events to soc-apps only through Kinesis.
+
 **soc-apps.** ECS cluster with Container Insights and the `vendetta.internal`
 Service Connect namespace, one service per module (plus worker services for
 dark web and managed services), ECR repositories, RDS PostgreSQL 16 Multi-AZ,

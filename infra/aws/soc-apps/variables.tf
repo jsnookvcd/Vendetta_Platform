@@ -88,7 +88,8 @@ variable "modules" {
     professional-services    = { cpu = 512, memory = 1024, desired_count = 1, min = 1, max = 4, public = true, db_name = "psvc" }
     evidence-export          = { cpu = 512, memory = 1024, desired_count = 1, min = 1, max = 3, public = false, db_name = "evidence_export" }
     ai-triage                = { cpu = 1024, memory = 2048, desired_count = 1, min = 1, max = 4, public = false, db_name = "ai_triage" }
-    ingest                   = { cpu = 512, memory = 1024, desired_count = 1, min = 1, max = 3, public = false, db_name = "ingest" }
+    ingest                   = { cpu = 512, memory = 1024, desired_count = 2, min = 2, max = 4, public = true, db_name = "ingest" }
+    project-management       = { cpu = 512, memory = 1024, desired_count = 1, min = 1, max = 3, public = true, db_name = "pmtool" }
   }
 }
 
@@ -140,6 +141,8 @@ variable "module_hosts" {
     sabine                   = "sabine"
     professional-services    = "osp"
     mdr                      = "mdr"
+    project-management       = "pm"
+    ingest                   = "ingest"
   }
 }
 
@@ -156,6 +159,8 @@ variable "listener_priorities" {
     sabine                   = 155
     professional-services    = 157
     mdr                      = 160
+    project-management       = 165
+    ingest                   = 167
     network-operations       = 170
   }
 }
