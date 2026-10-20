@@ -67,7 +67,13 @@ def _fetch_one(name: str, base: str, token: str, transport: httpx.BaseTransport 
     rows = body if isinstance(body, list) else []
     if name == "ingest":
         rows = [dict(f, id=INGEST_PREFIX + str(f.get("id") or "")) for f in rows if f.get("id")]
-    return rows
+    else:
+        # Only ingest signals may carry the ingest prefix, so no other source can
+        # overwrite one.
+        rows = [f for f in rows if not str(f.get("id") or "").startswith(INGEST_PREFIX)]
+    # Ids are stored in 64 characters; refuse rather than truncate, because two long
+    # ids sharing a prefix would otherwise merge into one signal.
+    return [f for f in rows if 0 < len(str(f.get("id") or "")) <= 64]
 
 
 def fetch_signals(transport: httpx.BaseTransport | None = None) -> list[dict]:

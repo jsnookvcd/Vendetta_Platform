@@ -111,6 +111,9 @@ class Connector(Base):
     # Per-connector shared secret for push (webhook) delivery, HMAC-SHA256.
     webhook_secret: Mapped[str] = mapped_column(EncryptedStr(200), default="")
     cursor: Mapped[dict] = mapped_column(JSONDoc, default=dict)
+    # A freshly issued push secret waiting to be shown once to the admin who issued
+    # it. Encrypted, cleared on first view, never placed in a cookie.
+    pending_reveal: Mapped[str] = mapped_column(EncryptedStr(200), default="")
     interval_seconds: Mapped[int] = mapped_column(Integer, default=0)   # 0 = module default
     last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_ok_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -163,6 +166,9 @@ class Event(Base):
     connector_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source: Mapped[str] = mapped_column(String(40))
     class_uid: Mapped[int] = mapped_column(Integer)
+    # The event's own time, clamped to at most five minutes after receipt so a record
+    # dated in the future cannot sort ahead of everything else. The event JSON keeps
+    # the vendor's time untouched.
     time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
     received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     severity_id: Mapped[int] = mapped_column(Integer, default=0)
@@ -175,8 +181,15 @@ class Event(Base):
     dedupe_key: Mapped[str] = mapped_column(String(200))
     raw_sha256: Mapped[str] = mapped_column(String(64))
     event_sha256: Mapped[str] = mapped_column(String(64))
+    # Queryable copy. Postgres JSONB normalizes numbers, so proofs are built from
+    # event_text, the canonical bytes event_sha256 was computed over.
     event: Mapped[dict] = mapped_column(JSONDoc)
-    raw: Mapped[str] = mapped_column(Text)                     # canonical JSON as hashed
+    event_text: Mapped[str] = mapped_column(Text)
+    raw: Mapped[bytes] = mapped_column(LargeBinary)            # canonical raw record, exactly as hashed
+    # False until the streaming detection pass has evaluated this event. A flag,
+    # rather than a cursor on seq, so an event whose transaction commits after a
+    # later one is still evaluated.
+    detected: Mapped[bool] = mapped_column(Boolean, default=False)
     batch_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     leaf_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -185,6 +198,8 @@ class Event(Base):
         Index("ix_events_tenant_seq", "tenant", "seq"),
         Index("ix_events_unsealed", "tenant", "seq", postgresql_where=text("batch_id IS NULL")),
         Index("ix_events_tenant_time", "tenant", "time"),
+        Index("ix_events_undetected", "seq", postgresql_where=text("detected = false")),
+        Index("ix_events_received", "received_at"),
     )
 
 
@@ -206,7 +221,7 @@ class Batch(Base):
     public_key: Mapped[str] = mapped_column(String(64))
     # Concatenated 32-byte leaf hashes in leaf order. Kept for life so proofs survive
     # hot-store retention.
-    leaves: Mapped[bytes] = mapped_column(LargeBinary)
+    leaves: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     anchored_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (UniqueConstraint("tenant", "batch_seq", name="uq_batch_seq"),)
@@ -225,6 +240,9 @@ class Anchor(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     digest: Mapped[str] = mapped_column(String(64))           # sha256 of the canonical anchor document
     document: Mapped[dict] = mapped_column(JSONDoc)           # {tenants: {tenant: {batch_seq, batch_hash}}}
+    # One signed statement per tenant, {tenant: {document, digest, signature}}, each
+    # naming only that tenant's head and this anchor's digest. Clients get their own.
+    statements: Mapped[dict] = mapped_column(JSONDoc, default=dict)
     signature: Mapped[str] = mapped_column(String(128))
     stored_at: Mapped[str] = mapped_column(String(500), default="")  # s3:// URI when written to the bucket
     tsa_token: Mapped[str] = mapped_column(Text, default="")         # base64 RFC 3161 token when available
@@ -269,6 +287,7 @@ class RuleHit(Base):
     distinct_value: Mapped[str] = mapped_column(String(300), default="")
     event_id: Mapped[str] = mapped_column(String(32))
     time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     __table_args__ = (Index("ix_rule_hits_lookup", "rule_id", "tenant", "group_key", "time"),)
 
@@ -294,16 +313,9 @@ class Detection(Base):
     first_event_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_event_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     escalated_case: Mapped[str] = mapped_column(String(60), default="")
     note: Mapped[str] = mapped_column(Text, default="")
-
-
-class StreamCursor(Base):
-    __tablename__ = "stream_cursors"
-    name: Mapped[str] = mapped_column(String(40), primary_key=True)
-    last_seq: Mapped[int] = mapped_column(BigInteger, default=0)
-    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 def init_db() -> None:

@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 TEST_DB = os.environ.get("INGEST_TEST_DATABASE_URL", "postgresql+psycopg://ingest:ingest@localhost:5432/ingest_test")
 os.environ["DATABASE_URL"] = TEST_DB
 os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("EVIDENCE_SIGNING_KEY", "11" * 32)
 os.environ["PLATFORM_URL"] = ""
 os.environ["PLATFORM_HUB_URL"] = ""
 os.environ["SEAL_INTERVAL_SECONDS"] = "0"
@@ -56,7 +57,8 @@ def fresh_db():
 @pytest.fixture()
 def client(fresh_db):
     from fastapi.testclient import TestClient
-    from app.main import app
+    from app.main import _EXPORT_HITS, app
+    _EXPORT_HITS.clear()
     with TestClient(app) as tc:
         yield tc
 

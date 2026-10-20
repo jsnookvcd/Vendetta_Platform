@@ -175,12 +175,33 @@ def api_user(request: Request) -> str:
     """Service API: the shared bearer token, or an internal staff session. A
     client-portal session is refused (current_user enforces the internal role), so
     the API can never return another tenant's data to a client."""
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], api_token()):
+    if _bearer_matches(request, api_token()):
         # A caller may name itself (SABINE does) so audit entries read api:<actor>.
         actor = "".join(ch for ch in request.headers.get("x-vendetta-actor", "") if ch.isalnum() or ch in "-_.")[:40]
         return f"api:{actor}" if actor else "api"
     return current_user(request)
+
+
+def api_read_token() -> str:
+    """Read-only bearer: API_READ_TOKEN when set, else derived from SECRET_KEY."""
+    if settings.api_read_token.strip():
+        return settings.api_read_token.strip()
+    return hmac.new(settings.secret_key.encode(), b"api-read-token-v1", hashlib.sha256).hexdigest()
+
+
+def _bearer_matches(request: Request, token: str) -> bool:
+    auth = request.headers.get("authorization", "")
+    return auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].encode("utf-8", "replace"), token.encode())
+
+
+def api_reader(request: Request) -> str:
+    """GET routes of the service API: the read token, the full token, or an internal
+    staff session. The read token can never reach a state-changing route because
+    those depend on api_user, which only takes the full token."""
+    if request.method.upper() in _SAFE_METHODS and _bearer_matches(request, api_read_token()):
+        actor = "".join(ch for ch in request.headers.get("x-vendetta-actor", "") if ch.isalnum() or ch in "-_.")[:40]
+        return f"api-read:{actor}" if actor else "api-read"
+    return api_user(request)
 
 
 RequireUser = Depends(current_user)

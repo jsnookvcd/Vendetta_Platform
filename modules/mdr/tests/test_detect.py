@@ -222,3 +222,16 @@ def test_ingest_alone_is_enough(fresh_db, monkeypatch):
     assert detect.configured()
     summ = detect.run(SessionLocal(), transport=_two_sources([], [_ingest_finding(fid="x9")]))
     assert summ["signals"] == 1
+
+
+def test_only_ingest_may_use_the_ingest_prefix_and_long_ids_are_refused(fresh_db, ms, monkeypatch):
+    monkeypatch.setattr(settings, "ingest_url", "http://ingest:8000")
+    make_client()
+    spoof = finding(fid="ing-d1", title="Spoofed from managed services")
+    longid = finding(fid="m" * 65)
+    summ = detect.run(SessionLocal(), transport=_two_sources([spoof, longid, finding(fid="ok1")],
+                                                             [_ingest_finding(fid="d1")]))
+    db = SessionLocal()
+    assert summ["signals"] == 2
+    assert db.get(Signal, "ing-d1").type == "sigma"  # the ingest signal, untouched
+    assert db.get(Signal, "m" * 64) is None

@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://ingest:ingest@db:5432/ingest"
     secret_key: str = "change-me"
     api_token: str = ""
+    # Read-only bearer for readers that never change anything (MDR's signal pull,
+    # SABINE's perception, the control plane's probes). It opens GET routes only.
+    api_read_token: str = ""
     allow_insecure_defaults: bool = False
     # Ed25519 private key (32 bytes hex) that signs every sealed batch of telemetry.
     # Blank derives a stable key from secret_key; production sets a dedicated key.

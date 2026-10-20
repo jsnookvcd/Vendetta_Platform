@@ -127,8 +127,9 @@ def test_editing_a_stored_event_breaks_its_proof(acme):
     db = SessionLocal()
     pipeline.seal(db)
     ev = db.execute(select(Event).order_by(Event.seq)).scalars().first()
-    doctored = dict(ev.event, message="nothing happened here")
-    db.execute(update(Event).where(Event.seq == ev.seq).values(event=doctored))
+    doctored = json.loads(ev.event_text)
+    doctored["message"] = "nothing happened here"
+    db.execute(update(Event).where(Event.seq == ev.seq).values(event_text=json.dumps(doctored)))
     db.commit()
     db.expire_all()
     ev = db.get(Event, ev.seq)
@@ -155,14 +156,20 @@ def test_unsealed_event_has_no_proof_yet(acme):
     assert pipeline.proof(db, db.execute(select(Event)).scalar_one()) is None
 
 
-def test_purge_keeps_unsealed_and_recent_events(acme):
+def test_purge_by_arrival_keeps_unsealed_undetected_and_recent(acme):
+    """Retention runs on when an event arrived, never on the vendor's own time, and
+    an event is purged only once it is both sealed and evaluated by detection."""
     _, conn = acme
-    _ingest(conn, [signin(1, at="2026-01-01T00:00:00Z"), signin(2, at="2026-01-01T00:00:00Z")])
+    _ingest(conn, [signin(1, at="2001-01-01T00:00:00Z"), signin(2)])
     db = SessionLocal()
-    now = dt.datetime(2026, 10, 19, tzinfo=dt.timezone.utc)
-    assert pipeline.purge(db, now) == 0  # nothing sealed yet, nothing goes
+    now = dt.datetime.now(dt.timezone.utc)
+    assert pipeline.purge(db, now) == 0                      # old-dated but just arrived
     pipeline.seal(db, now)
-    _ingest(conn, [signin(3, at="2026-01-01T00:00:00Z")])
-    assert pipeline.purge(db, now) == 2
-    assert db.execute(select(Event)).scalar_one().dedupe_key == "si-3"
+    later = now + dt.timedelta(days=31)
+    assert pipeline.purge(db, later) == 0                    # sealed but not yet evaluated
+    from app import stream
+    stream.run(db)
+    _ingest(conn, [signin(3)])
+    assert pipeline.purge(db, later) == 2
+    assert [e.dedupe_key for e in db.execute(select(Event)).scalars()] == ["si-3"]
     assert db.execute(select(Batch)).scalar_one().size == 2  # leaves survive the purge

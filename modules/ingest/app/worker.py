@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import connectors, evidence, pipeline, receipts, sinks, stream
@@ -34,10 +34,11 @@ def roles() -> set[str]:
 
 # ---------------------------------------------------------------- anchors
 def heads(db: Session) -> dict:
-    out = {}
-    for b in db.execute(select(Batch).order_by(Batch.tenant, Batch.batch_seq)).scalars():
-        out[b.tenant] = {"batch_seq": b.batch_seq, "batch_hash": b.batch_hash, "sealed_at": b.sealed_at.isoformat()}
-    return out
+    latest = select(Batch.tenant, func.max(Batch.batch_seq).label("seq")).group_by(Batch.tenant).subquery()
+    rows = db.execute(select(Batch.tenant, Batch.batch_seq, Batch.batch_hash, Batch.sealed_at)
+                      .join(latest, (Batch.tenant == latest.c.tenant) & (Batch.batch_seq == latest.c.seq))).all()
+    return {r.tenant: {"batch_seq": r.batch_seq, "batch_hash": r.batch_hash, "sealed_at": r.sealed_at.isoformat()}
+            for r in rows}
 
 
 def anchor(db: Session, now: dt.datetime | None = None) -> Anchor | None:
@@ -53,7 +54,17 @@ def anchor(db: Session, now: dt.datetime | None = None) -> Anchor | None:
            "public_key": evidence.public_key_hex(), "tenants": h}
     digest = receipts.sha256_hex(receipts.canonical(doc))
     a = Anchor(created_at=now, digest=digest, document=doc, signature=evidence.sign_bytes(bytes.fromhex(digest)))
-    body = json.dumps({"document": doc, "digest": digest, "signature": a.signature}, indent=2).encode()
+    statements = {}
+    for tenant, head in h.items():
+        sd = {"scheme": "vcd-telemetry-anchor-tenant-v1", "created_at": now.isoformat(),
+              "key_id": evidence.key_id(), "public_key": evidence.public_key_hex(), "anchor_digest": digest,
+              "tenants": {tenant: head}}
+        sdig = receipts.sha256_hex(receipts.canonical(sd))
+        statements[tenant] = {"document": sd, "digest": sdig, "signature": evidence.sign_bytes(bytes.fromhex(sdig))}
+    a.statements = statements
+    body = json.dumps({"document": doc, "digest": digest, "signature": a.signature,
+                       "tenant_statement_digests": {t: st["digest"] for t, st in statements.items()}},
+                      indent=2).encode()
     a.stored_at = sinks.put_anchor(f"telemetry-anchors/{now:%Y/%m/%d}/{digest}.json", body)
     db.add(a)
     db.execute(Batch.__table__.update().where(Batch.anchored_at.is_(None), Batch.sealed_at <= now)
@@ -85,13 +96,39 @@ def bucket_sink(session_factory):
 
 
 def bucket_routes(db: Session) -> dict[str, str]:
-    out = {}
+    """bucket/prefix -> connector id. Two enabled connectors claiming overlapping
+    locations is a misconfiguration that could put one client's objects under
+    another's tenant, so every overlapping route is dropped and logged; objects
+    there stay on the queue and reach the dead letter queue for an operator."""
+    claims: list[tuple[str, str, str]] = []
     for c in db.execute(select(Connector).where(Connector.enabled.is_(True))).scalars():
         b = str((c.config or {}).get("bucket") or "").strip()
         if b:
-            prefix = str((c.config or {}).get("prefix") or "").strip().lstrip("/")
-            out[f"{b}/{prefix}" if prefix else b] = c.id
+            claims.append((b, str((c.config or {}).get("prefix") or "").strip().lstrip("/"), c.id))
+    out: dict[str, str] = {}
+    for b, prefix, cid in claims:
+        clash = [o for (ob, op, o) in claims if o != cid and ob == b and (op.startswith(prefix) or prefix.startswith(op))]
+        if clash:
+            log.warning("bucket door: connector %s overlaps %s on bucket %s; route dropped", cid, clash, b)
+            continue
+        out[f"{b}/{prefix}" if prefix else b] = cid
     return out
+
+
+def route_problem(db: Session, connector_id: str, source: str, bucket: str, prefix: str) -> str:
+    """Why a bucket route cannot be saved, or "" when it can."""
+    from . import mappers
+    m = mappers.get(source)
+    if m is None or "bucket" not in m.doors:
+        return f"{source} is not delivered through a bucket"
+    if not prefix or not prefix.endswith("/"):
+        return "a bucket route needs a prefix ending in / (for example AWSLogs/o-abc123/)"
+    for c in db.execute(select(Connector).where(Connector.id != connector_id)).scalars():
+        ob = str((c.config or {}).get("bucket") or "").strip()
+        op = str((c.config or {}).get("prefix") or "").strip().lstrip("/")
+        if ob == bucket and (op.startswith(prefix) or prefix.startswith(op)):
+            return f"that location overlaps connector {c.name}"
+    return ""
 
 
 def bucket_once(session_factory) -> dict:

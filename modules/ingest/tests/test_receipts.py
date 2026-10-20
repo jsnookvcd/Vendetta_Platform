@@ -140,8 +140,9 @@ def test_chain_verifies_and_names_every_break():
     b1, _, _ = _batch(seq=1)
     b2, _, _ = _batch(seq=2, prev=b1["batch_hash"])
     b3, _, _ = _batch(seq=3, prev=b2["batch_hash"])
-    assert R.verify_chain([b1, b2, b3]) == {"ok": True, "length": 3, "verified": 3, "broken_at": None,
-                                            "reason": "intact", "head": b3["batch_hash"]}
+    out = R.verify_chain([b1, b2, b3])
+    assert out["ok"] and out["verified"] == 3 and out["head"] == b3["batch_hash"] and out["head_seq"] == 3
+    assert out["pinned"] is False and R.verify_chain([b1, b2, b3], PUB)["pinned"] is True
     assert R.verify_chain([b1, b3])["reason"] == "a batch is missing or out of order"
     assert R.verify_chain([b2, b3])["ok"] is True  # a window that starts mid-chain
     forged, _, _ = _batch(seq=2, prev=R.GENESIS)
@@ -163,13 +164,19 @@ def test_offline_verifier_cli(tmp_path):
     ok = subprocess.run([sys.executable, "-I", "receipts.py", "proof.json", "raw.json", "--key", PUB],
                         cwd=tmp_path, capture_output=True, text=True)
     assert ok.returncode == 0 and "VERIFIED" in ok.stdout
+    unpinned = subprocess.run([sys.executable, "-I", "receipts.py", "proof.json"], cwd=tmp_path,
+                              capture_output=True, text=True)
+    assert unpinned.returncode == 3 and "UNPINNED" in unpinned.stdout
+    wrong = subprocess.run([sys.executable, "-I", "receipts.py", "proof.json", "--key", OTHER_PUB], cwd=tmp_path,
+                           capture_output=True, text=True)
+    assert wrong.returncode == 1 and "different key" in wrong.stdout
     (tmp_path / "raw.json").write_text(json.dumps(dict(raws[1], msg="changed")))
-    bad = subprocess.run([sys.executable, "-I", "receipts.py", "proof.json", "raw.json"], cwd=tmp_path,
-                         capture_output=True, text=True)
+    bad = subprocess.run([sys.executable, "-I", "receipts.py", "proof.json", "raw.json", "--key", PUB],
+                         cwd=tmp_path, capture_output=True, text=True)
     assert bad.returncode == 1 and "raw record does not match" in bad.stdout
     b1, _, _ = _batch(seq=1)
     b2, _, _ = _batch(seq=2, prev=b1["batch_hash"])
     (tmp_path / "chain.json").write_text(json.dumps({"batches": [b1, b2]}))
-    chain = subprocess.run([sys.executable, "-I", "receipts.py", "chain.json"], cwd=tmp_path, capture_output=True,
-                           text=True)
+    chain = subprocess.run([sys.executable, "-I", "receipts.py", "chain.json", "--key", PUB], cwd=tmp_path,
+                           capture_output=True, text=True)
     assert chain.returncode == 0 and '"intact"' in chain.stdout

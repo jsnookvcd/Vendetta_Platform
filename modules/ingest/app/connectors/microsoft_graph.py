@@ -12,6 +12,7 @@ import httpx
 
 from .. import ocsf
 from . import ConnectorError, Puller, puller
+from ._util import same_host
 
 LOGIN = "https://login.microsoftonline.com"
 GRAPH = "https://graph.microsoft.com"
@@ -59,8 +60,8 @@ class _GraphPuller(Puller):
                 if ms is not None:
                     newest = max(newest, dt.datetime.fromtimestamp(ms / 1000, tz=dt.timezone.utc))
             nxt = body.get("@odata.nextLink")
-            if nxt and httpx.URL(nxt).host != httpx.URL(GRAPH).host:
-                raise ConnectorError("Graph returned a next link to another host")
+            if nxt:
+                nxt = same_host(nxt, httpx.URL(GRAPH).host)  # https on graph.microsoft.com only
             url, params = (nxt, None) if nxt else (None, None)
             yield rows, {"since": newest.isoformat()}
 

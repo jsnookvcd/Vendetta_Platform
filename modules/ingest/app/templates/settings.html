@@ -41,8 +41,11 @@ GET  /api/chain/{tenant}/verify
 POST /api/seal
 POST /api/stream/run
 POST /api/provision/sync
-Authorization: Bearer {{ api_token }}
-
+Authorization: Bearer {% if api_token %}{{ api_token }}{% else %}(shown to admins){% endif %}
+{% if read_token %}
+Read-only token for GET routes (MDR, SABINE, the control plane):
+Authorization: Bearer {{ read_token }}
+{% endif %}
 POST /api/ingest/{connector_id}      (push door)
 Authorization: Bearer &lt;connector secret&gt;
   or X-Vendetta-Timestamp + X-Vendetta-Signature: sha256=HMAC(secret, "&lt;timestamp&gt;.&lt;body&gt;")</pre>

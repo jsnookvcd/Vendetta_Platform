@@ -15,20 +15,23 @@ What that buys a client, a regulator, a carrier or a court:
 - The raw record proves the normalized event was derived from what the vendor sent,
   because both hashes sit in the same leaf.
 - The header chain proves no batch was removed, inserted or reordered after sealing.
-- Daily anchors of each chain head can be written to WORM storage and time-stamped,
-  so even Vendetta cannot rewrite history after the anchor.
+- Daily anchors of each chain head are signed and written to WORM storage, so even
+  Vendetta cannot rewrite history after the anchor. A chain export carries the
+  latest anchor for its tenant, and verification checks the chain reaches it.
 
 This file has no dependency on the rest of the application on purpose. It is the
 offline verifier too: copy it next to an exported proof and run
 
     python receipts.py proof.json [raw_record.json]
 
-It needs Python 3.10+ and the `cryptography` package, nothing else.
+It needs Python 3.10+ and the `cryptography` package, nothing else. Pass the
+public key Vendetta published (--key) so the check does not rest on the key the
+file carries; without it the verifier says UNPINNED and exits 3.
 
 Hashing conventions (all SHA-256, hex in JSON):
 
-  canonical(x)   = UTF-8 JSON, keys sorted, no whitespace, non-ASCII kept
-  raw_sha256     = sha256(canonical(raw record as received))
+  canonical(x)   = RFC 8785 JSON Canonicalization Scheme, UTF-8
+  raw_sha256     = sha256(canonical(raw record as parsed from the delivery))
   event_sha256   = sha256(canonical(OCSF event without its "receipt" block))
   leaf_hash      = sha256(0x00 || raw_sha256 bytes || event_sha256 bytes)
   node           = sha256(0x01 || left || right)            (RFC 6962 section 2.1)
@@ -50,7 +53,68 @@ HEADER_FIELDS = ("scheme", "tenant", "batch_seq", "size", "first_seq", "last_seq
 
 # ---------------------------------------------------------------- hashing
 def canonical(obj) -> bytes:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    """RFC 8785 (JSON Canonicalization Scheme) bytes: keys sorted by UTF-16 code
+    units, no whitespace, strings escaped as JSON requires and nothing more, numbers
+    in ECMAScript shortest form (1e16 is 10000000000000000, 8.0 is 8, -0.0 is 0).
+    Integers are written exactly. NaN, Infinity and lone surrogates are refused with
+    ValueError because no canonical form exists for them."""
+    try:
+        return _jcs(obj).encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("text contains a lone surrogate") from None
+
+
+def _jcs(v) -> str:
+    if v is None:
+        return "null"
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return _es_number(v)
+    if isinstance(v, str):
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, (list, tuple)):
+        return "[" + ",".join(_jcs(x) for x in v) + "]"
+    if isinstance(v, dict):
+        items = []
+        for k in v:
+            if not isinstance(k, str):
+                raise ValueError("object keys must be strings")
+            items.append(k)
+        items.sort(key=lambda k: k.encode("utf-16-be", "surrogatepass"))
+        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + _jcs(v[k]) for k in items) + "}"
+    return json.dumps(str(v), ensure_ascii=False)
+
+
+def _es_number(f: float) -> str:
+    if f != f or f in (float("inf"), float("-inf")):
+        raise ValueError("NaN and Infinity have no canonical JSON form")
+    if f == 0:
+        return "0"
+    sign = "-" if f < 0 else ""
+    r = repr(abs(f))
+    mant, _, exp = r.partition("e")
+    ip, _, fp = mant.partition(".")
+    digits = ip + fp
+    point = len(ip) + (int(exp) if exp else 0)
+    stripped = digits.lstrip("0")
+    point -= len(digits) - len(stripped)
+    s = stripped.rstrip("0") or "0"
+    k, n = len(s), point
+    if k <= n <= 21:
+        out = s + "0" * (n - k)
+    elif 0 < n <= 21:
+        out = s[:n] + "." + s[n:]
+    elif -6 < n <= 0:
+        out = "0." + "0" * (-n) + s
+    else:
+        e = n - 1
+        out = (s if k == 1 else s[0] + "." + s[1:]) + "e" + ("+" if e >= 0 else "-") + str(abs(e))
+    return sign + out
 
 
 def sha256_hex(data: bytes) -> str:
@@ -194,7 +258,8 @@ def verify_proof(proof: dict, raw=None, public_key_hex: str | None = None) -> di
         return ok
 
     def done(reason: str) -> dict:
-        return {"ok": all(c["ok"] for c in checks) and reason == "verified", "checks": checks, "reason": reason}
+        return {"ok": all(c["ok"] for c in checks) and reason == "verified", "checks": checks, "reason": reason,
+                "pinned": bool(public_key_hex)}
 
     try:
         event = proof["event"]
@@ -231,17 +296,45 @@ def verify_proof(proof: dict, raw=None, public_key_hex: str | None = None) -> di
     return done("verified")
 
 
-def verify_chain(batches: list[dict], public_key_hex: str | None = None) -> dict:
+def verify_anchor(anchor: dict, public_key_hex: str | None = None) -> tuple[bool, str]:
+    """Check a daily anchor ({document, digest, signature}) on its own."""
+    try:
+        doc, digest, sig = anchor["document"], anchor["digest"], anchor["signature"]
+    except (KeyError, TypeError):
+        return False, "malformed anchor"
+    pub = public_key_hex or doc.get("public_key", "")
+    if sha256_hex(canonical(doc)) != digest:
+        return False, "anchor document altered"
+    if key_id_for(pub) != doc.get("key_id"):
+        return False, "anchor signed by a different key"
+    if not verify_signature(pub, digest, sig):
+        return False, "anchor signature invalid"
+    return True, "ok"
+
+
+def verify_chain(batches: list[dict], public_key_hex: str | None = None, anchor: dict | None = None) -> dict:
     """Verify an ordered list of a tenant's batches ({header, batch_hash, signature,
-    public_key}): each header hash, each signature, sequence numbers and links."""
+    public_key}): each header hash, each signature, sequence numbers and links, and
+    that one key signed them all. With an anchor, also check the anchor's signature
+    and that the chain contains the anchored head: a chain cut short before the
+    anchor, or rewritten under it, fails."""
+    def fail(i: int, reason: str) -> dict:
+        return {"ok": False, "length": len(batches), "verified": max(0, i - 1), "broken_at": i, "reason": reason,
+                "pinned": bool(public_key_hex)}
+
+    if not batches:
+        return fail(1, "the chain is empty")
     prev = GENESIS
     expected_seq = None
     tenant = None
+    key = public_key_hex
+    seen: dict[int, str] = {}
     for i, b in enumerate(batches, start=1):
         h = b["header"]
-        pub = public_key_hex or b.get("public_key", "")
+        pub = key or b.get("public_key", "")
         if tenant is None:
             tenant = h["tenant"]
+            key = pub
             expected_seq = int(h["batch_seq"])
             if expected_seq != 1:
                 prev = h["prev_batch_hash"]  # a window that starts mid-chain
@@ -259,23 +352,49 @@ def verify_chain(batches: list[dict], public_key_hex: str | None = None) -> dict
         elif not verify_signature(pub, b["batch_hash"], b["signature"]):
             reason = "signature invalid"
         if reason:
-            return {"ok": False, "length": len(batches), "verified": i - 1, "broken_at": i, "reason": reason}
+            return fail(i, reason)
+        seen[int(h["batch_seq"])] = b["batch_hash"]
         prev = b["batch_hash"]
         expected_seq += 1
-    return {"ok": True, "length": len(batches), "verified": len(batches), "broken_at": None, "reason": "intact",
-            "head": prev}
+    out = {"ok": True, "length": len(batches), "verified": len(batches), "broken_at": None, "reason": "intact",
+           "head": prev, "head_seq": expected_seq - 1, "pinned": bool(public_key_hex), "anchored": False}
+    if anchor is not None:
+        ok, why = verify_anchor(anchor, key)
+        if not ok:
+            return {**out, "ok": False, "reason": why}
+        head = ((anchor["document"].get("tenants") or {}).get(tenant)) or {}
+        seq, bh = int(head.get("batch_seq") or 0), head.get("batch_hash")
+        if not seq:
+            return {**out, "ok": False, "reason": "the anchor does not cover this tenant"}
+        if seq > out["head_seq"]:
+            return {**out, "ok": False, "reason": "the chain ends before the anchored head: batches were removed"}
+        if seq in seen and seen[seq] != bh:
+            return {**out, "ok": False, "reason": "the chain differs from the anchored head"}
+        if seq not in seen:
+            return {**out, "ok": False, "reason": "the anchored batch is not in this window of the chain"}
+        out["anchored"] = True
+        out["anchor_created_at"] = anchor["document"].get("created_at")
+    return out
 
 
 def _main(argv: list[str]) -> int:
     if len(argv) < 2:
-        print("usage: python receipts.py proof.json [raw_record.json] [--key <public key hex>]")
+        print("usage: python receipts.py proof.json|chain.json [raw_record.json] --key <public key hex>")
+        print("       add --trust-embedded-key to check against the key inside the file (not recommended)")
         return 2
     args = list(argv[1:])
     key = None
+    trust = "--trust-embedded-key" in args
+    if trust:
+        args.remove("--trust-embedded-key")
     if "--key" in args:
         i = args.index("--key")
-        key = args[i + 1]
+        key = args[i + 1] if i + 1 < len(args) else ""
         del args[i:i + 2]
+    if not key and not trust:
+        print("UNPINNED: pass --key with the public key Vendetta published. A file can carry any key, so a")
+        print("check against the key inside it proves only that the file is self-consistent.")
+        return 3
     with open(args[0], encoding="utf-8") as fh:
         doc = json.load(fh)
     raw = None
@@ -287,7 +406,7 @@ def _main(argv: list[str]) -> int:
         except ValueError:
             raw = data
     if isinstance(doc, dict) and "batches" in doc:
-        result = verify_chain(doc["batches"], key)
+        result = verify_chain(doc["batches"], key, doc.get("anchor"))
         print(json.dumps(result, indent=2))
         return 0 if result["ok"] else 1
     result = verify_proof(doc, raw, key)

@@ -387,12 +387,26 @@ resource "aws_ssm_parameter" "pm_osp_token" {
   value = random_password.api_token["professional-services"].result
 }
 
-# MDR reads Telemetry Ingest's detections with the ingest API token.
+# Telemetry Ingest's read-only token: opens its GET routes only. MDR reads
+# detections with it, so a leaked MDR configuration cannot change anything in ingest.
+resource "random_password" "ingest_read_token" {
+  count   = contains(keys(local.deployed), "ingest") ? 1 : 0
+  length  = 48
+  special = false
+}
+
+resource "aws_ssm_parameter" "ingest_read_token" {
+  count = contains(keys(local.deployed), "ingest") ? 1 : 0
+  name  = "${var.ssm_prefix}/ingest/API_READ_TOKEN"
+  type  = "SecureString"
+  value = random_password.ingest_read_token[0].result
+}
+
 resource "aws_ssm_parameter" "mdr_ingest_token" {
   count = contains(keys(local.deployed), "mdr") && contains(keys(local.deployed), "ingest") ? 1 : 0
   name  = "${var.ssm_prefix}/mdr/INGEST_TOKEN"
   type  = "SecureString"
-  value = random_password.api_token["ingest"].result
+  value = random_password.ingest_read_token[0].result
 }
 
 # SABINE's board: the wall-display token (open <sabine host>/board?k=<token> once on

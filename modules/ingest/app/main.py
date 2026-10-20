@@ -242,7 +242,10 @@ def sso_test(user: str = auth.RequireUser, db: Session = Depends(get_db)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, user: str = auth.RequireUser):
     from . import evidence, sinks
-    return render(request, "settings.html", user=user, api_token=auth.api_token(), sso_enabled=sso.enabled(),
+    ident = auth.resolve_identity(request)
+    token = auth.api_token() if ident and ident.is_admin else ""
+    return render(request, "settings.html", user=user, api_token=token, read_token=auth.api_read_token() if token else "",
+                  sso_enabled=sso.enabled(),
                   platform_url=settings.platform_url or "not set", hub=settings.platform_hub_url or "not connected",
                   public_key=evidence.public_key_hex(), key_id=evidence.key_id(), sinks=sinks.configured(),
                   stats=sinks.STATS, worker=worker.state(), s=settings)
@@ -313,20 +316,23 @@ async def connector_add(request: Request, user: str = auth.RequireAdmin, db: Ses
     cls = connectors.get(source)
     spec = cls.spec if cls else {"credentials": {}, "config": {}}
     config = {k: str(form.get(f"config.{k}") or "").strip() for k in spec.get("config", {})}
-    for extra in ("bucket", "prefix"):
+    for extra in ("bucket", "prefix", "account_id"):
         v = str(form.get(f"config.{extra}") or "").strip()
         if v:
             config[extra] = v
+    if config.get("bucket"):
+        problem = worker.route_problem(db, "", source, config["bucket"], config.get("prefix", "").lstrip("/"))
+        if problem:
+            return _back("/connectors", False, problem)
     creds = {k: str(form.get(f"cred.{k}") or "") for k in spec.get("credentials", {})}
     secret = pysecrets.token_urlsafe(32)
     conn = Connector(client_id=c.id, source=source, name=(str(form.get("name") or "") or f"{c.name} {m.name}")[:200],
                      config={k: v for k, v in config.items() if v},
                      credentials=json.dumps({k: v for k, v in creds.items() if v}) if any(creds.values()) else "",
-                     webhook_secret=secret, enabled=True, created_by=user)
+                     webhook_secret=secret, pending_reveal=secret, enabled=True, created_by=user)
     db.add(conn)
     db.commit()
     _audit(db, user, "connector.add", f"{conn.id} {source} for {c.name}")
-    request.session["reveal"] = {"id": conn.id, "secret": secret}
     return RedirectResponse(f"/connectors/{conn.id}", status_code=302)
 
 
@@ -337,8 +343,13 @@ def connector_page(cid: str, request: Request, user: str = auth.RequireUser, db:
                       .order_by(ConnectorRun.started_at.desc()).limit(30)).scalars().all()
     rejected = db.execute(select(Rejected).where(Rejected.connector_id == cid)
                           .order_by(Rejected.at.desc()).limit(20)).scalars().all()
-    reveal = request.session.pop("reveal", None)
-    secret = reveal["secret"] if reveal and reveal.get("id") == cid else ""
+    # A newly issued push secret is shown once, to an admin, then cleared.
+    secret = ""
+    ident = auth.resolve_identity(request)
+    if c.pending_reveal and ident and ident.is_admin:
+        secret = c.pending_reveal
+        c.pending_reveal = ""
+        db.commit()
     base = (settings.public_url or "").rstrip("/")
     m = mappers.get(c.source)
     cls = connectors.get(c.source)
@@ -373,9 +384,9 @@ def connector_rotate(cid: str, request: Request, user: str = auth.RequireAdmin, 
     c = _connector(db, cid)
     secret = pysecrets.token_urlsafe(32)
     c.webhook_secret = secret
+    c.pending_reveal = secret
     db.commit()
     _audit(db, user, "connector.rotate_secret", cid)
-    request.session["reveal"] = {"id": cid, "secret": secret}
     return _back(f"/connectors/{cid}", True, "New push secret issued. The old one stopped working.")
 
 
@@ -392,13 +403,17 @@ async def connector_credentials(cid: str, request: Request, user: str = auth.Req
         if v:
             creds[k] = v
     config = dict(c.config or {})
-    for k in list(spec.get("config", {})) + ["bucket", "prefix"]:
+    for k in list(spec.get("config", {})) + ["bucket", "prefix", "account_id"]:
         if f"config.{k}" in form:
             v = str(form.get(f"config.{k}") or "").strip()
             if v:
                 config[k] = v
             else:
                 config.pop(k, None)
+    if config.get("bucket"):
+        problem = worker.route_problem(db, c.id, c.source, config["bucket"], config.get("prefix", "").lstrip("/"))
+        if problem:
+            return _back(f"/connectors/{cid}", False, problem)
     c.credentials = json.dumps(creds) if creds else ""
     c.config = config
     db.commit()
@@ -411,7 +426,8 @@ def _push_authorized(request: Request, body: bytes, secret: str) -> bool:
     if not secret:
         return False
     authz = request.headers.get("authorization", "")
-    if authz.startswith("Bearer ") and hmac.compare_digest(authz[7:].strip(), secret):
+    if authz.startswith("Bearer ") and hmac.compare_digest(authz[7:].strip().encode("utf-8", "replace"),
+                                                           secret.encode()):
         return True
     ts = request.headers.get("x-vendetta-timestamp", "")
     sig = request.headers.get("x-vendetta-signature", "")
@@ -423,7 +439,31 @@ def _push_authorized(request: Request, body: bytes, secret: str) -> bool:
     except ValueError:
         return False
     expected = hmac.new(secret.encode(), ts.encode() + b"." + body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig[7:], expected)
+    return hmac.compare_digest(sig[7:].encode("utf-8", "replace"), expected.encode())
+
+
+class _BadJSON(ValueError):
+    pass
+
+
+def _no_duplicate_keys(pairs):
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            raise _BadJSON(f"duplicate key {k[:40]!r}")
+        out[k] = v
+    return out
+
+
+def _no_constants(name):
+    raise _BadJSON(f"{name} is not valid JSON")
+
+
+def strict_json(body: bytes):
+    """Parse a delivery strictly: duplicate keys and NaN or Infinity are refused,
+    because two parsers could read such a record differently and its hash would no
+    longer say which record it was."""
+    return json.loads(body, object_pairs_hook=_no_duplicate_keys, parse_constant=_no_constants)
 
 
 def unwrap(source: str, doc) -> list:
@@ -464,14 +504,15 @@ def push_verify(cid: str, request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/ingest/{cid}")
 async def push(cid: str, request: Request, db: Session = Depends(get_db)):
-    c = db.get(Connector, cid)
-    # 404 for unknown, disabled and unauthorized alike, so the endpoint does not
-    # reveal which connector ids exist.
-    if c is None or not c.enabled:
-        raise HTTPException(404)
+    # The size limit applies before any lookup, so 413 says nothing about whether
+    # the connector exists. After that, unknown, disabled and unauthorized all
+    # answer 404.
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > settings.max_push_bytes:
         raise HTTPException(413, "body too large")
+    c = db.get(Connector, cid)
+    if c is None or not c.enabled:
+        raise HTTPException(404)
     body = b""
     async for chunk in request.stream():
         body += chunk
@@ -480,8 +521,10 @@ async def push(cid: str, request: Request, db: Session = Depends(get_db)):
     if not _push_authorized(request, body, c.webhook_secret):
         raise HTTPException(404)
     try:
-        doc = json.loads(body)
-    except ValueError:
+        doc = strict_json(body)
+    except _BadJSON as e:
+        raise HTTPException(400, str(e))
+    except (ValueError, RecursionError):
         raise HTTPException(400, "JSON body required")
     records = unwrap(c.source, doc)
     if len(records) > settings.max_push_records:
@@ -535,7 +578,8 @@ def event_page(eid: str, request: Request, user: str = auth.RequireUser, db: Ses
     ev = _event(db, eid)
     batch = db.get(Batch, ev.batch_id) if ev.batch_id else None
     return render(request, "event.html", user=user, ev=ev, batch=batch, client=db.get(Client, ev.client_id),
-                  event_json=json.dumps(ev.event, indent=2, sort_keys=True), raw_json=_pretty(ev.raw))
+                  event_json=json.dumps(json.loads(ev.event_text), indent=2, sort_keys=True),
+                  raw_json=_pretty(ev.raw.decode("utf-8", "replace")))
 
 
 def _pretty(raw: str) -> str:
@@ -545,9 +589,13 @@ def _pretty(raw: str) -> str:
         return raw
 
 
+def _raw_doc(ev: Event):
+    return json.loads(ev.raw.decode("utf-8"))
+
+
 def _proof_response(proof: dict, ev: Event, with_raw: bool) -> Response:
     if with_raw:
-        proof = {**proof, "raw": json.loads(ev.raw) if ev.raw.startswith(("{", "[")) else ev.raw}
+        proof = {**proof, "raw": _raw_doc(ev)}
     body = json.dumps(proof, indent=2, sort_keys=True, default=str).encode()
     return Response(body, media_type="application/json",
                     headers={"Content-Disposition": f'attachment; filename="proof-{ev.id}.json"'})
@@ -598,8 +646,10 @@ def receipts_chain(tenant: str, user: str = auth.RequireUser, db: Session = Depe
 
 
 def _chain_download(db: Session, tenant: str) -> Response:
+    from . import evidence
     body = json.dumps({"scheme": receipts.SCHEME, "tenant": tenant, "batches": pipeline.chain(db, tenant, 1, 100000),
-                       "verify": "python receipts.py chain.json"}, indent=2).encode()
+                       "anchor": pipeline.latest_anchor(db, tenant), "public_key": evidence.public_key_hex(),
+                       "verify": "python receipts.py chain.json --key <published public key>"}, indent=2).encode()
     return Response(body, media_type="application/json",
                     headers={"Content-Disposition": f'attachment; filename="chain-{tenant}.json"'})
 
@@ -842,9 +892,24 @@ def portal(request: Request, ident: auth.Identity = Depends(auth.require_client)
                   exec_view=ident.is_executive)
 
 
+_EXPORT_HITS: dict[str, float] = {}
+EXPORT_EVERY_SECONDS = 60
+
+
+def _technical(ident: auth.Identity) -> None:
+    """Downloads are for the technical portal view, as in every other module."""
+    if ident.is_executive:
+        raise HTTPException(404)
+
+
 @app.get("/portal/chain.json")
 def portal_chain(ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
     c = _portal_client(db, ident)
+    _technical(ident)
+    last = _EXPORT_HITS.get(ident.email, 0.0)
+    if time.time() - last < EXPORT_EVERY_SECONDS:
+        raise HTTPException(429, "one chain export per minute")
+    _EXPORT_HITS[ident.email] = time.time()
     _audit(db, ident.email, "portal.chain.export", c.platform_client_id)
     return _chain_download(db, c.platform_client_id)
 
@@ -852,6 +917,7 @@ def portal_chain(ident: auth.Identity = Depends(auth.require_client), db: Sessio
 @app.get("/portal/events/{eid}/proof")
 def portal_event_proof(eid: str, ident: auth.Identity = Depends(auth.require_client), db: Session = Depends(get_db)):
     c = _portal_client(db, ident)
+    _technical(ident)
     ev = db.execute(select(Event).where(Event.id == eid)).scalar_one_or_none()
     auth.require_owned(ident, ev, extra=bool(ev and ev.tenant == c.platform_client_id))
     p = pipeline.proof(db, ev)
@@ -868,7 +934,7 @@ def healthz():
 
 
 @app.get("/api/module")
-def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_module(user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
     counts = {"open": 0, "by_severity": {s: 0 for s in SEVERITIES}, "events_24h": 0, "connectors": 0}
     try:
         for sev, n in db.execute(select(Detection.severity, func.count()).where(
@@ -894,9 +960,11 @@ def api_module(user: str = Depends(auth.api_user), db: Session = Depends(get_db)
 
 @app.get("/api/findings")
 def api_findings(status: str = Query("active"), platform_client_id: str = Query(""), client: str = Query(""),
-                 user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
-    """Detections in the shared finding model. status is active (default) or open,
-    all, or a literal finding status."""
+                 updated_since: str = Query(""), limit: int = Query(1000, ge=1, le=5000),
+                 user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
+    """Detections in the shared finding model, most recently updated first. status
+    is active (default) or open, all, or a literal finding status. updated_since
+    (ISO 8601) returns only detections changed after it, so a reader can page."""
     q = select(Detection, Client).join(Client, Client.id == Detection.client_id)
     if status in ("active", "open"):
         q = q.where(Detection.status.in_(OPEN_FINDING_STATUSES))
@@ -908,7 +976,13 @@ def api_findings(status: str = Query("active"), platform_client_id: str = Query(
         q = q.where(Client.platform_client_id == platform_client_id)
     elif client:
         q = q.where(Client.name.ilike(f"%{client[:100]}%"))
-    rows = db.execute(q.order_by(Detection.last_event_at.desc()).limit(1000)).all()
+    if updated_since:
+        try:
+            since = dt.datetime.fromisoformat(updated_since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "updated_since must be ISO 8601")
+        q = q.where(Detection.updated_at > (since if since.tzinfo else since.replace(tzinfo=dt.timezone.utc)))
+    rows = db.execute(q.order_by(Detection.updated_at.desc()).limit(limit)).all()
     return [hub.finding_dict(d, c, hub.evidence_for(db, d, limit=5)) for d, c in rows]
 
 
@@ -922,12 +996,12 @@ def api_escalate(did: str, user: str = Depends(auth.api_user), db: Session = Dep
 
 
 @app.get("/api/catalog")
-def api_catalog(user: str = Depends(auth.api_user)):
+def api_catalog(user: str = Depends(auth.api_reader)):
     return connectors.catalog()
 
 
 @app.get("/api/connectors")
-def api_connectors(platform_client_id: str = Query(""), user: str = Depends(auth.api_user),
+def api_connectors(platform_client_id: str = Query(""), user: str = Depends(auth.api_reader),
                    db: Session = Depends(get_db)):
     health = readiness.connector_health(db)
     if platform_client_id:
@@ -946,9 +1020,9 @@ def api_connector_run(cid: str, user: str = Depends(auth.api_user), db: Session 
 
 
 @app.get("/api/events")
-def api_events(platform_client_id: str = Query(...), source: str = "", class_uid: int = 0, q: str = "",
+def api_events(platform_client_id: str = Query(..., min_length=1), source: str = "", class_uid: int = 0, q: str = "",
                hours: int = Query(24, ge=1, le=24 * 90), limit: int = Query(100, ge=1, le=1000),
-               user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+               user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
     """Normalized events for one tenant. The tenant is required: the API never
     returns events across clients in one response."""
     rows = db.execute(_event_query(platform_client_id, source, class_uid, q, hours)
@@ -958,24 +1032,25 @@ def api_events(platform_client_id: str = Query(...), source: str = "", class_uid
 
 
 @app.get("/api/events/{eid}/proof")
-def api_event_proof(eid: str, raw: bool = False, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_event_proof(eid: str, raw: bool = False, user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
     ev = _event(db, eid)
     p = pipeline.proof(db, ev)
     if p is None:
         return JSONResponse({"sealed": False, "detail": "waiting for the next seal"}, status_code=409)
     if raw:
-        p["raw"] = json.loads(ev.raw) if ev.raw.startswith(("{", "[")) else ev.raw
+        p["raw"] = _raw_doc(ev)
     return p
 
 
 @app.get("/api/chain/{tenant}")
 def api_chain(tenant: str, since: int = Query(1, ge=1), limit: int = Query(1000, ge=1, le=10000),
-              user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
-    return {"scheme": receipts.SCHEME, "tenant": tenant, "batches": pipeline.chain(db, tenant, since, limit)}
+              user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
+    return {"scheme": receipts.SCHEME, "tenant": tenant, "batches": pipeline.chain(db, tenant, since, limit),
+            "anchor": pipeline.latest_anchor(db, tenant)}
 
 
 @app.get("/api/chain/{tenant}/verify")
-def api_chain_verify(tenant: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+def api_chain_verify(tenant: str, user: str = Depends(auth.api_reader), db: Session = Depends(get_db)):
     return pipeline.verify_tenant(db, tenant)
 
 

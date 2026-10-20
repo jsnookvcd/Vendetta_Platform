@@ -70,6 +70,7 @@ def finding_dict(d: Detection, client: Client, evidence: list[dict] | None = Non
         "mitre": list(d.mitre or []),
         "events": d.count,
         "last_event_at": _iso(d.last_event_at),
+        "updated_at": _iso(d.updated_at),
         "user": d.user or "",
         # The source tool and the vendor's own id, so MDR can tell this alert and the
         # managed-services copy of the same alert apart from two separate alerts.

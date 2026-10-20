@@ -16,6 +16,10 @@ def problems() -> list[str]:
     out = []
     if (settings.secret_key or "").strip().lower() in PLACEHOLDER_SECRETS:
         out.append("SECRET_KEY is a placeholder")
+    # Receipts are this module's product. A signing key derived from SECRET_KEY would
+    # tie evidence to the session secret and change if it were rotated.
+    if not (settings.evidence_signing_key or "").strip():
+        out.append("EVIDENCE_SIGNING_KEY is not set (receipts need a dedicated, backed-up key)")
     return out
 
 

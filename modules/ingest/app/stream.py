@@ -1,6 +1,9 @@
 """Streaming detection over normalized events.
 
-Each pass reads the events stored since the last pass (a cursor on Event.seq) and:
+Each pass reads the events not yet evaluated (Event.detected is false), in seq
+order, and marks them evaluated in the same transaction as the detections they
+raise. A flag rather than a cursor: an event whose insert commits after a later one
+is still evaluated. For each event the pass:
 
 - turns every vendor detection (an OCSF Detection Finding from a source whose mapper
   is the vendor's own alerting) into one Detection per vendor finding id, updated in
@@ -28,15 +31,15 @@ from sqlalchemy.orm import Session
 
 from . import mappers, ocsf, sigma
 from .config import settings
-from .db import Detection, Event, RuleHit, SigmaRule, StreamCursor, utcnow
+from .db import Detection, Event, RuleHit, SigmaRule, utcnow
 
 log = logging.getLogger(__name__)
 
-CURSOR = "detection"
 _LOCK_KEY = 880_901
 CHUNK = 2000
 DEFAULT_WINDOW = dt.timedelta(hours=1)
 MAX_EVENT_IDS = 500
+DRY_RUN_SECONDS = 10
 
 # Source key to the tool name MDR's rules match on (the finding's `reason`).
 TOOL_OF = {
@@ -67,15 +70,6 @@ def load_rules(db: Session) -> list[tuple[SigmaRule, sigma.Rule]]:
                 continue
         out.append((r, _compiled[key]))
     return out
-
-
-def _cursor(db: Session) -> StreamCursor:
-    c = db.get(StreamCursor, CURSOR)
-    if c is None:
-        c = StreamCursor(name=CURSOR, last_seq=0)
-        db.add(c)
-        db.flush()
-    return c
 
 
 def _append(det: Detection, ev: Event) -> None:
@@ -156,10 +150,11 @@ def _sigma_threshold(db: Session, rule: SigmaRule, comp: sigma.Rule, ev: Event) 
     since = ev.time - dt.timedelta(seconds=comp.timeframe_seconds or 600)
     base = select(RuleHit).where(RuleHit.rule_id == rule.id, RuleHit.tenant == ev.tenant,
                                  RuleHit.group_key == group, RuleHit.time >= since, RuleHit.time <= ev.time)
+    sq = base.subquery()
     if th.get("distinct"):
-        n = db.scalar(select(func.count(func.distinct(RuleHit.distinct_value))).select_from(base.subquery())) or 0
+        n = db.scalar(select(func.count(func.distinct(sq.c.distinct_value)))) or 0
     else:
-        n = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+        n = db.scalar(select(func.count()).select_from(sq)) or 0
     # An open detection for this group inside the window absorbs further matches.
     det = db.execute(select(Detection).where(
         Detection.tenant == ev.tenant, Detection.kind == "sigma", Detection.rule_id == rule.id,
@@ -197,11 +192,10 @@ def run(db: Session, limit_chunks: int = 50) -> dict:
 
 def _run(db: Session, limit_chunks: int) -> dict:
     rules = load_rules(db)
-    cur = _cursor(db)
     summary = {"events": 0, "vendor_new": 0, "vendor_updated": 0, "sigma_new": 0, "sigma_matches": 0}
     vendor_sources = {m.key for m in mappers.all_mappers() if m.detection}
     for _ in range(limit_chunks):
-        evs = db.execute(select(Event).where(Event.seq > cur.last_seq).order_by(Event.seq).limit(CHUNK)
+        evs = db.execute(select(Event).where(Event.detected.is_(False)).order_by(Event.seq).limit(CHUNK)
                          ).scalars().all()
         if not evs:
             break
@@ -230,8 +224,8 @@ def _run(db: Session, limit_chunks: int) -> dict:
             r = db.get(SigmaRule, rid)
             if r is not None:
                 r.hits_total = (r.hits_total or 0) + n
-        cur.last_seq = evs[-1].seq
-        cur.updated_at = utcnow()
+        for ev in evs:
+            ev.detected = True
         db.commit()
     _trim_hits(db, rules)
     LAST.update(at=utcnow(), ok=True, detail="ok", summary=summary)
@@ -239,8 +233,11 @@ def _run(db: Session, limit_chunks: int) -> dict:
 
 
 def _trim_hits(db: Session, rules) -> None:
+    # By insert time: a hit for a backfilled or old-dated event must survive long
+    # enough to be counted with its neighbours.
     widest = max([c.timeframe_seconds for _, c in rules if c.threshold] + [3600])
-    db.execute(RuleHit.__table__.delete().where(RuleHit.time < utcnow() - dt.timedelta(seconds=widest * 2)))
+    db.execute(RuleHit.__table__.delete().where(
+        RuleHit.created_at < utcnow() - dt.timedelta(seconds=widest * 2 + 86400)))
     db.commit()
 
 
@@ -252,7 +249,11 @@ def test_rule(db: Session, comp: sigma.Rule, tenant: str | None = None, limit: i
         q = q.where(Event.tenant == tenant)
     matched = []
     scanned = 0
+    started = time.monotonic()
     for ev in db.execute(q).scalars():
+        if time.monotonic() - started > DRY_RUN_SECONDS:
+            return {"scanned": scanned, "matched": matched[:50], "count": len(matched),
+                    "error": f"stopped after {DRY_RUN_SECONDS} seconds; the rule is too slow to save as written"}
         scanned += 1
         try:
             if comp.matches(ev.event):

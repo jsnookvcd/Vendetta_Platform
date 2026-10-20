@@ -29,10 +29,25 @@ detection:
       - wbadmin
       - delete
       - catalog
-  bcdedit:
-    - process.cmd_line|re: '(?i)bcdedit.*recoveryenabled\s+(no|off|false|0)\b'
-    - process.cmd_line|re: '(?i)bcdedit.*bootstatuspolicy\s+ignoreallfailures'
-  condition: 1 of them
+  # Literal matching only: a regular expression over an attacker-controlled command
+  # line is a denial-of-service risk for the whole detection pass.
+  bcdedit_recovery:
+    process.cmd_line|contains|all:
+      - bcdedit
+      - recoveryenabled
+  recovery_off:
+    process.cmd_line|contains:
+      - 'recoveryenabled no'
+      - 'recoveryenabled off'
+      - 'recoveryenabled false'
+      - 'recoveryenabled 0'
+      - 'recoveryenabled "no"'
+  bcdedit_status:
+    process.cmd_line|contains|all:
+      - bcdedit
+      - bootstatuspolicy
+      - ignoreallfailures
+  condition: vssadmin or wmic or wmi_object or wbadmin or (bcdedit_recovery and recovery_off) or bcdedit_status
 fields:
   - device.hostname
   - actor.user.name

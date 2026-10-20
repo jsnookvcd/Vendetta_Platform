@@ -44,8 +44,12 @@ tls.enabled = true
 tls.crt_file = "${SYSLOG_TLS_CRT}"
 tls.key_file = "${SYSLOG_TLS_KEY}"
 tls.ca_file = "${SYSLOG_TLS_CA}"
-# Require client certificates from the senders (firewalls, appliances) when they support it.
-tls.verify_certificate = false
+# Senders must present a client certificate signed by SYSLOG_TLS_CA: without it any
+# host that reaches port 6514 could write events into this client's tenant. For an
+# appliance that cannot present one, run a separate source for it, restrict that
+# listener to the appliance's source addresses on the NLB security group, and only
+# there set this to false.
+tls.verify_certificate = true
 
 [transforms.wrap]
 type = "remap"

@@ -235,7 +235,19 @@ def _values(event: dict, paths: tuple[str, ...]) -> list:
     return out
 
 
+# Rules evaluate at most this many characters of any one value. Vendor fields are
+# attacker-influenced (a command line, a subject), and every pattern below runs in
+# time that grows with the value's length, so the cap bounds the cost of one event
+# for every rule and tenant. Values longer than this are matched on their first
+# MAX_MATCH_CHARS characters.
+MAX_MATCH_CHARS = 16384
+
+
 def _text(v: Any) -> str:
+    return _full_text(v)[:MAX_MATCH_CHARS]
+
+
+def _full_text(v: Any) -> str:
     if isinstance(v, str):
         return v
     if isinstance(v, bool):
@@ -390,9 +402,92 @@ def _string_pattern(value: str, mods: set) -> Pattern:
             else:
                 parts.append(re.escape(ch))
             prev = ch
+    if not windash:
+        # Wildcards without windash use a backtracking-free glob matcher, linear in
+        # the value for each literal segment, instead of a regular expression whose
+        # cost grows polynomially with the number of `*` in the pattern.
+        segments = _glob_segments(tokens, cased)
+        if cased:
+            return lambda leaf: _glob_match(_text(leaf), segments)
+        return lambda leaf: _glob_match(_text(leaf).lower(), segments)
     flags = re.DOTALL | (0 if cased else re.IGNORECASE)
     rx = re.compile("".join(parts), flags)
     return lambda leaf: rx.fullmatch(_text(leaf)) is not None
+
+
+def _glob_segments(tokens: list[tuple[str, str]], cased: bool) -> tuple:
+    """Split wildcard tokens into literal segments separated by `*`. Each segment is
+    a string where None stands for `?` (any one character). Returns (segments,
+    anchored_start, anchored_end)."""
+    segs: list[list] = [[]]
+    for kind, v in tokens:
+        if kind == "wild" and v == "*":
+            segs.append([])
+        elif kind == "wild":
+            segs[-1].append(None)
+        else:
+            segs[-1].extend(v if cased else v.lower())
+    return tuple(tuple(x) for x in segs)
+
+
+def _seg_at(text: str, seg: tuple, i: int) -> bool:
+    if i + len(seg) > len(text):
+        return False
+    for k, ch in enumerate(seg):
+        if ch is not None and text[i + k] != ch:
+            return False
+    return True
+
+
+def _seg_find(text: str, seg: tuple, start: int) -> int:
+    if not seg:
+        return start
+    if None not in seg:
+        return text.find("".join(seg), start)
+    # Anchor on the longest literal run, then check the whole segment there.
+    runs, cur, off, best = [], [], 0, (0, 0, "")
+    for k, ch in enumerate(seg):
+        if ch is None:
+            if cur:
+                runs.append((off, "".join(cur)))
+            cur = []
+        else:
+            if not cur:
+                off = k
+            cur.append(ch)
+    if cur:
+        runs.append((off, "".join(cur)))
+    if not runs:
+        return start if start + len(seg) <= len(text) else -1
+    off, lit = max(runs, key=lambda r: len(r[1]))
+    pos = text.find(lit, start + off)
+    while pos != -1:
+        i = pos - off
+        if i >= start and _seg_at(text, seg, i):
+            return i
+        pos = text.find(lit, pos + 1)
+    return -1
+
+
+def _glob_match(text: str, segments: tuple) -> bool:
+    """Full match of text against segments joined by `*` (leftmost-first, which is
+    exact for glob patterns because `*` absorbs any gap)."""
+    if len(segments) == 1:
+        seg = segments[0]
+        return len(text) == len(seg) and _seg_at(text, seg, 0)
+    first, last, middle = segments[0], segments[-1], segments[1:-1]
+    if not _seg_at(text, first, 0):
+        return False
+    pos = len(first)
+    end_limit = len(text) - len(last)
+    if end_limit < pos:
+        return False
+    for seg in middle:
+        i = _seg_find(text, seg, pos)
+        if i == -1 or i + len(seg) > end_limit:
+            return False
+        pos = i + len(seg)
+    return _seg_at(text, last, end_limit)
 
 
 def _scalar_pattern(value: Any, mods: set, where: str) -> Pattern:

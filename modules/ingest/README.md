@@ -6,12 +6,12 @@ Telemetry Ingest is the SOC's front door for data. It reads each client's own se
 
 Every SIEM and MDR stores telemetry. This module proves it.
 
-- Each raw record is hashed the moment it arrives, before anything parses it, and the normalized event is hashed too. Both hashes form one leaf.
+- Each delivery is parsed strictly (duplicate keys, NaN and Infinity are refused, because two parsers could read such a record differently), and each vendor record is hashed in its RFC 8785 canonical form before it is normalized. The normalized event is hashed the same way. Both hashes form one leaf.
 - Each client's events are sealed on a schedule into an RFC 6962 Merkle tree. The batch header carries the root and the hash of the client's previous header, and it is signed with Ed25519, so each client has one append-only signed chain.
-- Every chain head is anchored daily to an Object Lock bucket in the evidence account, which Vendetta cannot rewrite.
-- Any single event can be proven with a proof file of a few hundred bytes and the open verifier, `app/receipts.py`, without revealing any other event and without trusting Vendetta.
+- Every chain head is anchored daily to an Object Lock bucket in the evidence account, which Vendetta cannot rewrite. Each client also gets its own signed anchor statement, which names only its own chain head and the digest of the global anchor.
+- Any single event can be proven with a proof file of a few hundred bytes and the open verifier, `app/receipts.py`, without revealing any other event. The verifier requires the public key Vendetta published (`--key`); without it, it reports UNPINNED, because a file can carry any key.
 - Normalization is deterministic and carries no processing time, so anyone can re-run the open mapper over the archived raw record and reproduce the exact event hash the receipt commits to.
-- A client can export its own chain from the portal and verify it.
+- A client can export its own chain from the portal, with its latest anchor statement, and verify both: a chain cut short before the anchor, or rewritten under it, fails.
 
 That is what lets an investigation, an IR report, a regulatory filing, an insurance claim or an expert report cite telemetry that is provably what the vendor sent.
 
@@ -45,7 +45,8 @@ pytest -q
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `EVIDENCE_SIGNING_KEY` | derived | Ed25519 seed (hex) that signs every batch. Set a dedicated key in production and publish its public key. |
+| `EVIDENCE_SIGNING_KEY` | required | Ed25519 seed (hex) that signs every batch and anchor. The module refuses to start without it. Back it up, and publish its public key. |
+| `API_READ_TOKEN` | derived | Read-only bearer for GET routes. MDR, SABINE and the control plane read with it; it can never seal, pull, escalate or sync. |
 | `SEAL_INTERVAL_SECONDS` | 60 | Seal schedule. |
 | `SEAL_MAX_EVENTS` | 20000 | Largest batch. |
 | `CONNECTOR_INTERVAL_SECONDS` | 300 | Default polling interval. |
@@ -63,3 +64,5 @@ pytest -q
 - Vendor API details marked "unsure" in the connector code need confirming against live tenants (Huntress field names, CrowdStrike paging, Okta privilege fields).
 - Managed services still pulls alerts from the same EDR consoles. Until its alerts carry the vendor id, MDR can see the same alert from both modules. Turn off the managed-services alert sync for a tool once its ingest connector is live for that client.
 - Sigma support covers the rule format, all common modifiers and count thresholds. Sigma v2 correlation documents, `base64offset` and placeholders are not implemented.
+- Rules match on the first 16,384 characters of any value, and wildcards use a backtracking-free matcher. A `|re` modifier still runs Python's regular expression engine, so an admin can write a slow one; the dry run stops after 10 seconds and says so, and the seeded rules use no regular expressions on attacker-controlled fields.
+- Integers in canonical JSON are written exactly; floats follow ECMAScript. A verifier in a language whose JSON parser turns large integers into doubles must keep them as integers.
