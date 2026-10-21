@@ -41,8 +41,61 @@ practices, built so PMs can run it from Claude. Staff-only; no client portal.
   when high, emailed as a morning digest, and queued by SABINE.
 - **Closeout and invoicing.** A closeout checklist that gates closing, and a draft
   invoice created in Harvest from uninvoiced time (or a fixed fee). Drafts only.
+- **Kickoff.** One form (or one sentence to Claude) stands a new engagement up across
+  every tool. See [Project kickoff](#project-kickoff).
 - **Claude.** `/mcp` is a remote MCP server. A PM adds it as a custom connector and
   signs in once with Microsoft 365. Claude then acts as that PM with that PM's role.
+
+## Project kickoff
+
+`/kickoff` takes the practice, client, engagement name, template, PM, lead, team,
+budget and billing, and then:
+
+1. Opens the engagement here: practice board card, task board, tasks and milestones
+   from the template.
+2. Links the platform record. IR: opens an IR hub case (or links the case number
+   given) and publishes the client milestones to it. ProServ: links the OSP engagement
+   id when one is given.
+3. Harvest: finds or creates the client, creates the project (code = engagement code,
+   budget in hours with an alert at `KICKOFF_HARVEST_BUDGET_ALERT_PCT`, hourly at a
+   project rate or each person's rate, or fixed fee), assigns the practice's tasks
+   (`KICKOFF_HARVEST_TASKS_IR` / `_PROSERV`, non-billable ones flagged) and the team,
+   with the PM as project manager. An existing project id can be linked instead.
+4. Microsoft 365: creates a private Microsoft 365 group named
+   `Incident Response-<codename or client>` (IR) or `Professional Services-<client>`
+   (ProServ), with the PM and `KICKOFF_GROUP_OWNERS` as owners and the team (plus
+   `KICKOFF_IR_ALWAYS_MEMBERS` on IR) as members. That gives the engagement its site,
+   its group mailbox and its Team.
+5. Lays out the folder tree in the site (`KICKOFF_FOLDERS_IR` / `_PROSERV`) and points
+   this engagement's meeting notes at its `Meeting Notes` folder.
+6. Team-enables the group and adds two tabs to General: this engagement's board and
+   Vendetta Time.
+7. Vendetta Time: adds the Projects row (code, practice, client, PM, billing type,
+   Harvest project id) and the TabContexts row (`channel|<teamId>|<channelId>`), so the
+   Vendetta Time tab in the new Team opens locked to the engagement.
+8. Ticket: no ticketing system is wired while the replacement for Jira Service
+   Management is chosen. A ticket reference typed in is recorded. `app/ticketing.py`
+   is where the chosen system plugs in.
+9. Drafts the client kickoff email in the PM's Drafts, CC the group mailbox. Never sends.
+10. Posts the kickoff with every link to the delivery channel (`ALERT_TEAMS_WEBHOOK_URL`).
+
+Each step records what it did and is safe to run again, so a failed step is retried
+from the kickoff page without repeating the work that succeeded. A new group's site and
+team take a few minutes to appear; those steps wait and a background loop retries them
+every `KICKOFF_RETRY_SECONDS`. One step is manual for IR: letting outside senders email
+the case mailbox (`Set-UnifiedGroup -RequireSenderAuthenticationEnabled $false`), which
+Graph cannot set. The page shows the command and a Mark done button.
+
+From Claude: "kick off an IR engagement for Atlantic Credit Union, ransomware template,
+Dan as lead, 120 hours at 350, CIO is cio@atlanticcu.example". The tools are
+`kickoff_engagement`, `get_kickoff` and `retry_kickoff`. The JSON API is
+`POST /api/kickoffs` (same fields as the form) and `GET /api/kickoffs/{id}`.
+
+Graph application permissions the kickoff needs, with admin consent: Group.ReadWrite.All,
+User.Read.All, Sites.ReadWrite.All (new sites cannot be granted Sites.Selected before they
+exist), Team.Create, TeamsTab.Create, TeamsAppInstallation.ReadWriteForTeam.All (Vendetta
+Time tab) and Mail.ReadWrite (client email draft). Harvest needs the administrator token
+already used for time.
 
 ## Connecting Claude
 
@@ -65,6 +118,8 @@ claude mcp add --transport http vendetta-pm https://pm.<domain>/mcp \
 ```
 
 ### Tools
+
+Kickoff: `kickoff_engagement`, `get_kickoff`, `retry_kickoff`.
 
 Read: `whoami`, `my_work`, `list_engagements`, `get_engagement`, `get_board`,
 `list_tasks`, `get_task`, `list_meeting_notes`, `get_meeting_note`,

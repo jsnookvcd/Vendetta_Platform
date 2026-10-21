@@ -29,6 +29,9 @@ delivery_model:
   change_control: baseline kept; change requests approved by a second person move budget and end date
   closeout: checklist gates closing; draft Harvest invoices only, never sent
   alerts: recomputed every 15 minutes; Teams for new high, morning email digest, read by SABINE
+  kickoff: one request opens the engagement and sets up the IR hub case, Harvest client/project/tasks/team,
+    the Microsoft 365 group (site, mailbox, Team, folders, tabs), Vendetta Time rows, the client email
+    draft and the delivery post; idempotent steps, background retry for Microsoft 365
 
 roles:
   admin: full; integrations; may log or change anyone's Harvest time
@@ -44,6 +47,7 @@ api:
   alerts: GET /api/alerts                       # SABINE reads the open set
   metrics: GET /api/metrics
   capacity: GET /api/capacity
+  kickoffs: GET|POST /api/kickoffs, GET /api/kickoffs/{id}
   provision_sync: POST /api/provision/sync
   deep_link: GET /clients/platform/{platform_client_id}
   mcp: POST /mcp                                # remote MCP server (Streamable HTTP), OAuth 2.1 + PKCE
