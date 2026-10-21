@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}Kickoff: {{ k.engagement or k.name }}{% endblock %}
+{% block head %}{% if k.status in ('running', 'waiting') %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block body %}
+<div class="row" style="gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+  <span class="chip {{ 'ok' if k.status=='done' else ('bad' if k.status=='attention' else '') }}">{{ STATUS[k.status] }}</span>
+  <span class="faint">{{ PRACTICE_NAMES[k.practice] }} for {{ k.client }}, started by {{ k.created_by }}</span>
+  <span class="spacer"></span>
+  {% if k.engagement_id %}<a class="btn btn-sm" href="/engagements/{{ k.engagement_id }}">Open engagement</a>{% endif %}
+  {% if not is_viewer and k.status != 'done' %}<form method="post" action="/kickoff/{{ k.id }}/retry"><button class="btn btn-sm btn-primary">Run again</button></form>{% endif %}
+</div>
+{% if k.status == 'waiting' %}<p class="faint">Microsoft 365 is still creating the site or team. This page refreshes on its own, and the module keeps trying in the background.</p>{% endif %}
+
+<div class="panel"><div class="table-wrap">
+<table><thead><tr><th>Step</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody>
+{% for s in k.steps %}<tr>
+  <td class="nowrap">{{ s.label }}</td>
+  <td class="nowrap"><span class="chip {{ 'ok' if s.status=='ok' else ('bad' if s.status=='failed' else '') }}">{{ STEP_STATUS[s.status] }}</span></td>
+  <td>{{ s.detail }}{% if s.warning %}<div class="sev-medium-t" style="font-weight:500;font-size:12px;margin-top:3px">{{ s.warning }}</div>{% endif %}
+      {% if s.link %}<div><a href="{{ s.link }}" target="_blank" rel="noopener">Open</a></div>{% endif %}</td>
+  <td class="nowrap">{% if not is_viewer %}
+    {% if s.status == 'failed' %}<form method="post" action="/kickoff/{{ k.id }}/retry"><input type="hidden" name="step" value="{{ s.key }}"><button class="btn btn-xs">Retry</button></form>{% endif %}
+    {% if s.status == 'manual' %}<form method="post" action="/kickoff/{{ k.id }}/steps/{{ s.key }}/done"><button class="btn btn-xs">Mark done</button></form>{% endif %}
+  {% endif %}</td>
+</tr>{% endfor %}
+</tbody></table>
+</div></div>
+
+{% if k.links %}
+<div class="section-head" style="margin-top:18px"><h2>Links</h2></div>
+<div class="panel pad stack">
+  {% for name, v in k.links.items() %}<div><span class="faint" style="display:inline-block;min-width:150px">{{ LINK_NAMES.get(name, name) }}</span> {% if v.startswith('http') or v.startswith('/') %}<a href="{{ v }}" target="_blank" rel="noopener">{{ v }}</a>{% else %}<span class="code-box" style="display:inline-block;padding:2px 8px">{{ v }}</span>{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

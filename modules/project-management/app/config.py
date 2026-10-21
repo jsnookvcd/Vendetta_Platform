@@ -151,3 +151,47 @@ class AlertSettings(BaseSettings):
 
 
 alert_settings = AlertSettings()
+
+
+# Project kickoff. One wizard stands an engagement up across every tool; these
+# settings shape what it creates. Each can be set with the matching KICKOFF_ variable.
+class KickoffSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="KICKOFF_")
+
+    # Microsoft 365 group per engagement. IR keeps the existing case-site convention,
+    # "Incident Response-<client or codename>".
+    ir_group_prefix: str = "Incident Response-"
+    proserv_group_prefix: str = "Professional Services-"
+    group_owners: str = ""                 # emails made owners of every engagement group
+    ir_always_members: str = ""            # emails added to every IR engagement team
+    proserv_always_members: str = ""       # emails added to every ProServ engagement team
+    # Folder tree created in each engagement site's document library ("/" nests).
+    folders_ir: str = ("Evidence,Evidence/Client Uploads,Evidence/Collections,Analysis,Reports,"
+                       "Correspondence,Meeting Notes")
+    folders_proserv: str = "Contracts,Client Uploads,Working,Deliverables,Correspondence,Meeting Notes"
+    # Harvest tasks assigned to each new project, by name (must exist in Harvest).
+    harvest_tasks_ir: str = ("Incident Response,Forensic Analysis,Project Management,Reporting,"
+                             "Internal (Non-billable)")
+    harvest_tasks_proserv: str = "Consulting,Project Management,Reporting,Internal (Non-billable)"
+    harvest_nonbillable_tasks: str = "Internal (Non-billable)"
+    harvest_budget_alert_pct: int = 80
+    # Vendetta Time (the Teams time-entry tab). Blank site skips the step.
+    vtime_site_url: str = ""
+    vtime_projects_list: str = "Projects"
+    vtime_tabs_list: str = "TabContexts"
+    # Teams app id of the published Vendetta Time Power App, and its tab content URL.
+    # Blank skips adding the tab (the Projects and TabContexts rows are still written).
+    vtime_teams_app_id: str = ""
+    vtime_tab_content_url: str = ""
+    # Draft the client kickoff email in the PM's mailbox (needs Graph Mail.ReadWrite).
+    draft_client_email: bool = True
+    # Steps that wait on Microsoft 365 (a new group's site and team take minutes).
+    retry_seconds: int = 60                # 0 disables the background loop
+    max_attempts: int = 30
+
+
+kickoff_settings = KickoffSettings()
+
+BILLING_TYPES = ["hourly", "fixed_fee", "retainer", "carrier_panel"]
+BILLING_TYPE_NAMES = {"hourly": "Hourly", "fixed_fee": "Fixed fee", "retainer": "Retainer",
+                      "carrier_panel": "Carrier panel"}
