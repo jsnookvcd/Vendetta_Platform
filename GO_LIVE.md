@@ -471,8 +471,19 @@ on the host and in the module as follows.
 
 ### Dark web module: optional connectors
 
-The ransomware victim feed needs one key, and the module does nothing useful
-without it. Get a free PRO key at my.ransomware.live, put it in SSM as
+Victims flow with no key at all: the RansomLook connector reads the public
+RansomLook instance by default, onion seeding uses its group locations, the
+deepdarkCTI catalog adds online leak sites and public Telegram channels, the
+Telegram web preview reads those channels without an API id, and Hudson Rock's
+free lookup checks every client domain for infostealer exposure once a day (see
+the module README, "Free sources"). To collect leak sites from Vendetta's own Tor
+circuits instead of the public RansomLook instance, add `COMPOSE_PROFILES=ransomlook`
+and `RANSOMLOOK_URL=http://ransomlook:8000` under `/vendetta/dark-web-monitoring/`
+and redeploy (modules/dark-web-monitoring/infra/ransomlook/README.md).
+
+ransomware.live PRO is a second, independent victim feed with sector and country
+on each victim, which sharpens priority ranking. Get a free PRO key at
+my.ransomware.live, put it in SSM as
 `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY` (SecureString) and run
 `infra/redeploy.sh dark-web-monitoring`. The feed then seeds the onion crawl list
 from current group locations, ranks the priority groups, and queues a direct Tor
@@ -481,8 +492,9 @@ deploy after this change the 451 mirrors seeded from the archived ransomwatch li
 are disabled automatically (kept, with the reason shown on Sources).
 
 After the redeploy, check the module's Connectors page: Tor exiting through Tor,
-a fresh worker heartbeat, and ransomware.live with a recent last success and
-victims dated this week. `python -m app.diagnose` in the worker container prints
+a fresh worker heartbeat, RansomLook (and ransomware.live when keyed) with a recent
+last success and victims dated this week, deepdarkCTI with its leak-site and
+channel counts, and Telegram public channels with a recent last success. `python -m app.diagnose` in the worker container prints
 the same picture plus a probe of each upstream.
 
 Each optional connector stays off until its settings exist, and the Connectors page

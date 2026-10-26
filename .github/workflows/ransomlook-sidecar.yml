@@ -1,0 +1,38 @@
+name: ransomlook sidecar
+
+# Builds the self-hosted RansomLook image and checks that the three API paths
+# the dark web module reads answer. Runs only when the sidecar changes, because
+# the image (Playwright and Chromium included) takes several minutes to build.
+on:
+  pull_request:
+    paths: ["modules/dark-web-monitoring/infra/ransomlook/**", ".github/workflows/ransomlook-sidecar.yml"]
+  push:
+    branches: [main]
+    paths: ["modules/dark-web-monitoring/infra/ransomlook/**", ".github/workflows/ransomlook-sidecar.yml"]
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t vcd-ransomlook:ci modules/dark-web-monitoring/infra/ransomlook
+      - name: Start with no bootstrap and a long scrape interval
+        run: |
+          docker run -d --name rl -p 18000:8000 -e BOOTSTRAP_FROM=off -e SCRAPE_INTERVAL_MINUTES=600 vcd-ransomlook:ci
+      - name: API answers the paths the module reads
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:18000/api/groups -o /dev/null; then break; fi
+            sleep 10
+          done
+          docker logs rl | tail -40
+          curl -fsS http://127.0.0.1:18000/api/groups | python3 -c "import json,sys; assert isinstance(json.load(sys.stdin), list)"
+          curl -fsS http://127.0.0.1:18000/api/last/2 | python3 -c "import json,sys; assert isinstance(json.load(sys.stdin), list)"
+          curl -fsS http://127.0.0.1:18000/api/hot/365 | python3 -c "import json,sys; assert 'rows' in json.load(sys.stdin)"
+          echo "sidecar API confirmed"
+      - name: Logs on failure
+        if: failure()
+        run: docker logs rl || true

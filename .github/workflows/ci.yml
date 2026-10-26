@@ -135,7 +135,8 @@ jobs:
       - name: shellcheck host scripts
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck
-          shellcheck -S warning infra/redeploy.sh infra/verify.sh infra/host/vendetta-env infra/host/vendetta-backup
+          shellcheck -S warning infra/redeploy.sh infra/verify.sh infra/host/vendetta-env infra/host/vendetta-backup \
+            modules/dark-web-monitoring/infra/ransomlook/entrypoint.sh
       - name: compose files parse
         run: |
           docker network create vendetta

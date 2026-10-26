@@ -1,0 +1,132 @@
+{
+    "email": {
+        "smtp_server": "localhost",
+        "smtp_port": 25,
+        "from": "RansomLook <ransomlook@myorg.local>",
+        "to": [
+            "Team <team@myorg.local>"
+        ],
+        "to_bcc": [],
+        "subject": "New Notification from RansomLook",
+        "message_head": "Hello,\n\nPlease check the new entries in RansomLook:",
+        "message_foot": "Best regards,\n\nRansomlook Team"
+    },
+    "email_smtp_auth": {
+        "auth": false,
+        "smtp_user": "johndoe@myorg.local",
+        "smtp_pass": "password",
+        "smtp_use_starttls": true,
+        "verify_certificate": false
+    },
+    "rocketchat": {
+        "enable": false,
+        "server": "localhost",
+        "ssl_verify": false,
+        "user_id": "",
+        "auth_token": "",
+        "channel_name": ""
+    },
+    "remote_lacus": {
+        "enable": false,
+        "url": ""
+    },
+    "ldap": {
+        "enable": false,
+        "server": "ldpas://localhost",
+        "root_dn": "ou=Users,dc=my,dc=domain,dc=tld",
+        "base_dn": "uid",
+        "ssl": true,
+        "verify": true,
+        "cert": "/path/to/cert.ext"
+    },
+    "mastodon": {
+        "enable": false,
+        "url": "",
+        "token": ""
+    },
+    "bluesky": {
+        "enable": false,
+        "url": "https://bsky.social/xrpc/com.atproto.server.createSession",
+        "BLUESKY_HANDLE": "",
+        "BLUESKY_APP_PASSWORD": ""
+    },
+    "misp": {
+        "enable": false,
+        "url": "",
+        "apikey": "",
+        "tls_verify": true,
+        "publish": true
+    },
+    "breadcrumbs": {
+        "enable": false,
+        "api_key": ""
+    },
+    "misp_feed": {
+        "enable": false,
+        "orgc_name": "RansomLook",
+        "orgc_uuid": "",
+        "tlp": "tlp:clear",
+        "distribution": 3,
+        "analysis": 2,
+        "threat_level_id": 4,
+        "remove_on_delete": false
+    },
+    "torrent_health": {
+        "scan_retention_days": 30,
+        "dead_threshold_days": 90,
+        "ip_cache_ttl_days": 7,
+        "scan_duration_seconds": 45,
+        "batch_size": 10,
+        "alive_interval_hours": 6,
+        "dead_interval_hours": 24,
+        "frozen_interval_days": 7,
+        "ignored_ips": []
+    },
+    "torrent_tracker_scrape": {
+        "only_onion": true
+    },
+    "torrent_webseed_check": {
+        "onion_only": false
+    },
+    "users": {},
+    "malpedia": "",
+    "rf": "",
+    "keepall": false,
+    "thread": 2,
+    "website_listen_ip": "0.0.0.0",
+    "website_listen_port": 8000,
+    "alertondashboard": false,
+    "loglevel": "INFO",
+    "darkmode": false,
+    "siteurl": "http://ransomlook:8000",
+    "logos": {
+        "ransomlook.svg": 1.0
+    },
+    "_notes": {
+        "logos": "dict of Logos with their associated weight for randomdisplay",
+        "malpedia": "malpedia apikey",
+        "email": "Email configuration",
+        "email_smtp_auth": "SSL configuration for email",
+        "rocketchat": "RocketChat notification configuration",
+        "website_listen_ip": "IP Flask will listen on. Defaults to 0.0.0.0, meaning all interfaces.",
+        "website_listen_port": "Port Flask will listen on.",
+        "thread": "Number of PW instances to run",
+        "users": "It is some kind of an admin accounts. Format: {username: password}",
+        "misp": "The MISP configuration",
+        "breadcrumbs": "Breadcrumbs One API for blockchain transaction lookup (https://breadcrumbs-one.readme.io)",
+        "misp_feed": "Local MISP feed served at <siteurl>/feed/misp/ (subscribers pull, nothing is pushed). orgc_uuid: your MISP organisation UUID, keep it fixed for life. Only public (non-private) groups/victims are exposed. remove_on_delete: when true, deleting a group also purges its feed events (and the pushed events if the misp module is enabled) - off by default.",
+        "alertondashboard": "Enable to view alerts on dashboard",
+        "rf": "API Key for Identity Module",
+        "ldap": "Ldap configuration for login",
+        "loglevel": "Log verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO). Can also be set via RANSOMLOOK_LOG_LEVEL env var.",
+        "darkmode": "Display a dark GUI",
+        "mastodon": "Mastodon notification configuration",
+        "bluesky": "BlueSky notification configuration",
+        "siteurl": "Url of your domain",
+        "keepall": "Store all DLS main page on screenshots/old, be carefull of the size of your storage",
+        "remote_lacus": "By default, lookyloo will do the capture locally. Enabling this feature means you have a dedicated Lacus instance somewhere",
+        "torrent_health": "BitTorrent swarm health tracker. scan_retention_days / dead_threshold_days / ip_cache_ttl_days: set to 0 to keep forever. scan_duration_seconds / batch_size / *_interval_*: worker scheduling. ignored_ips: list of peer IPs (exact match) to exclude from peer samples, pivot views and exports \u2014 useful to hide your own scanner host or known researchers.",
+        "torrent_tracker_scrape": "Tracker scrape \u2014 BEP-48 (HTTP) and BEP-15 (UDP) \u2014 on announce URLs extracted from .torrent metadata. Cron with poetry run torrent-tracker-scrape. only_onion: restrict to onion-reachable HTTP trackers (recommended \u2014 clearnet/UDP swarms are already covered by the libtorrent scanner and UDP cannot pass SOCKS5). Onion trackers go through Tor SOCKS5 on 127.0.0.1:9050, UDP and clearnet HTTP go direct.",
+        "torrent_webseed_check": "HEAD-check every BEP-19 webseed URL via Tor (onion) or direct (clearnet). Cron with poetry run torrent-webseed-check. onion_only: skip clearnet webseeds. Results persisted per-infohash in meta.webseed_status and shown next to each URL on the torrent detail page \u2014 useful for tracking ransomware mirror takedowns."
+    }
+}

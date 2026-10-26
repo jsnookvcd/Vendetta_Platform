@@ -56,7 +56,7 @@ aws ssm put-parameter --name /darkweb/TELEGRAM_CHANNELS   --type String --value 
 aws ssm put-parameter --name /darkweb/PASTES_ENABLED      --type String --value 'false'
 ```
 
-RANSOMWARE_LIVE_API_KEY is required for the live victim feed. Request the free PRO key at https://my.ransomware.live. Without it the ransomware.live connector shows "not configured: needs a free PRO key from my.ransomware.live", onion seeding is skipped and the module never calls the public v2 tier. On the shared platform host (infra/redeploy.sh, SSM_PREFIX=/vendetta) the parameter is `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY`:
+RANSOMWARE_LIVE_API_KEY turns on the ransomware.live PRO victim feed, a second source alongside RansomLook, which runs with no key (README, "Free sources"). Request the free PRO key at https://my.ransomware.live. Without it the ransomware.live connector shows "not configured: needs a free PRO key from my.ransomware.live", onion seeding uses RansomLook group locations instead, and the module never calls the public v2 tier. On the shared platform host (infra/redeploy.sh, SSM_PREFIX=/vendetta) the parameter is `/vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY`:
 
 ```
 aws ssm put-parameter --name /vendetta/dark-web-monitoring/RANSOMWARE_LIVE_API_KEY --type SecureString --value '<key>'
@@ -79,6 +79,8 @@ Fetch limits and Tor routing need no parameters; set them only to change the def
 aws ssm put-parameter --name /darkweb/CLEARNET_VIA_TOR --type String --value true
 # shared platform host: /vendetta/dark-web-monitoring/CLEARNET_VIA_TOR
 ```
+
+RansomLook, Hudson Rock infostealer lookups, the deepdarkCTI catalog and the Telegram web preview need no parameters. To run Vendetta's own RansomLook instance instead of reading ransomlook.io, set COMPOSE_PROFILES=ransomlook and RANSOMLOOK_URL=http://ransomlook:8000 (infra/ransomlook/README.md). Each free source can be turned off with RANSOMLOOK_ENABLED, INFOSTEALERS_ENABLED, DEEPDARKCTI_ENABLED or TELEGRAM_WEB_ENABLED set to false.
 
 HIBP_API_KEY turns on the HIBP connector; without it the Connectors page reads "needs HIBP_API_KEY". PASTES_ENABLED stays false until psbdmp has been probed from the host (see "Optional connectors" in README.md). TELEGRAM_SESSION_PATH and PASTE_SOURCE are optional and default to /data/telegram.session and psbdmp.
 

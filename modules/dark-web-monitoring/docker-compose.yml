@@ -62,9 +62,30 @@ services:
       - evidence:/data
     networks: [internal]
 
+  # Vendetta's own RansomLook instance (infra/ransomlook). Off unless the .env
+  # carries COMPOSE_PROFILES=ransomlook; then set RANSOMLOOK_URL=http://ransomlook:8000
+  # so the worker reads it instead of the public instance. Internal network only:
+  # no host port, no ALB route.
+  ransomlook:
+    profiles: ["ransomlook"]
+    build: ./infra/ransomlook
+    restart: unless-stopped
+    environment:
+      SCRAPE_INTERVAL_MINUTES: ${RANSOMLOOK_SCRAPE_INTERVAL_MINUTES:-60}
+      BOOTSTRAP_FROM: ${RANSOMLOOK_BOOTSTRAP_FROM:-https://www.ransomlook.io}
+      WEB_WORKERS: "2"
+    mem_limit: ${RANSOMLOOK_MEM_LIMIT:-3g}
+    shm_size: 512m
+    volumes:
+      - ransomlook-cache:/opt/RansomLook/cache
+      - ransomlook-source:/opt/RansomLook/source
+    networks: [internal]
+
 volumes:
   pgdata:
   evidence:
+  ransomlook-cache:
+  ransomlook-source:
 
 networks:
   internal:
