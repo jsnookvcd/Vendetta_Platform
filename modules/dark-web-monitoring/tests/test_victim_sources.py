@@ -137,7 +137,10 @@ def test_pro_client_parses_recent_victims_fixture(fresh_db, pro_key, upstream):
     assert "Vendetta" in req.headers["User-Agent"]
 
 
-def test_without_key_connector_is_off_and_v2_is_never_called(fresh_db, no_key, upstream):
+def test_without_key_connector_is_off_and_v2_is_never_called(fresh_db, no_key, upstream, monkeypatch):
+    # RansomLook is the keyless fallback for seeding; turn it off so this test
+    # proves only that the ransomware.live v2 tier is never called.
+    monkeypatch.setattr(settings, "ransomlook_enabled", False)
     db = _db()
     try:
         ok, reason = connectors.get("ransomware_live").configured(db)

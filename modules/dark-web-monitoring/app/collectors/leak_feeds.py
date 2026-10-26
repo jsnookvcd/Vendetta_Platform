@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import ransomware_live as rl
+from ..config import settings
 from ..db import Source, utcnow
 from ..fetch import fetch_json
 from ..pipeline import ingest, mark_source
@@ -113,6 +114,70 @@ def run_ransomware_live(db: Session, client: rl.Client | None = None) -> dict:
     onion_sources.update_feed_activity(db)
     log.info("ransomware.live: %d new victims from %d rows", n, len(rows))
     return {"ok": True, "new": n, "rows": len(rows)}
+
+
+RLOOK_FEED_NAME = "RansomLook recent posts"
+
+
+def ingest_ransomlook_post(db: Session, p: dict, src: Source):
+    """Store one RansomLook post. The hash matches ingest_victim's, so a victim
+    both feeds report is stored once, by whichever arrives first."""
+    from .. import ransomlook as rlook
+
+    victim = (p.get("post_title") or "").strip()
+    group = (p.get("group_name") or "").strip()
+    website = (p.get("website") or "").strip()
+    desc = (p.get("description") or "").strip()
+    published = _parse_dt(p.get("discovered"))
+    body = "\n".join([f"Victim: {victim}", f"Website: {website}", f"Group: {group}", "", desc[:20000]])
+    meta = {"victim": victim, "website": website, "discovered": p.get("discovered") or "",
+            "raw": {k: p.get(k) for k in ("post_title", "group_name", "discovered", "website", "link")},
+            **rlook.provenance()}
+    return ingest(
+        db,
+        kind="victim",
+        title=f"{group}: {victim}",
+        body=body,
+        url=rlook.post_url(p),
+        external_id=f"rlook:{group}:{victim}",
+        group_name=group,
+        published_at=published,
+        source=src,
+        meta=meta,
+        hash_parts=("victim", group.lower(), victim.lower()),
+    )
+
+
+def run_ransomlook(db: Session, client=None) -> dict:
+    """Free victim feed. One call to /api/last/{days} per run against the public
+    instance or the self-hosted sidecar (RANSOMLOOK_URL)."""
+    from .. import ransomlook as rlook
+
+    if not rlook.configured():
+        return {"ok": False, "new": 0, "error": rlook.NOT_CONFIGURED}
+    url = f"{rlook.base_url()}/api/last"
+    src = _get_source(db, RLOOK_FEED_NAME, url)
+    if (src.meta or {}).get("provider") != rlook.label():
+        src.meta = {**(src.meta or {}), **rlook.provenance()}
+        db.commit()
+    try:
+        client = client or rlook.Client()
+        rows = client.last_posts(settings.ransomlook_lookback_days)
+    except rl.RansomwareLiveError as e:
+        mark_source(db, src, False, str(e))
+        return {"ok": False, "new": 0, "error": str(e)}
+    n = 0
+    for p in rows:
+        if not (p.get("post_title") and p.get("group_name")):
+            continue
+        item, _ = ingest_ransomlook_post(db, p, src)
+        n += 1 if item else 0
+    mark_source(db, src, True)
+    from .. import onion_sources
+
+    onion_sources.update_feed_activity(db)
+    log.info("ransomlook: %d new victims from %d rows", n, len(rows))
+    return {"ok": True, "new": n, "rows": len(rows), "provider": rlook.label()}
 
 
 def run_ransomwatch_posts(db: Session) -> dict:

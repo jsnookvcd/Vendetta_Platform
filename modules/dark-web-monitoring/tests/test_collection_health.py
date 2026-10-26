@@ -97,7 +97,8 @@ def test_registry_keys_are_unique_and_complete():
     keys = [c.key for c in connectors.CONNECTORS]
     assert len(keys) == len(set(keys))
     assert set(keys) == {"ransomware_live", "ransomwatch", "onion_crawl", "forum_crawl", "hibp",
-                         "ct_logs", "pastes", "telegram", "captures", "tor_search"}
+                         "ct_logs", "pastes", "telegram", "captures", "tor_search",
+                         "ransomlook", "infostealers", "deepdarkcti", "telegram_web"}
 
 
 # ---------------------------------------------------------------- CollectorRun

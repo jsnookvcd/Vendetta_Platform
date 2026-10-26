@@ -1,0 +1,47 @@
+[
+ {
+  "meta": "Akira leak site",
+  "profile": [],
+  "locations": [
+   {
+    "slug": "http://akiraexamplefixtureaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion",
+    "fqdn": "akiraexamplefixtureaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion",
+    "title": "akira",
+    "version": 3,
+    "available": true,
+    "updated": "2026-10-24 18:00:00",
+    "lastscrape": "2026-10-24 18:00:00",
+    "fs": false,
+    "chat": false,
+    "admin": false,
+    "screen": "UE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEFQTkdEQVRBUE5HREFUQVBOR0RBVEE=",
+    "source": "PGh0bWw+eDwvaHRtbD4="
+   },
+   {
+    "slug": "http://akirachatfixturebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion",
+    "fqdn": "akirachatfixturebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion",
+    "available": true,
+    "chat": true
+   },
+   {
+    "slug": "akiramirrorfixturecccccccccccccccccccccccccccccccccccccccccc.onion",
+    "available": false,
+    "updated": "2026-09-01 00:00:00"
+   },
+   {
+    "slug": "https://akira-clearnet-mirror.example/",
+    "available": true
+   }
+  ]
+ },
+ [
+  {
+   "post_title": "Riverbend Credit Union",
+   "discovered": "2026-10-24 18:02:11.412907"
+  },
+  {
+   "post_title": "Older",
+   "discovered": "2026-08-02 10:00:00"
+  }
+ ]
+]

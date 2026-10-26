@@ -1,11 +1,15 @@
 """Onion leak-site sources: seeding, activity, disable rules and crawl order.
 
-Seeding reads ransomware.live PRO group detail (GET /groups/{name}), whose
-locations carry availability, instead of the archived ransomwatch groups.json.
+Seeding reads group detail whose locations carry availability: ransomware.live
+PRO (GET /groups/{name}) when RANSOMWARE_LIVE_API_KEY is set, otherwise the free
+RansomLook API (GET /api/group/{name}, app/ransomlook.py). The archived
+ransomwatch groups.json is never used.
 Each seeded Source records in meta:
 
-  seeded_from         "ransomware.live" (or "ransomwatch" for the old mirrors,
-                      "manual" for ones a person added)
+  seeded_from         "ransomware.live", "ransomlook.io" or "ransomlook
+                      (self-hosted)", "deepdarkcti" (app/deepdarkcti.py),
+                      "ransomwatch" for the old mirrors, "manual" for ones a
+                      person added
   seeded_at           when this module first registered it
   last_seen_in_feed   newest victim the live feed published for the group
   group_lastseen      the group's lastseen date from ransomware.live
@@ -202,15 +206,38 @@ def _choose_groups(db: Session, listed: list[dict], limit: int, now: dt.datetime
     return chosen
 
 
-def seed(db: Session, client: rl.Client | None = None, now: dt.datetime | None = None,
+def _provider(client):
+    """(client or None, provider label, not-configured reason). ransomware.live
+    PRO when its key is set; otherwise RansomLook, which needs no key."""
+    from . import ransomlook as rlook
+
+    if client is not None:
+        return client, ("ransomlook" if isinstance(client, rlook.Client) else "ransomware.live"), ""
+    if rl.configured():
+        return None, "ransomware.live", ""
+    if rlook.configured():
+        return None, "ransomlook", ""
+    return None, "", rl.NOT_CONFIGURED + "; RansomLook is also turned off"
+
+
+def seed(db: Session, client=None, now: dt.datetime | None = None,
          sleep: Callable[[float], None] = time.sleep, limit: int | None = None) -> dict:
-    """Register or refresh onion sources from ransomware.live PRO group locations.
-    One call to /groups and one to /groups/{name} per chosen group per run."""
+    """Register or refresh onion sources from group locations: ransomware.live
+    PRO when its key is set, otherwise the free RansomLook API. One call for the
+    group list and one per chosen group per run."""
+    from . import ransomlook as rlook
+
     now = now or utcnow()
-    if not rl.configured():
-        return {"ok": False, "added": 0, "error": rl.NOT_CONFIGURED}
+    client, provider, why_not = _provider(client)
+    if not provider:
+        return {"ok": False, "added": 0, "error": why_not}
+    if provider == "ransomlook":
+        label, extra_meta = rlook.label(), rlook.provenance()
+    else:
+        label, extra_meta = "ransomware.live", {}
     try:
-        client = client or rl.Client(sleep=sleep)
+        if client is None:
+            client = rlook.Client(sleep=sleep) if provider == "ransomlook" else rl.Client(sleep=sleep)
         listed = client.groups()
     except rl.RansomwareLiveError as e:
         log.warning("onion seeding skipped: %s", e)
@@ -253,21 +280,22 @@ def seed(db: Session, client: rl.Client | None = None, now: dt.datetime | None =
             src = by_fqdn.get(fqdn)
             if src is None:
                 src = Source(name=f"{display} leak site", kind="onion", url=_location_url(loc), group_name=display,
-                             enabled=True, meta={"seeded_from": "ransomware.live", "seeded_at": now.isoformat()})
+                             enabled=True, meta={"seeded_from": label, "seeded_at": now.isoformat(), **extra_meta})
                 db.add(src)
                 by_fqdn[fqdn] = src
                 added += 1
                 if loc.get("available") is False:
-                    disable(src, "unavailable", "ransomware.live lists this location as unavailable", now)
+                    disable(src, "unavailable", f"{label} lists this location as unavailable", now)
             else:
                 refreshed += 1
             meta = dict(src.meta or {})
             if meta.get("seeded_from") == "ransomwatch":
-                meta["seeded_from"] = "ransomware.live"
+                meta["seeded_from"] = label
                 meta["previously_seeded_from"] = "ransomwatch"
                 meta.setdefault("seeded_at", now.isoformat())
             meta.update(loc_meta)
-            meta["listed_by_ransomware_live_at"] = now.isoformat()
+            meta["listed_by_ransomware_live_at" if provider == "ransomware.live" else "listed_by_ransomlook_at"] = \
+                now.isoformat()
             if lastseen:
                 meta["group_lastseen"] = lastseen.isoformat()
             if feed_seen:
@@ -284,7 +312,7 @@ def seed(db: Session, client: rl.Client | None = None, now: dt.datetime | None =
                 reenabled += 1
         db.commit()
     rules = apply_disable_rules(db, now)
-    summary = {"ok": not errors, "added": added, "refreshed": refreshed, "reenabled": reenabled,
+    summary = {"ok": not errors, "provider": label, "added": added, "refreshed": refreshed, "reenabled": reenabled,
                "skipped_locations": skipped, "groups_checked": len(chosen), "calls": len(client.calls),
                "disabled": rules}
     if errors:

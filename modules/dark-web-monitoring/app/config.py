@@ -147,6 +147,36 @@ class Settings(BaseSettings):
     tor_search_timeout: int = 90
     # Minutes between checks for due saved searches (the tor_search connector).
     saved_search_interval: int = 15
+    # ------------------------------------------------------------ Free sources (no key needed)
+    # RansomLook victim feed and onion locations. Public instance by default (data
+    # under CC BY 4.0); point at the self-hosted sidecar with
+    # RANSOMLOOK_URL=http://ransomlook:8000. See app/ransomlook.py.
+    ransomlook_enabled: bool = True
+    ransomlook_url: str = "https://www.ransomlook.io"
+    ransomlook_api_key: str = ""   # only for a private instance that requires one
+    ransomlook_interval: int = 30
+    ransomlook_lookback_days: int = 2
+    ransomlook_timeout: int = 60
+    ransomlook_max_bytes: int = 32 * 1024 * 1024
+    # Infostealer exposure per client domain from Hudson Rock's free OSINT
+    # endpoint (no key). See app/collectors/infostealers.py.
+    infostealers_enabled: bool = True
+    infostealers_interval: int = 360
+    infostealers_recheck_hours: int = 24
+    infostealers_max_domains_per_run: int = 50
+    # deepdarkCTI curated lists (onion leak sites, Telegram channels), refreshed daily.
+    deepdarkcti_enabled: bool = True
+    deepdarkcti_base: str = "https://raw.githubusercontent.com/fastfire/deepdarkCTI/main"
+    deepdarkcti_interval: int = 1440
+    # Telegram public channels read from the t.me/s/ web preview: no API id,
+    # hash or session. Channels are TELEGRAM_CHANNELS plus, when
+    # TELEGRAM_WEB_USE_CATALOG is true, the online public channels in the
+    # deepdarkCTI catalog.
+    telegram_web_enabled: bool = True
+    telegram_web_use_catalog: bool = True
+    telegram_web_interval: int = 30
+    telegram_web_max_channels_per_run: int = 40
+    telegram_web_via_tor: bool = False
 
 
 settings = Settings()

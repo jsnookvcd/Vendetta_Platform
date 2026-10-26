@@ -1,0 +1,5 @@
+{"total": 27, "totalStealers": 27, "employees": 4, "users": 23, "third_parties": 0,
+ "data": {"employees_urls": [{"url": "https://vpn.riverbendcu.org/remote/login", "occurrence": 3}, {"url": "https://•••••.riverbendcu.org", "occurrence": 1}],
+          "users_urls": [{"url": "https://online.riverbendcu.org/login", "occurrence": 21}, {"type": "client", "occurrence": 2}],
+          "third_parties_urls": []},
+ "stealerFamilies": {"Lumma": 12, "RedLine": 9}}

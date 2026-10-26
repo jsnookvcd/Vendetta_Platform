@@ -1,7 +1,8 @@
 """Priority groups: which ransomware groups get direct, profiled crawls first.
 
-The ranking reads the ransomware.live PRO victims this module has stored (feed
-victim items) and counts each group's victims published in the last 90 days.
+The ranking reads the victims this module has stored from ransomware.live PRO
+and RansomLook (feed victim items; RansomLook rows carry no sector or country, so
+they count without client weighting) and counts each group's victims published in the last 90 days.
 A victim counts for more when it matches an active client: WEIGHT_INDUSTRY when
 its sector matches a client's industry and WEIGHT_COUNTRY when its country
 matches a client's country. The top PRIORITY_GROUP_COUNT (25) groups by weighted
@@ -95,7 +96,9 @@ def compute(db: Session, now: dt.datetime | None = None) -> dict:
     when = func.coalesce(Item.published_at, Item.collected_at)
     items = db.execute(
         select(Item).join(Source, Item.source_id == Source.id)
-        .where(Source.kind == "feed", Source.url.ilike("%ransomware.live%"), Item.kind == "victim",
+        .where(Source.kind == "feed",
+               Source.url.ilike("%ransomware.live%") | Source.url.ilike("%ransomlook%"),
+               Item.kind == "victim",
                Item.group_name != "", when >= since)
     ).scalars().all()
     stats: dict[str, dict] = {}

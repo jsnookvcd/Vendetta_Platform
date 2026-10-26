@@ -352,3 +352,81 @@ CONNECTORS.append(
               _check_tor_search, "search", probes=_probe_tor_search, extra=_tor_search.engine_health))
 _BY_KEY.clear()
 _BY_KEY.update({c.key: c for c in CONNECTORS})
+
+
+# ---------------------------------------------------------------- Free sources: no key needed
+from . import deepdarkcti as _ddc  # noqa: E402
+from . import ransomlook as _rlook  # noqa: E402
+from .collectors import infostealers as _infostealers  # noqa: E402
+from .collectors import telegram_web as _telegram_web  # noqa: E402
+
+
+def _check_ransomlook(db: Session) -> tuple[bool, str]:
+    if not _rlook.configured():
+        return False, _rlook.NOT_CONFIGURED
+    where = "public instance, data CC BY 4.0" if _rlook.is_public() else f"self-hosted instance at {_rlook.base_url()}"
+    return True, f"{_rlook.label()} ({where})"
+
+
+def _probe_ransomlook() -> list[Probe]:
+    if not _rlook.configured():
+        return []
+    return [Probe(f"{_rlook.label()} last posts", f"{_rlook.base_url()}/api/last/1")]
+
+
+def _check_infostealers(db: Session) -> tuple[bool, str]:
+    if not settings.infostealers_enabled:
+        return False, "turned off (INFOSTEALERS_ENABLED=false)"
+    n = len(_infostealers.client_domains(db))
+    if not n:
+        return False, "no domain or email_domain watch terms"
+    return True, f"{n} client domains, each rechecked every {settings.infostealers_recheck_hours} hours"
+
+
+def _check_deepdarkcti(db: Session) -> tuple[bool, str]:
+    if not settings.deepdarkcti_enabled:
+        return False, "turned off (DEEPDARKCTI_ENABLED=false)"
+    return True, "seeds onion leak sites and the Telegram channel catalog"
+
+
+def _ddc_extra(db: Session) -> dict:
+    st = health.get_state(db, _ddc.STATE_SUMMARY) or {}
+    return {"catalog": {k: st.get(k) for k in ("onion_listed", "onion_added", "onion_enabled", "telegram_channels")
+                        if st.get(k) is not None}}
+
+
+def _check_telegram_web(db: Session) -> tuple[bool, str]:
+    if not settings.telegram_web_enabled:
+        return False, "turned off (TELEGRAM_WEB_ENABLED=false)"
+    configured = len(_telegram_web.configured_channels())
+    catalog = len(_telegram_web.catalog_channels(db))
+    if not configured and not catalog:
+        return False, "no channels yet: set TELEGRAM_CHANNELS or wait for the deepdarkCTI catalog to load"
+    return True, f"{configured} configured and {catalog} catalog channels, read from t.me/s/ without an API key"
+
+
+def _check_ransomware_live_with_fallback(db: Session) -> tuple[bool, str]:
+    ok, reason = _check_ransomware_live(db)
+    if not ok and _rlook.configured():
+        reason += "; RansomLook covers victims and onion seeding until a key is set"
+    return ok, reason
+
+
+CONNECTORS[:] = [dataclasses.replace(c, check=_check_ransomware_live_with_fallback) if c.key == "ransomware_live"
+                 else c for c in CONNECTORS]
+CONNECTORS.extend([
+    Connector("ransomlook", "RansomLook victims", "feed", "ransomlook_interval", leak_feeds.run_ransomlook,
+              _check_ransomlook, "feed", "%ransomlook%", live_feed=True, run_at_start=True, probes=_probe_ransomlook),
+    Connector("infostealers", "Infostealer exposure (Hudson Rock)", "stealer", "infostealers_interval",
+              _infostealers.run, _check_infostealers, "stealer", "%hudsonrock%",
+              probes=lambda: [Probe("Hudson Rock domain lookup", _infostealers.domain_url("example.com"))]),
+    Connector("deepdarkcti", "deepdarkCTI catalog", "catalog", "deepdarkcti_interval", _ddc.run,
+              _check_deepdarkcti, "catalog", run_at_start=True, extra=_ddc_extra,
+              probes=lambda: [Probe("deepdarkCTI ransomware list", _ddc.file_url(_ddc.RANSOMWARE_FILE))]),
+    Connector("telegram_web", "Telegram public channels (web preview)", "telegram", "telegram_web_interval",
+              _telegram_web.run, _check_telegram_web, "telegram",
+              probes=lambda: [Probe("Telegram web preview", "https://t.me/s/telegram",
+                                    tor=settings.telegram_web_via_tor)]),
+])
+_BY_KEY.clear()
+_BY_KEY.update({c.key: c for c in CONNECTORS})
