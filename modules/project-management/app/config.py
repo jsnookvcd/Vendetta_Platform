@@ -151,3 +151,58 @@ class AlertSettings(BaseSettings):
 
 
 alert_settings = AlertSettings()
+
+
+# Project kickoff. One wizard stands an engagement up across every tool; these
+# settings shape what it creates. Each can be set with the matching KICKOFF_ variable.
+class KickoffSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="KICKOFF_")
+
+    # Microsoft 365. Each practice has one parent team; every engagement is a private
+    # channel in it, named "<code> <codename or client>". Set the team ids (the
+    # practice team's group id). When a team nears 1,000 channels, point the practice
+    # at a new team; existing engagements stay where they are.
+    ir_team_id: str = ""
+    proserv_team_id: str = ""
+    channel_owners: str = ""               # emails made owners of every engagement channel
+    ir_always_members: str = ""            # emails added to every IR engagement channel
+    proserv_always_members: str = ""       # emails added to every ProServ engagement channel
+    channel_warn_at: int = 900             # warn on kickoff once the practice team holds this many channels
+    # Engagement email: a plus address on the practice's shared mailbox
+    # (ir+vcd-ir-2026-014@vendettacd.io), filed into a folder per engagement by an
+    # inbox rule. Blank skips the step and the client email draft has no CC address.
+    ir_mailbox: str = ""
+    proserv_mailbox: str = ""
+    # One standard channel per practice team for logging time across engagements; its
+    # Vendetta Time tab is left unlocked so the person picks the engagement.
+    time_channel_name: str = "Time Entry"
+    # Folder tree created in each engagement channel's files folder ("/" nests).
+    folders_ir: str = ("Evidence,Evidence/Client Uploads,Evidence/Collections,Analysis,Reports,"
+                       "Correspondence,Meeting Notes")
+    folders_proserv: str = "Contracts,Client Uploads,Working,Deliverables,Correspondence,Meeting Notes"
+    # Harvest tasks assigned to each new project, by name (must exist in Harvest).
+    harvest_tasks_ir: str = ("Incident Response,Forensic Analysis,Project Management,Reporting,"
+                             "Internal (Non-billable)")
+    harvest_tasks_proserv: str = "Consulting,Project Management,Reporting,Internal (Non-billable)"
+    harvest_nonbillable_tasks: str = "Internal (Non-billable)"
+    harvest_budget_alert_pct: int = 80
+    # Vendetta Time (the Teams time-entry tab). Blank site skips the step.
+    vtime_site_url: str = ""
+    vtime_projects_list: str = "Projects"
+    vtime_tabs_list: str = "TabContexts"
+    # Teams app id of the published Vendetta Time Power App, and its tab content URL.
+    # Blank skips adding the tab (the Projects and TabContexts rows are still written).
+    vtime_teams_app_id: str = ""
+    vtime_tab_content_url: str = ""
+    # Draft the client kickoff email in the PM's mailbox (needs Graph Mail.ReadWrite).
+    draft_client_email: bool = True
+    # Steps that wait on Microsoft 365 (a new private channel's site takes minutes).
+    retry_seconds: int = 60                # 0 disables the background loop
+    max_attempts: int = 30
+
+
+kickoff_settings = KickoffSettings()
+
+BILLING_TYPES = ["hourly", "fixed_fee", "retainer", "carrier_panel"]
+BILLING_TYPE_NAMES = {"hourly": "Hourly", "fixed_fee": "Fixed fee", "retainer": "Retainer",
+                      "carrier_panel": "Carrier panel"}

@@ -36,6 +36,7 @@
       <a href="/" class="{{ 'active' if p=='/' }}">{{ icon('grid') }} My work</a>
       <a href="/boards/ir" class="{{ 'active' if p=='/boards/ir' }}">{{ icon('board') }} IR board</a>
       <a href="/boards/proserv" class="{{ 'active' if p=='/boards/proserv' }}">{{ icon('board') }} ProServ board</a>
+      <a href="/kickoff" class="{{ 'active' if p.startswith('/kickoff') }}">{{ icon('briefcase') }} Kickoff</a>
       <a href="/engagements" class="{{ 'active' if p.startswith('/engagements') or p.startswith('/tasks') }}">{{ icon('briefcase') }} Engagements</a>
       <a href="/notes" class="{{ 'active' if p.startswith('/notes') }}">{{ icon('note') }} Meeting notes</a>
       <a href="/time" class="{{ 'active' if p=='/time' }}">{{ icon('clock') }} Time</a>

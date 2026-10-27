@@ -282,3 +282,101 @@ def create_draft_invoice(*, client_id: str, project_id: str, start: dt.date, end
     return {"id": str(inv["id"]), "number": inv.get("number") or "", "amount": inv.get("amount"),
             "state": inv.get("state") or "draft", "currency": inv.get("currency") or "USD",
             "line_items": len(inv.get("line_items") or [])}
+
+
+# ---------------------------------------------------------------- project setup (kickoff)
+def find_or_create_client(name: str) -> tuple[dict, bool]:
+    """The Harvest client with this name (case-insensitive, active or archived), or a
+    new one. Returns (client, created)."""
+    name = (name or "").strip()
+    if not name:
+        raise HarvestError("A Harvest client needs a name")
+    for c in _paged("clients", "clients"):
+        if (c.get("name") or "").strip().lower() == name.lower():
+            if not c.get("is_active", True):
+                c = _request("PATCH", f"clients/{c['id']}", json={"is_active": True})
+            return {"id": str(c["id"]), "name": c.get("name")}, False
+    c = _request("POST", "clients", json={"name": name[:250], "currency": "USD"})
+    return {"id": str(c["id"]), "name": c.get("name")}, True
+
+
+def find_project_by_code(client_id: str, code: str) -> dict | None:
+    for p in _paged("projects", "projects", {"client_id": client_id}):
+        if (p.get("code") or "").strip().lower() == code.strip().lower():
+            return {"id": str(p["id"]), "name": p.get("name"), "code": p.get("code") or ""}
+    return None
+
+
+def create_project(*, client_id: str, name: str, code: str, billing_type: str, budget_hours: float | None,
+                   hourly_rate: float | None, fee: float | None, starts_on: dt.date | None,
+                   ends_on: dt.date | None, notes: str = "", alert_pct: int = 80) -> dict:
+    """A new project. Hourly, retainer and carrier panel work bills by project rate when
+    one is given and by each person's rate otherwise; fixed fee carries the fee. Hours
+    budgets alert the project managers at alert_pct."""
+    body: dict = {"client_id": int(client_id), "name": name[:250], "code": code[:60], "is_billable": True,
+                  "notes": notes[:2000], "is_fixed_fee": billing_type == "fixed_fee",
+                  "bill_by": "Project" if hourly_rate else "People", "budget_is_monthly": False}
+    if billing_type == "fixed_fee":
+        if not fee:
+            raise HarvestError("A fixed fee project needs the fee amount")
+        body["fee"] = round(float(fee), 2)
+    if hourly_rate:
+        body["hourly_rate"] = round(float(hourly_rate), 2)
+    if budget_hours:
+        body.update(budget_by="project", budget=float(budget_hours), notify_when_over_budget=True,
+                    over_budget_notification_percentage=int(alert_pct))
+    else:
+        body["budget_by"] = "none"
+    if starts_on:
+        body["starts_on"] = starts_on.isoformat()
+    if ends_on:
+        body["ends_on"] = ends_on.isoformat()
+    p = _request("POST", "projects", json=body)
+    return {"id": str(p["id"]), "name": p.get("name"), "code": p.get("code") or ""}
+
+
+def all_tasks() -> dict[str, str]:
+    """Every active Harvest task, name (lowercase) to id."""
+    return {(t.get("name") or "").strip().lower(): str(t["id"])
+            for t in _paged("tasks", "tasks", {"is_active": "true"})}
+
+
+def assign_tasks(project_id: str, names: list[str], nonbillable: set[str]) -> dict:
+    """Assign named tasks to a project. Already-assigned tasks are left alone; names
+    with no Harvest task are reported, never created (tasks are account-wide)."""
+    have = {t["id"] for t in list_tasks(project_id)}
+    catalog = all_tasks()
+    added, missing = [], []
+    for n in names:
+        tid = catalog.get(n.strip().lower())
+        if not tid:
+            missing.append(n)
+            continue
+        if tid in have:
+            continue
+        _request("POST", f"projects/{project_id}/task_assignments",
+                 json={"task_id": int(tid), "billable": n.strip().lower() not in nonbillable})
+        added.append(n)
+    return {"added": added, "missing": missing}
+
+
+def assign_people(project_id: str, people: list[tuple[str, bool]]) -> dict:
+    """Assign people (email, is_project_manager) to a project. People already on it are
+    updated to the requested manager flag; emails with no active Harvest user are reported."""
+    existing = {str((u.get("user") or {}).get("id")): u
+                for u in _paged(f"projects/{project_id}/user_assignments", "user_assignments")}
+    added, missing = [], []
+    for email, is_pm in people:
+        try:
+            uid = user_id_for(email)
+        except HarvestError:
+            missing.append(email)
+            continue
+        cur = existing.get(uid)
+        if cur is None:
+            _request("POST", f"projects/{project_id}/user_assignments",
+                     json={"user_id": int(uid), "is_project_manager": bool(is_pm)})
+            added.append(email)
+        elif bool(cur.get("is_project_manager")) != bool(is_pm) and is_pm:
+            _request("PATCH", f"projects/{project_id}/user_assignments/{cur['id']}", json={"is_project_manager": True})
+    return {"added": added, "missing": missing}

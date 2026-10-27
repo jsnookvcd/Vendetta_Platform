@@ -1,0 +1,91 @@
+{% extends "base.html" %}{% block title %}Project kickoff{% endblock %}
+{% block body %}
+<p class="faint" style="margin:0 0 14px;max-width:80ch">One form stands the engagement up everywhere: the engagement and its boards here, the platform record, the Harvest client and project with budget, tasks and team, a private channel in the practice team with its own files and an engagement email address, the Vendetta Time link, the client email draft and the delivery channel post.</p>
+<div class="row" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
+  <span class="pill {{ 'pill-ok' if ready.harvest else 'pill-warn' }}">HARVEST {{ 'READY' if ready.harvest else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.graph else 'pill-warn' }}">MICROSOFT 365 {{ 'READY' if ready.graph else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.ir_team and ready.proserv_team else 'pill-warn' }}">PRACTICE TEAMS {{ 'READY' if ready.ir_team and ready.proserv_team else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.ir_mailbox and ready.proserv_mailbox else 'pill-warn' }}">PRACTICE MAILBOXES {{ 'READY' if ready.ir_mailbox and ready.proserv_mailbox else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.vendetta_time else 'pill-warn' }}">VENDETTA TIME {{ 'READY' if ready.vendetta_time else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.ir_hub else 'pill-warn' }}">IR HUB {{ 'READY' if ready.ir_hub else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.announce else 'pill-warn' }}">DELIVERY CHANNEL {{ 'READY' if ready.announce else 'NOT SET' }}</span>
+  <span class="pill pill-warn">TICKETING {{ ready.ticketing|upper if ready.ticketing != 'none' else 'NOT CHOSEN' }}</span>
+</div>
+
+{% if not is_viewer %}
+<form method="post" action="/kickoff" class="stack">
+  <div class="section-head"><h2>Engagement</h2></div>
+  <div class="panel pad stack">
+    <div class="formrow">
+      <label class="field">Practice<select name="practice">{% for k, v in PRACTICE_NAMES.items() %}<option value="{{ k }}" {{ 'selected' if f.practice==k }}>{{ v }}</option>{% endfor %}</select></label>
+      <label class="field wide">Engagement name <span class="req">*</span><input name="name" required value="{{ f.name or '' }}" placeholder="Ransomware response, vCISO onboarding"></label>
+    </div>
+    <div class="formrow">
+      <label class="field wide">Client <span class="req">*</span><input name="client" required list="clients" value="{{ f.client or '' }}" placeholder="from the platform roster, or a new client"></label>
+      <datalist id="clients">{% for c in clients %}<option value="{{ c.name }}">{% endfor %}</datalist>
+      <label class="field">Codename<input name="codename" value="{{ f.codename or '' }}" placeholder="names the channel instead of the client"></label>
+      <label class="field wide">Template<select name="template"><option value="">None</option>{% for t in templates %}<option value="{{ t.key }}" {{ 'selected' if f.template==t.key }}>{{ PRACTICE_NAMES[t.practice] }}: {{ t.name }}</option>{% endfor %}</select></label>
+    </div>
+    <div class="formrow">
+      <label class="field">Starts<input name="starts_on" type="date" value="{{ f.starts_on or today }}"></label>
+      <label class="field">Planned end<input name="ends_on" type="date" value="{{ f.ends_on or '' }}"></label>
+      <label class="field">IR severity<select name="severity">{% for s in ['critical','high','medium','low'] %}<option value="{{ s }}" {{ 'selected' if (f.severity or 'high')==s }}>{{ s }}</option>{% endfor %}</select></label>
+      <label class="field">Platform reference<input name="platform_ref" value="{{ f.platform_ref or '' }}" placeholder="existing IR case or OSP id"></label>
+    </div>
+    <label class="field">Description<textarea name="description" rows="2">{{ f.description or '' }}</textarea></label>
+  </div>
+
+  <div class="section-head"><h2>Team</h2></div>
+  <div class="panel pad stack">
+    <div class="formrow">
+      <label class="field">Project manager<input name="pm_email" type="email" list="staff" value="{{ f.pm_email or (user if '@' in user else '') }}" required></label>
+      <label class="field">Technical lead<input name="lead_email" type="email" list="staff" value="{{ f.lead_email or '' }}"></label>
+    </div>
+    <datalist id="staff">{% for s in staff %}<option value="{{ s.email }}">{{ s.name }}</option>{% endfor %}</datalist>
+    <label class="field">Team members<textarea name="team" rows="3" class="code" placeholder="one per line: email or email:role, for example dan@vendettacd.io:responder">{{ f.team_text or '' }}</textarea></label>
+    {% if staff %}<div class="hint">Staff on the roster: {% for s in staff %}{{ s.email }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+    {% if always.ir or always.proserv %}<div class="hint">Always added: {% if always.ir %}IR {{ always.ir }}{% endif %}{% if always.ir and always.proserv %}; {% endif %}{% if always.proserv %}ProServ {{ always.proserv }}{% endif %}</div>{% endif %}
+  </div>
+
+  <div class="section-head"><h2>Budget and billing</h2></div>
+  <div class="panel pad stack">
+    <div class="formrow">
+      <label class="field">Billing<select name="billing_type">{% for k, v in BILLING.items() %}<option value="{{ k }}" {{ 'selected' if f.billing_type==k }}>{{ v }}</option>{% endfor %}</select></label>
+      <label class="field">Budget hours<input name="budget_hours" type="number" step="0.5" min="0" value="{{ f.budget_hours or '' }}" placeholder="template default if blank"></label>
+      <label class="field">Hourly rate<input name="hourly_rate" type="number" step="0.01" min="0" value="{{ f.hourly_rate or '' }}" placeholder="blank bills each person's rate"></label>
+      <label class="field">Fixed fee<input name="fee" type="number" step="0.01" min="0" value="{{ f.fee or '' }}" placeholder="fixed fee only"></label>
+    </div>
+    <div class="formrow">
+      <label class="field">Existing Harvest project ID<input name="harvest_project_id" value="{{ f.harvest_project_id or '' }}" placeholder="blank creates one"></label>
+      <label class="field">Ticket reference<input name="ticket_ref" value="{{ f.ticket_ref or '' }}" placeholder="until a ticketing system is chosen"></label>
+    </div>
+  </div>
+
+  <div class="section-head"><h2>Client</h2></div>
+  <div class="panel pad stack">
+    <label class="field">Client contacts for the kickoff email<input name="client_contacts" value="{{ f.client_contacts or '' }}" placeholder="comma separated; blank skips the draft"></label>
+    <div class="hint">The draft lands in the PM's Drafts folder addressed to these contacts and CC the engagement email address. Nothing is sent.</div>
+  </div>
+
+  <div class="section-head"><h2>What to set up</h2></div>
+  <div class="panel pad">
+    <div class="formrow" style="gap:18px">
+      {% for k, label in OPTIONS %}<label class="row" style="gap:6px"><input type="checkbox" name="opt_{{ k }}" value="1" checked> {{ label }}</label>{% endfor %}
+    </div>
+  </div>
+  <div><button class="btn btn-primary">Kick off</button></div>
+</form>
+{% endif %}
+
+<div class="section-head" style="margin-top:22px"><h2>Recent kickoffs</h2></div>
+<div class="panel"><div class="table-wrap">
+{% if recent %}
+<table><thead><tr><th>Engagement</th><th>Client</th><th>Status</th><th>By</th><th>Started</th></tr></thead><tbody>
+{% for k in recent %}<tr>
+  <td><a href="/kickoff/{{ k.id }}">{{ k.engagement or k.name }}</a> <span class="faint">{{ k.name if k.engagement }}</span></td>
+  <td>{{ k.client }}</td><td><span class="chip {{ 'ok' if k.status=='done' else ('bad' if k.status=='attention' else '') }}">{{ k.status }}</span></td>
+  <td class="faint">{{ k.created_by }}</td><td class="faint nowrap">{{ k.created_at[:16].replace('T', ' ') }}</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<div class="empty"><p>No kickoffs yet.</p></div>{% endif %}
+</div></div>
+{% endblock %}

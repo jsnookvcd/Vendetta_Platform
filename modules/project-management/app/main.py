@@ -14,13 +14,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import (auth, billing, boot, capacity, changes, harvest, integrations, mcp, metrics, oauth, oidc, provision,
-               readiness, service, sharepoint, sso, templates_lib)
+from . import (auth, billing, boot, capacity, changes, harvest, integrations, kickoff, mcp, metrics, oauth, oidc,
+               provision, readiness, service, sharepoint, sso, templates_lib)
 from . import alerts as alerts_mod
 from . import milestones as milestones_mod
-from .config import (ENGAGEMENT_STATE_NAMES, ENGAGEMENT_STATES, IR_WORKSTREAMS, PRACTICE_NAMES, PRACTICES,
-                     PRIORITIES, settings)
-from .db import AuditLog, Board, Client, Engagement, MeetingNote, SessionLocal, TimeLog, init_db
+from .config import (BILLING_TYPE_NAMES, ENGAGEMENT_STATE_NAMES, ENGAGEMENT_STATES, IR_WORKSTREAMS, PRACTICE_NAMES,
+                     PRACTICES, PRIORITIES, kickoff_settings, settings)
+from .db import AuditLog, Board, Client, Engagement, MeetingNote, SessionLocal, TimeLog, User, init_db
 from .service import ServiceError
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,7 @@ def _startup():
     provision.start_scheduler(SessionLocal)
     sharepoint.start_retry_loop(SessionLocal, settings.sharepoint_retry_seconds)
     alerts_mod.start_loop(SessionLocal)
+    kickoff.start_loop()
 
 
 _DISABLED_HTML = (
@@ -849,6 +850,105 @@ def api_capacity(weeks: int = 4, practice: str = "", user: str = Depends(auth.ap
 
 
 # ---------------------------------------------------------------- service API
+# ---------------------------------------------------------------- kickoff
+KICKOFF_OPTIONS = [("platform", "Platform record"), ("harvest", "Harvest"), ("m365", "Teams channel, files and engagement email"),
+                   ("vendetta_time", "Vendetta Time"), ("client_email", "Client email draft"),
+                   ("announce", "Delivery channel post")]
+KICKOFF_STATUS = {"running": "Running", "waiting": "Waiting on Microsoft 365", "done": "Done",
+                  "attention": "Needs attention"}
+STEP_STATUS = {"ok": "Done", "pending": "Pending", "waiting": "Waiting", "failed": "Failed", "skipped": "Skipped",
+               "manual": "Manual"}
+LINK_NAMES = {"engagement": "Engagement", "sharepoint": "Channel files", "teams": "Teams channel",
+              "mailbox": "Engagement email", "harvest_project_id": "Harvest project", "platform_ref": "Platform record",
+              "ticket": "Ticket"}
+
+
+def _kickoff_page(request: Request, db: Session, user: str, f: dict | None = None, err: str = ""):
+    clients = db.execute(select(Client).where(Client.active.is_(True)).order_by(Client.name)).scalars().all()
+    staff = db.execute(select(User).where(User.active.is_(True), User.client_id.is_(None),
+                                          User.email.contains("@")).order_by(User.email)).scalars().all()
+    from .db import Template
+    tpls = db.execute(select(Template).where(Template.active.is_(True))
+                      .order_by(Template.practice, Template.name)).scalars().all()
+    return render(request, "kickoff.html", user=user, f=f or {}, clients=clients, staff=staff, templates=tpls,
+                  ready=kickoff.readiness(), BILLING=BILLING_TYPE_NAMES, OPTIONS=KICKOFF_OPTIONS,
+                  today=dt.date.today().isoformat(),
+                  always={"ir": kickoff_settings.ir_always_members, "proserv": kickoff_settings.proserv_always_members},
+                  recent=[kickoff.kickoff_dict(db, k) for k in kickoff.recent(db)], **({"err": err} if err else {}))
+
+
+@app.get("/kickoff", response_class=HTMLResponse)
+def kickoff_form(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    return _kickoff_page(request, db, user)
+
+
+@app.post("/kickoff")
+async def kickoff_submit(request: Request, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    form = await request.form()
+    raw = {k: form.get(k) for k in ("practice", "name", "client", "codename", "template", "pm_email", "lead_email",
+                                    "team", "budget_hours", "billing_type", "hourly_rate", "fee", "starts_on",
+                                    "ends_on", "description", "platform_ref", "severity", "harvest_project_id",
+                                    "client_contacts", "ticket_ref")}
+    raw["options"] = {k: bool(form.get(f"opt_{k}")) for k, _ in KICKOFF_OPTIONS}
+    try:
+        k = kickoff.start(db, user, raw)
+        db.commit()
+    except ServiceError as e:
+        db.rollback()
+        return _kickoff_page(request, db, user, dict(raw, team_text=raw.get("team") or ""), err=e.message)
+    kickoff.run(k.id)
+    return RedirectResponse(f"/kickoff/{k.id}", status_code=303)
+
+
+@app.get("/kickoff/{kid}", response_class=HTMLResponse)
+def kickoff_view(request: Request, kid: str, user: str = auth.RequireUser, db: Session = Depends(get_db)):
+    k = kickoff.find(db, kid)
+    db.refresh(k)
+    return render(request, "kickoff_run.html", user=user, k=kickoff.kickoff_dict(db, k), STATUS=KICKOFF_STATUS,
+                  STEP_STATUS=STEP_STATUS, LINK_NAMES=LINK_NAMES)
+
+
+@app.post("/kickoff/{kid}/retry")
+def kickoff_retry(request: Request, kid: str, step: str = Form(""), user: str = auth.RequireUser,
+                  db: Session = Depends(get_db)):
+    k = kickoff.find(db, kid)
+    kickoff.retry(db, user, k, step or None)
+    db.commit()
+    kickoff.run(k.id)
+    return back(f"/kickoff/{k.id}", msg="Ran the kickoff again")
+
+
+@app.post("/kickoff/{kid}/steps/{key}/done")
+def kickoff_manual_done(request: Request, kid: str, key: str, user: str = auth.RequireUser,
+                        db: Session = Depends(get_db)):
+    k = kickoff.find(db, kid)
+    return _form_action(db, f"/kickoff/{k.id}", lambda: kickoff.mark_manual_done(db, user, k, key), "Marked done")
+
+
+@app.get("/api/kickoffs")
+def api_kickoffs(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    return {"kickoffs": [kickoff.kickoff_dict(db, k) for k in kickoff.recent(db, 100)]}
+
+
+@app.post("/api/kickoffs")
+async def api_kickoff_create(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Kick off an engagement from elsewhere on the platform or a script. The body takes
+    the same fields as the kickoff form; options is an object of booleans."""
+    body = await request.json()
+    actor = (body.get("actor") or "").strip().lower() if user.startswith("api") else user
+    k = kickoff.start(db, actor or user, body)
+    db.commit()
+    kid = k.id
+    kickoff.run(kid)
+    db.expire_all()
+    return JSONResponse(kickoff.kickoff_dict(db, kickoff.find(db, kid)), status_code=201)
+
+
+@app.get("/api/kickoffs/{kid}")
+def api_kickoff(kid: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    return kickoff.kickoff_dict(db, kickoff.find(db, kid))
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}

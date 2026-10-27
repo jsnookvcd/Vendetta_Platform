@@ -20,7 +20,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 from . import alerts as alerts_mod
-from . import billing, capacity, changes, harvest, integrations, metrics, oauth, service, templates_lib
+from . import billing, capacity, changes, harvest, integrations, kickoff, metrics, oauth, service, templates_lib
 from . import milestones as milestones_mod
 from .auth import Identity
 from .config import IR_WORKSTREAMS, PRACTICE_NAMES
@@ -43,7 +43,12 @@ INSTRUCTIONS = (
     "list_harvest_tasks when unsure). Confirm hours, date and task with the PM before logging time "
     "for someone else or deleting anything. Open new engagements from a template when one fits "
     "(list_templates). Anything that changes sold hours or the end date goes through request_change, "
-    "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first."
+    "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first. "
+    "To stand a new engagement up everywhere at once (engagement and boards, platform record, Harvest client, "
+    "project, tasks and team, private Teams channel in the practice team with its files and engagement email, "
+    "Vendetta Time, client email draft, "
+    "delivery channel post), use kickoff_engagement rather than create_engagement; confirm the client, team, "
+    "budget and billing with the PM first."
 )
 
 
@@ -61,7 +66,7 @@ class Tool:
 
 
 TOOLS: dict[str, Tool] = {}
-_OPEN_WORLD = {"log_time", "update_time_entry", "delete_time_entry", "list_time_entries", "list_harvest_projects",
+_OPEN_WORLD = {"kickoff_engagement", "retry_kickoff", "log_time", "update_time_entry", "delete_time_entry", "list_time_entries", "list_harvest_projects",
                "list_harvest_tasks", "engagement_burn", "log_meeting_notes", "update_meeting_note",
                "retry_sharepoint_mirror", "draft_invoice", "uninvoiced_time", "manage_milestone",
                "apply_template", "team_capacity", "portfolio_metrics"}
@@ -635,6 +640,80 @@ def t_uninvoiced(db, ident, engagement, start=None, end=None):
       write=True)
 def t_draft_invoice(db, ident, engagement, **f):
     return billing.draft_invoice(db, ident.email, ident.role, service.find_engagement(db, engagement), **f)
+
+
+# ---------------------------------------------------------------- kickoff
+TEAM = {"type": "array", "description": "Team members besides the PM and lead, each an email or "
+        "{\"email\", \"role\"} (role like responder, analyst, consultant)",
+        "items": {"anyOf": [STR, {"type": "object", "properties": {"email": STR, "role": STR},
+                                   "required": ["email"]}]}}
+
+
+@tool("kickoff_engagement", "Kick off a new engagement across every tool in one go: opens it here (practice board "
+      "card, task board from the template), links or opens the IR hub case, creates the Harvest client and project "
+      "with budget, billing, practice tasks and the team (PM as project manager), opens a private channel for the "
+      "engagement in the practice team with the team as members, lays out its folder tree, gives it an email "
+      "address on the practice mailbox, adds the engagement board and Vendetta Time tabs, registers it in Vendetta Time, drafts the client kickoff email in the PM's Drafts (never sends) "
+      "and posts it to the delivery channel. Steps that wait on Microsoft 365 finish in the background; check "
+      "with get_kickoff. Confirm the details with the PM before calling.",
+      S(**{"practice!": PRACTICE, "name!": STR, "client!": {"type": "string", "description":
+            "Client name; matched to the platform roster and to Harvest, created in Harvest if new"}},
+        codename={"type": "string", "description": "Names the engagement channel instead of the client"},
+        template={"type": "string", "description": "Template key (list_templates)"},
+        pm=WHO, lead=WHO, team=TEAM, budget_hours=NUM,
+        billing_type={"type": "string", "enum": ["hourly", "fixed_fee", "retainer", "carrier_panel"]},
+        hourly_rate={"type": "number", "description": "Project rate; omit to bill each person's Harvest rate"},
+        fee={"type": "number", "description": "Fixed fee amount (fixed_fee only)"},
+        starts_on=DATE, ends_on=DATE, description=STR,
+        severity={"type": "string", "enum": ["critical", "high", "medium", "low"]},
+        platform_ref={"type": "string", "description": "Existing IR case number or OSP engagement id to link "
+                      "instead of opening a case"},
+        harvest_project_id={"type": "string", "description": "Link this existing Harvest project instead of "
+                            "creating one"},
+        client_contacts={"type": "array", "items": STR, "description": "Client emails for the kickoff email draft"},
+        ticket_ref=STR,
+        skip={"type": "array", "items": {"type": "string", "enum": ["platform", "harvest", "m365", "vendetta_time",
+                                                                    "client_email", "announce"]},
+              "description": "Parts of the setup to leave out"}), write=True)
+def t_kickoff(db, ident, practice, name, client, pm=None, lead=None, skip=None, **f):
+    raw = dict(f, practice=practice, name=name, client=client, pm_email=_who(ident, pm) or ident.email,
+               lead_email=_who(ident, lead) or "",
+               options={k: k not in (skip or []) for k in ("platform", "harvest", "m365", "vendetta_time",
+                                                            "client_email", "announce")})
+    k = kickoff.start(db, ident.email, raw)
+    db.commit()
+    kid = k.id
+    kickoff.run(kid)
+    db.expire_all()
+    out = kickoff.kickoff_dict(db, kickoff.find(db, kid))
+    out["page"] = kickoff._public(f"/kickoff/{kid}")
+    return out
+
+
+@tool("get_kickoff", "Where a kickoff stands: each step's status and result, and the links it produced.",
+      S(**{"kickoff!": {"type": "string", "description": "Kickoff id, or the engagement code"}}))
+def t_get_kickoff(db, ident, kickoff_ref=None, **f):
+    return kickoff.kickoff_dict(db, kickoff.find(db, f.get("kickoff") or kickoff_ref))
+
+
+@tool("retry_kickoff", "Run a kickoff's failed steps again (or one named step), without repeating what worked. "
+      "Use mark_done for a manual step the PM has finished.",
+      S(**{"kickoff!": {"type": "string", "description": "Kickoff id, or the engagement code"}},
+        step=STR, mark_done={"type": "boolean"}), write=True)
+def t_retry_kickoff(db, ident, step=None, mark_done=False, **f):
+    k = kickoff.find(db, f["kickoff"])
+    if mark_done:
+        if not step:
+            raise ServiceError("Name the manual step to mark done")
+        kickoff.mark_manual_done(db, ident.email, k, step)
+        db.commit()
+    else:
+        kickoff.retry(db, ident.email, k, step)
+        db.commit()
+    kid = k.id
+    kickoff.run(kid)
+    db.expire_all()
+    return kickoff.kickoff_dict(db, kickoff.find(db, kid))
 
 
 # ---------------------------------------------------------------- dispatch

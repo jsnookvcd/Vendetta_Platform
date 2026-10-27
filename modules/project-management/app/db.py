@@ -397,6 +397,28 @@ class Invoice(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# ---------------------------------------------------------------- kickoff
+class Kickoff(Base):
+    """One run of the project kickoff: what the PM asked for, and every step it took
+    to stand the engagement up across the tools (the engagement and boards here, the
+    platform record, Harvest, the Microsoft 365 group, site and team, Vendetta Time,
+    the delivery announcement). Each step is idempotent and records its outcome, so a
+    failed or waiting step is retried without repeating the ones that worked."""
+    __tablename__ = "kickoffs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    engagement_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # running | waiting | done | attention (a step failed or needs a person)
+    status: Mapped[str] = mapped_column(String(12), default="running", index=True)
+    request: Mapped[dict] = mapped_column(JSON, default=dict)   # the wizard inputs
+    steps: Mapped[list] = mapped_column(JSON, default=list)     # [{key,label,status,detail,link,attempts,at}]
+    state: Mapped[dict] = mapped_column(JSON, default=dict)     # ids each step produced (group_id, team_id ...)
+    next_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(320), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 # ---------------------------------------------------------------- MCP / OAuth
 class OAuthClient(Base):
     """A client registered through dynamic client registration (RFC 7591): the
