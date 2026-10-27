@@ -158,14 +158,25 @@ alert_settings = AlertSettings()
 class KickoffSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_prefix="KICKOFF_")
 
-    # Microsoft 365 group per engagement. IR keeps the existing case-site convention,
-    # "Incident Response-<client or codename>".
-    ir_group_prefix: str = "Incident Response-"
-    proserv_group_prefix: str = "Professional Services-"
-    group_owners: str = ""                 # emails made owners of every engagement group
-    ir_always_members: str = ""            # emails added to every IR engagement team
-    proserv_always_members: str = ""       # emails added to every ProServ engagement team
-    # Folder tree created in each engagement site's document library ("/" nests).
+    # Microsoft 365. Each practice has one parent team; every engagement is a private
+    # channel in it, named "<code> <codename or client>". Set the team ids (the
+    # practice team's group id). When a team nears 1,000 channels, point the practice
+    # at a new team; existing engagements stay where they are.
+    ir_team_id: str = ""
+    proserv_team_id: str = ""
+    channel_owners: str = ""               # emails made owners of every engagement channel
+    ir_always_members: str = ""            # emails added to every IR engagement channel
+    proserv_always_members: str = ""       # emails added to every ProServ engagement channel
+    channel_warn_at: int = 900             # warn on kickoff once the practice team holds this many channels
+    # Engagement email: a plus address on the practice's shared mailbox
+    # (ir+vcd-ir-2026-014@vendettacd.io), filed into a folder per engagement by an
+    # inbox rule. Blank skips the step and the client email draft has no CC address.
+    ir_mailbox: str = ""
+    proserv_mailbox: str = ""
+    # One standard channel per practice team for logging time across engagements; its
+    # Vendetta Time tab is left unlocked so the person picks the engagement.
+    time_channel_name: str = "Time Entry"
+    # Folder tree created in each engagement channel's files folder ("/" nests).
     folders_ir: str = ("Evidence,Evidence/Client Uploads,Evidence/Collections,Analysis,Reports,"
                        "Correspondence,Meeting Notes")
     folders_proserv: str = "Contracts,Client Uploads,Working,Deliverables,Correspondence,Meeting Notes"
@@ -185,7 +196,7 @@ class KickoffSettings(BaseSettings):
     vtime_tab_content_url: str = ""
     # Draft the client kickoff email in the PM's mailbox (needs Graph Mail.ReadWrite).
     draft_client_email: bool = True
-    # Steps that wait on Microsoft 365 (a new group's site and team take minutes).
+    # Steps that wait on Microsoft 365 (a new private channel's site takes minutes).
     retry_seconds: int = 60                # 0 disables the background loop
     max_attempts: int = 30
 

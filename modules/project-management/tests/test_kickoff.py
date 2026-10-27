@@ -76,19 +76,24 @@ class KickoffHarvest(FakeHarvest):
 
 
 class FakeM365:
-    """Microsoft Graph for groups, sites, drives, Teams, list items and mail."""
+    """Microsoft Graph for practice teams, private channels and their files, mail
+    folders and rules, Vendetta Time list items and mail drafts."""
 
     def __init__(self, site_ready_after: int = 0):
         self.users = {"pm@vendettacd.io": "u-pm", "dan@vendettacd.io": "u-dan", "kenedi@vendettacd.io": "u-ken",
                       "jordan@vendettacd.io": "u-jordan"}
-        self.groups: dict[str, dict] = {}
-        self.members: dict[str, set] = {}
-        self.site_calls = 0
+        self.teams = {"team-ir": "Vendetta Incident Response", "team-ps": "Vendetta Professional Services"}
+        self.members: dict[str, set] = {"team-ir": {"u-jordan"}, "team-ps": {"u-jordan"}}
+        self.channels: dict[str, list[dict]] = {"team-ir": [], "team-ps": []}
+        self.channel_members: dict[str, dict[str, list[str]]] = {}
+        self.layouts: dict[str, str] = {}
+        self.files_calls = 0
         self.site_ready_after = site_ready_after
-        self.folders: set[str] = set()
-        self.teams: set[str] = set()
+        self.folders: dict[str, set[str]] = {}
         self.tabs: list[dict] = []
-        self.installed: list[str] = []
+        self.installed: list[tuple[str, str]] = []
+        self.mail_folders: dict[str, list[dict]] = {}
+        self.rules: dict[str, list[dict]] = {}
         self.lists: dict[str, list[dict]] = {"Projects": [], "TabContexts": [],
                                             "User Information List": [{"id": "14", "fields": {"EMail": "pm@vendettacd.io"}}]}
         self.drafts: list[tuple[str, dict]] = []
@@ -101,6 +106,13 @@ class FakeM365:
             return field.split("/")[-1].strip(), val.rstrip("'").replace("''", "'")
         return None, None
 
+    def _channel(self, cid):
+        for tid, rows in self.channels.items():
+            for ch in rows:
+                if ch["id"] == cid:
+                    return tid, ch
+        return None, None
+
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if "login.microsoftonline.com" in url:
@@ -110,6 +122,26 @@ class FakeM365:
         m = request.method
         self.calls.append(f"{m} {p}")
         body = json.loads(request.content) if request.content else {}
+
+        # ------------------------------------------------ mail
+        if p.startswith("/users/") and "/mailFolders/inbox/" in p:
+            mbx = p.split("/")[2]
+            if mbx not in ("ir@vendettacd.io", "ps@vendettacd.io"):
+                return httpx.Response(404)
+            if p.endswith("/childFolders"):
+                rows = self.mail_folders.setdefault(mbx, [])
+                if m == "GET":
+                    _, val = self._filter(request)
+                    return httpx.Response(200, json={"value": [r for r in rows if r["displayName"] == val]})
+                f = {"id": f"mf-{len(rows) + 1}", "displayName": body["displayName"]}
+                rows.append(f)
+                return httpx.Response(201, json=f)
+            if p.endswith("/messageRules"):
+                rows = self.rules.setdefault(mbx, [])
+                if m == "GET":
+                    return httpx.Response(200, json={"value": rows})
+                rows.append(body)
+                return httpx.Response(201, json=body)
         if p.startswith("/users/") and p.endswith("/messages") and m == "POST":
             self.drafts.append((p.split("/")[2], body))
             return httpx.Response(201, json={"id": "msg-1", "webLink": "https://outlook.example/msg-1"})
@@ -120,41 +152,34 @@ class FakeM365:
             _, val = self._filter(request)
             uid = self.users.get((val or "").lower())
             return httpx.Response(200, json={"value": [{"id": uid}] if uid else []})
-        if p == "/groups" and m == "GET":
-            field, val = self._filter(request)
-            rows = [g for g in self.groups.values() if str(g.get(field, "")).lower() == (val or "").lower()]
-            return httpx.Response(200, json={"value": rows})
-        if p == "/groups" and m == "POST":
-            gid = f"g-{len(self.groups) + 1}"
-            g = {"id": gid, "displayName": body["displayName"], "mailNickname": body["mailNickname"],
-                 "mail": f"{body['mailNickname']}@vendettacd.io"}
-            self.groups[gid] = g
-            self.members[gid] = {u.rsplit("/", 1)[1] for u in body.get("members@odata.bind", [])}
-            self.owners = body.get("owners@odata.bind", [])
-            return httpx.Response(201, json=g)
-        if p.endswith("/members") and m == "GET":
+
+        # ------------------------------------------------ practice team membership
+        if p.startswith("/groups/") and p.endswith("/members") and m == "GET":
             gid = p.split("/")[2]
             return httpx.Response(200, json={"value": [{"id": i} for i in self.members.get(gid, set())]})
-        if p.endswith("/members/$ref"):
+        if p.startswith("/groups/") and p.endswith("/members/$ref"):
             gid = p.split("/")[2]
             self.members[gid].add(body["@odata.id"].rsplit("/", 1)[1])
             return httpx.Response(204)
-        if p.endswith("/sites/root"):
-            self.site_calls += 1
-            if self.site_calls <= self.site_ready_after:
-                return httpx.Response(404)
-            gid = p.split("/")[2]
-            nick = self.groups[gid]["mailNickname"]
-            return httpx.Response(200, json={"id": f"site-{gid}",
-                                             "webUrl": f"https://vendettacd.sharepoint.com/sites/{nick}"})
-        if p.startswith("/sites/") and "/drive/root" in p and m == "POST":
-            parent = p.split("/drive/root")[1]
-            parent = parent.split(":/")[1].split(":")[0] if parent.startswith(":") else ""
-            full = f"{parent}/{body['name']}".strip("/")
-            if full in self.folders:
-                return httpx.Response(409)
-            self.folders.add(full)
-            return httpx.Response(201, json={"id": full})
+
+        # ------------------------------------------------ files
+        if p.startswith("/drives/"):
+            parts = p.split("/")
+            drive = parts[2]
+            if len(parts) == 3 and m == "GET":
+                return httpx.Response(200, json={"id": drive, "webUrl": f"https://vendettacd.sharepoint.com/sites/{drive}/Shared Documents"})
+            if m == "POST" and p.endswith("/children"):
+                rest = p.split("/items/", 1)[1][: -len("/children")]
+                root, _, parent = rest.partition(":/")
+                parent = parent.rstrip(":")
+                full = f"{parent}/{body['name']}".strip("/")
+                have = self.folders.setdefault(drive, set())
+                if full in have:
+                    return httpx.Response(409)
+                have.add(full)
+                return httpx.Response(201, json={"id": full})
+
+        # ------------------------------------------------ Vendetta Time lists
         if p.startswith("/sites/vendettacd.sharepoint.com:"):
             return httpx.Response(200, json={"id": "site-vtime"})
         if p.startswith("/sites/") and "/lists/" in p:
@@ -171,25 +196,65 @@ class FakeM365:
                 iid = p.split("/items/")[1].split("/")[0]
                 next(r for r in rows if r["id"] == iid)["fields"].update(body)
                 return httpx.Response(200, json=body)
+
+        # ------------------------------------------------ Teams
         if p.startswith("/teams/"):
-            tid = p.split("/")[2]
-            if p == f"/teams/{tid}":
-                return (httpx.Response(200, json={"id": tid, "webUrl": f"https://teams.example/{tid}"})
-                        if tid in self.teams else httpx.Response(404))
-            if p.endswith("/primaryChannel"):
-                return httpx.Response(200, json={"id": f"19:{tid}@thread.tacv2", "webUrl": "https://teams.example/ch"})
-            if p.endswith("/tabs") and m == "GET":
-                return httpx.Response(200, json={"value": [{"displayName": t["displayName"]} for t in self.tabs
-                                                           if t["team"] == tid]})
-            if p.endswith("/tabs") and m == "POST":
-                self.tabs.append({"team": tid, **body})
-                return httpx.Response(201, json={"id": "tab"})
-            if p.endswith("/installedApps"):
-                self.installed.append(body["teamsApp@odata.bind"])
+            parts = p.split("/")
+            tid = parts[2]
+            if tid not in self.teams:
+                return httpx.Response(404)
+            if len(parts) == 3:
+                return httpx.Response(200, json={"id": tid, "displayName": self.teams[tid],
+                                                 "webUrl": f"https://teams.example/{tid}"})
+            if parts[3] == "installedApps":
+                self.installed.append((tid, body["teamsApp@odata.bind"]))
                 return httpx.Response(201, json={})
-        if p.startswith("/groups/") and p.endswith("/team") and m == "PUT":
-            self.teams.add(p.split("/")[2])
-            return httpx.Response(201, json={})
+            if parts[3] == "channels" and len(parts) == 4:
+                rows = self.channels[tid]
+                if m == "GET":
+                    field, val = self._filter(request)
+                    out = [c for c in rows if c["displayName"] == val] if field else rows
+                    return httpx.Response(200, json={"value": out})
+                cid = f"19:{tid}-{len(rows) + 1}@thread.tacv2"
+                ch = {"id": cid, "displayName": body["displayName"], "membershipType": body.get("membershipType", "standard"),
+                      "webUrl": f"https://teams.example/{tid}/{len(rows) + 1}"}
+                rows.append(ch)
+                self.channel_members[cid] = {}
+                for mem in body.get("members", []):
+                    uid = mem["user@odata.bind"].split("('")[1].rstrip("')")
+                    self.channel_members[cid][uid] = mem["roles"]
+                return httpx.Response(201, json=ch)
+            cid = parts[4]
+            _, ch = self._channel(cid)
+            if ch is None:
+                return httpx.Response(404)
+            if len(parts) == 5 and m == "PATCH":
+                self.layouts[cid] = body["layoutType"]
+                return httpx.Response(204)
+            sub = parts[5]
+            if sub == "members":
+                if m == "GET":
+                    return httpx.Response(200, json={"value": [{"userId": u, "roles": r}
+                                                               for u, r in self.channel_members[cid].items()]})
+                uid = body["user@odata.bind"].split("('")[1].rstrip("')")
+                if uid not in self.members[tid]:
+                    return httpx.Response(400, json={"error": {"message": "not a member of the team"}})
+                self.channel_members[cid][uid] = body["roles"]
+                return httpx.Response(201, json={})
+            if sub == "filesFolder":
+                self.files_calls += 1
+                if self.files_calls <= self.site_ready_after:
+                    return httpx.Response(404)
+                drive = "site-" + cid.split(":")[1].split("@")[0]
+                return httpx.Response(200, json={"id": "root-" + drive, "name": ch["displayName"],
+                                                 "webUrl": f"https://vendettacd.sharepoint.com/sites/{drive}/Shared Documents/{ch['displayName']}",
+                                                 "parentReference": {"driveId": drive}})
+            if sub == "tabs":
+                if m == "GET":
+                    return httpx.Response(200, json={"value": [{"displayName": t["displayName"]} for t in self.tabs
+                                                               if t["channel"] == cid]})
+                self.tabs.append({"team": tid, "channel": cid, **body})
+                return httpx.Response(201, json={"id": "tab"})
         return httpx.Response(404)
 
 
@@ -234,13 +299,16 @@ def world(fresh_db):
     integrations.save({"harvest_account_id": "acct-1", "harvest_token": "hv-token", "graph_tenant_id": "tid",
                        "graph_client_id": "cid", "graph_client_secret": "sec"}, "test")
     saved = {k: getattr(kickoff_settings, k) for k in ("vtime_site_url", "vtime_teams_app_id", "vtime_tab_content_url",
-                                                       "ir_always_members", "group_owners", "max_attempts")}
+                                                       "ir_always_members", "channel_owners", "max_attempts",
+                                                       "ir_team_id", "proserv_team_id", "ir_mailbox", "proserv_mailbox")}
     saved_s = (settings.platform_hub_url, settings.public_url, alert_settings.teams_webhook_url)
     kickoff_settings.vtime_site_url = "https://vendettacd.sharepoint.com/sites/VendettaTime"
     kickoff_settings.vtime_teams_app_id = "app-vtime"
     kickoff_settings.vtime_tab_content_url = "https://apps.powerapps.com/play/x?teamId={teamId}&channelId={channelId}"
     kickoff_settings.ir_always_members = "kenedi@vendettacd.io"
-    kickoff_settings.group_owners = "jordan@vendettacd.io"
+    kickoff_settings.channel_owners = "jordan@vendettacd.io"
+    kickoff_settings.ir_team_id, kickoff_settings.proserv_team_id = "team-ir", "team-ps"
+    kickoff_settings.ir_mailbox, kickoff_settings.proserv_mailbox = "ir@vendettacd.io", "ps@vendettacd.io"
     settings.platform_hub_url = "http://ir-hub"
     alert_settings.teams_webhook_url = "https://webhook.example/delivery"
     yield {"harvest": hv, "graph": ms, "hub": hub, "kickoff": kickoff}
@@ -285,9 +353,9 @@ def test_full_ir_kickoff(world):
     st = _status(out)
     assert out["status"] == "done", out["steps"]
     for k in ("engagement", "platform", "harvest_client", "harvest_project", "harvest_tasks", "harvest_team",
-              "m365_group", "m365_site", "m365_team", "teams_tabs", "vendetta_time", "client_email", "announce"):
+              "m365_team", "m365_channel", "m365_site", "mailbox", "teams_tabs", "time_channel", "vendetta_time",
+              "client_email", "announce"):
         assert st[k] == "ok", (k, out["steps"])
-    assert st["mailbox_external"] == "manual"
     assert st["ticket"] == "skipped"
 
     # Engagement, template and platform case
@@ -309,30 +377,49 @@ def test_full_ir_kickoff(world):
     team_step = next(s for s in out["steps"] if s["key"] == "harvest_team")
     assert "ghost@vendettacd.io" in team_step["warning"]
 
-    # Microsoft 365: IR naming convention, owners and members, folders, team, tabs
-    g = next(iter(ms.groups.values()))
-    assert g["displayName"] == "Incident Response-Atlantic Credit Union"
-    assert g["mailNickname"] == code.lower()
-    assert ms.members[g["id"]] >= {"u-pm", "u-dan", "u-ken", "u-jordan"}
-    assert {"Evidence", "Evidence/Client Uploads", "Reports", "Meeting Notes"} <= ms.folders
-    assert {t["displayName"] for t in ms.tabs} == {"Engagement board", "Vendetta Time"}
-    board = next(t for t in ms.tabs if t["displayName"] == "Engagement board")
-    assert board["configuration"]["contentUrl"] == f"https://pm.test.example/engagements/{out['engagement_id']}"
-    vt = next(t for t in ms.tabs if t["displayName"] == "Vendetta Time")
-    assert f"teamId={g['id']}" in vt["configuration"]["contentUrl"]
+    # Microsoft 365: everyone joins the practice team; the engagement is a private
+    # channel in it, PM and Jordan as owners, the team (plus Kenedi on IR) as members
+    assert ms.members["team-ir"] >= {"u-pm", "u-dan", "u-ken", "u-jordan"}
+    assert ms.members["team-ps"] == {"u-jordan"}
+    case = next(c for c in ms.channels["team-ir"] if c["membershipType"] == "private")
+    assert case["displayName"] == f"{code} Atlantic Credit Union"
+    roles = ms.channel_members[case["id"]]
+    assert roles["u-pm"] == ["owner"] and roles["u-jordan"] == ["owner"]
+    assert roles["u-dan"] == [] and roles["u-ken"] == []
+    assert ms.layouts[case["id"]] == "chat"
+    drive = "site-" + case["id"].split(":")[1].split("@")[0]
+    assert {"Evidence", "Evidence/Client Uploads", "Reports", "Meeting Notes"} <= ms.folders[drive]
 
-    # Vendetta Time rows link the Harvest project and lock the channel tab to the project
+    # Engagement email: plus address on the IR mailbox, its own folder and rule
+    addr = f"ir+{code.lower()}@vendettacd.io"
+    assert out["links"]["mailbox"] == addr
+    assert ms.mail_folders["ir@vendettacd.io"][0]["displayName"] == case["displayName"]
+    rule = ms.rules["ir@vendettacd.io"][0]
+    assert rule["conditions"]["headerContains"] == [addr] and rule["actions"]["moveToFolder"] == "mf-1"
+
+    # Tabs: board and locked Vendetta Time on the case channel; Log Time on Time Entry
+    case_tabs = {t["displayName"]: t for t in ms.tabs if t["channel"] == case["id"]}
+    assert set(case_tabs) == {"Engagement board", "Vendetta Time"}
+    assert case_tabs["Engagement board"]["configuration"]["contentUrl"] == \
+        f"https://pm.test.example/engagements/{out['engagement_id']}"
+    assert f"channelId={case['id']}" in case_tabs["Vendetta Time"]["configuration"]["contentUrl"]
+    tc = next(c for c in ms.channels["team-ir"] if c["displayName"] == "Time Entry")
+    assert tc["membershipType"] == "standard"
+    assert [t["displayName"] for t in ms.tabs if t["channel"] == tc["id"]] == ["Log Time"]
+
+    # Vendetta Time rows link the Harvest project and lock the case channel's tab only
     row = ms.lists["Projects"][0]["fields"]
     assert row["ProjectCode"] == code and row["HarvestProjectId"] == "600"
     assert row["ProjectManagerLookupId"] == "14" and row["Practice"] == "Incident Response"
+    assert len(ms.lists["TabContexts"]) == 1
     tab = ms.lists["TabContexts"][0]["fields"]
-    assert tab["ContextKey"] == f"channel|{g['id']}|19:{g['id']}@thread.tacv2" and tab["ProjectId"] == 1
+    assert tab["ContextKey"] == f"channel|team-ir|{case['id']}" and tab["ProjectId"] == 1
 
     # Client email draft in the PM's mailbox, CC the case mailbox; delivery post
     mailbox, draft = ms.drafts[0]
     assert mailbox == "pm@vendettacd.io"
     assert draft["toRecipients"][0]["emailAddress"]["address"] == "cio@atlanticcu.example"
-    assert draft["ccRecipients"][0]["emailAddress"]["address"] == g["mail"]
+    assert draft["ccRecipients"][0]["emailAddress"]["address"] == addr
     assert "\u2014" not in draft["body"]["content"] and "\u2013" not in draft["body"]["content"]
     assert hub.webhook and code in json.dumps(hub.webhook[0])
 
@@ -341,7 +428,8 @@ def test_full_ir_kickoff(world):
     db = SessionLocal()
     e = db.get(Engagement, out["engagement_id"])
     assert e.harvest_project_id == "600" and e.platform_ref == "VCD-IR-2026-801"
-    assert e.sharepoint_site_url.endswith(code.lower()) and e.sharepoint_folder == "Meeting Notes"
+    assert e.sharepoint_site_url == f"https://vendettacd.sharepoint.com/sites/{drive}"
+    assert e.sharepoint_folder == f"{case['displayName']}/Meeting Notes"
     assert e.engagement_type == "ransomware"
     db.close()
 
@@ -386,7 +474,7 @@ def test_failure_then_retry_does_not_repeat_work(world):
     assert _status(out)["announce"] == "ok"  # posts even when one step failed
 
     ms.lists["User Information List"] = [{"id": "21", "fields": {"EMail": "pm@vendettacd.io"}}]
-    projects_before, groups_before = len(hv.created_projects), len(ms.groups)
+    projects_before, channels_before = len(hv.created_projects), len(ms.channels["team-ir"])
     from app import kickoff
     from app.db import SessionLocal
     db = SessionLocal()
@@ -399,28 +487,53 @@ def test_failure_then_retry_does_not_repeat_work(world):
     res = kickoff.kickoff_dict(db, kickoff.find(db, out["id"]))
     db.close()
     assert res["status"] == "done", res["steps"]
-    assert len(hv.created_projects) == projects_before and len(ms.groups) == groups_before
+    assert len(hv.created_projects) == projects_before and len(ms.channels["team-ir"]) == channels_before
+    assert len(ms.rules["ir@vendettacd.io"]) == 1 and len(ms.tabs) == 3  # nothing made twice
     assert ms.lists["Projects"][0]["fields"]["ProjectManagerLookupId"] == "21"
 
 
-def test_proserv_fixed_fee_existing_client_and_name_clash(world):
+def test_proserv_fixed_fee_existing_client_and_channel_name(world):
     ms, hv = world["graph"], world["harvest"]
-    ms.groups["g-old"] = {"id": "g-old", "displayName": "Professional Services-IFB", "mailNickname": "old",
-                          "mail": "old@vendettacd.io"}
     out = _start({"practice": "proserv", "name": "vCISO onboarding", "client": "ifb", "pm_email": "pm@vendettacd.io",
+                  "codename": "Harbor & Bay / Risk Program: Phase One, Northeast Region",
                   "billing_type": "fixed_fee", "fee": "12500", "budget_hours": "60", "template": "vciso-onboarding"})
     assert out["status"] == "done", out["steps"]
     st = _status(out)
-    assert st["platform"] == "skipped" and st["mailbox_external"] == "skipped"
+    assert st["platform"] == "skipped"
     assert len(hv.clients) == 1  # matched IFB case-insensitively
     proj = hv.created_projects[0]
     assert proj["is_fixed_fee"] is True and proj["fee"] == 12500.0 and proj["bill_by"] == "People"
     names = {t["task"]["name"] for t in hv.tasks[600]}
     assert "Consulting" in names
-    g = [x for x in ms.groups.values() if x["id"] != "g-old"][0]
-    assert g["displayName"] == f"Professional Services-IFB {out['engagement']}"
-    assert "Contracts" in ms.folders and "Evidence" not in ms.folders
-    assert "kenedi" not in json.dumps(sorted(ms.members[g["id"]]))  # IR-only always-member
+    # ProServ goes to its own practice team and mailbox; the IR team is untouched
+    assert ms.channels["team-ir"] == []
+    case = next(c for c in ms.channels["team-ps"] if c["membershipType"] == "private")
+    name = case["displayName"]
+    assert name.startswith(out["engagement"]) and len(name) <= 50
+    assert not any(ch in name for ch in "&/:,")
+    assert "u-ken" not in ms.channel_members[case["id"]]  # IR-only always-member
+    drive = "site-" + case["id"].split(":")[1].split("@")[0]
+    assert "Contracts" in ms.folders[drive] and "Evidence" not in ms.folders[drive]
+    assert out["links"]["mailbox"] == f"ps+{out['engagement'].lower()}@vendettacd.io"
+
+
+def test_channel_limit_warning(world):
+    ms = world["graph"]
+    ms.channels["team-ir"] = [{"id": f"19:old-{i}@thread.tacv2", "displayName": f"Old {i}", "membershipType": "private",
+                               "webUrl": ""} for i in range(905)]
+    out = _start(dict(IR_REQUEST, client_contacts=""))
+    assert out["status"] == "done", out["steps"]
+    team_step = next(s for s in out["steps"] if s["key"] == "m365_team")
+    assert "905 of 1000 channels" in team_step["warning"]
+
+
+def test_channel_name_rules():
+    from app import m365
+    assert m365.channel_name("VCD-IR-2026-014", "Atlantic Credit Union") == "VCD-IR-2026-014 Atlantic Credit Union"
+    n = m365.channel_name("VCD-IR-2026-014", 'A&B "Bank" #1 / Main: Branch? <HQ> ... and a very long tail here')
+    assert len(n) <= 50 and not any(ch in n for ch in '&"#/:?<>') and ".." not in n
+    assert m365.plus_address("IR@vendettacd.io", "vcd-ir-2026-014") == "ir+vcd-ir-2026-014@vendettacd.io"
+    assert m365.plus_address("ir+old@vendettacd.io", "x") == "ir+x@vendettacd.io"
 
 
 def test_validation_and_options(world):
@@ -442,7 +555,8 @@ def test_validation_and_options(world):
                   "options": {"m365": False, "vendetta_time": False, "announce": False}})
     st = _status(out)
     assert out["status"] == "done", out["steps"]
-    assert st["m365_group"] == "skipped" and st["vendetta_time"] == "skipped" and st["harvest_client"] == "skipped"
+    assert st["m365_channel"] == "skipped" and st["mailbox"] == "skipped" and st["time_channel"] == "skipped"
+    assert st["vendetta_time"] == "skipped" and st["harvest_client"] == "skipped"
     assert st["harvest_project"] == "ok" and not world["harvest"].created_projects
     assert not world["hub"].cases  # linked the existing case
     assert out["links"]["platform_ref"] == "VCD-IR-2026-445"
@@ -461,10 +575,9 @@ def test_web_wizard_and_viewer(world, client):
     r = c.post("/kickoff", data=form, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/kickoff/")
     view = c.get(r.headers["location"])
-    assert view.status_code == 200 and "Done" in view.text and "Set-UnifiedGroup" in view.text
+    assert view.status_code == 200 and "Done" in view.text and "ir+vcd-ir-" in view.text
+    assert "Manual" not in view.text  # nothing left for a person to do in Exchange
     kid = r.headers["location"].rsplit("/", 1)[1]
-    done = c.post(f"/kickoff/{kid}/steps/mailbox_external/done", follow_redirects=False)
-    assert done.status_code == 303
     v = as_user(client, "viewer@vendettacd.io")
     assert v.post("/kickoff", data=form).status_code == 403
     assert v.get(f"/kickoff/{kid}").status_code == 200
@@ -482,6 +595,7 @@ def test_mcp_kickoff(world, client):
     assert out["status"] == "done", out["steps"]
     got = m.ok("get_kickoff", kickoff=out["engagement"])
     assert got["id"] == out["id"]
-    m.ok("retry_kickoff", kickoff=out["id"], step="mailbox_external", mark_done=True)
+    again = m.ok("retry_kickoff", kickoff=out["id"], step="time_channel")
+    assert again["status"] == "done"
     err = m.call("kickoff_engagement", practice="ir", name="X", client="Y", billing_type="fixed_fee")
     assert err["isError"] and "fee" in err["content"][0]["text"]

@@ -1,9 +1,11 @@
 {% extends "base.html" %}{% block title %}Project kickoff{% endblock %}
 {% block body %}
-<p class="faint" style="margin:0 0 14px;max-width:80ch">One form stands the engagement up everywhere: the engagement and its boards here, the platform record, the Harvest client and project with budget, tasks and team, the Microsoft 365 group with its site, mailbox and Team, the Vendetta Time link, the client email draft and the delivery channel post.</p>
+<p class="faint" style="margin:0 0 14px;max-width:80ch">One form stands the engagement up everywhere: the engagement and its boards here, the platform record, the Harvest client and project with budget, tasks and team, a private channel in the practice team with its own files and an engagement email address, the Vendetta Time link, the client email draft and the delivery channel post.</p>
 <div class="row" style="gap:8px;margin-bottom:14px;flex-wrap:wrap">
   <span class="pill {{ 'pill-ok' if ready.harvest else 'pill-warn' }}">HARVEST {{ 'READY' if ready.harvest else 'NOT SET' }}</span>
   <span class="pill {{ 'pill-ok' if ready.graph else 'pill-warn' }}">MICROSOFT 365 {{ 'READY' if ready.graph else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.ir_team and ready.proserv_team else 'pill-warn' }}">PRACTICE TEAMS {{ 'READY' if ready.ir_team and ready.proserv_team else 'NOT SET' }}</span>
+  <span class="pill {{ 'pill-ok' if ready.ir_mailbox and ready.proserv_mailbox else 'pill-warn' }}">PRACTICE MAILBOXES {{ 'READY' if ready.ir_mailbox and ready.proserv_mailbox else 'NOT SET' }}</span>
   <span class="pill {{ 'pill-ok' if ready.vendetta_time else 'pill-warn' }}">VENDETTA TIME {{ 'READY' if ready.vendetta_time else 'NOT SET' }}</span>
   <span class="pill {{ 'pill-ok' if ready.ir_hub else 'pill-warn' }}">IR HUB {{ 'READY' if ready.ir_hub else 'NOT SET' }}</span>
   <span class="pill {{ 'pill-ok' if ready.announce else 'pill-warn' }}">DELIVERY CHANNEL {{ 'READY' if ready.announce else 'NOT SET' }}</span>
@@ -21,7 +23,7 @@
     <div class="formrow">
       <label class="field wide">Client <span class="req">*</span><input name="client" required list="clients" value="{{ f.client or '' }}" placeholder="from the platform roster, or a new client"></label>
       <datalist id="clients">{% for c in clients %}<option value="{{ c.name }}">{% endfor %}</datalist>
-      <label class="field">Codename<input name="codename" value="{{ f.codename or '' }}" placeholder="names the IR site instead of the client"></label>
+      <label class="field">Codename<input name="codename" value="{{ f.codename or '' }}" placeholder="names the channel instead of the client"></label>
       <label class="field wide">Template<select name="template"><option value="">None</option>{% for t in templates %}<option value="{{ t.key }}" {{ 'selected' if f.template==t.key }}>{{ PRACTICE_NAMES[t.practice] }}: {{ t.name }}</option>{% endfor %}</select></label>
     </div>
     <div class="formrow">
@@ -62,7 +64,7 @@
   <div class="section-head"><h2>Client</h2></div>
   <div class="panel pad stack">
     <label class="field">Client contacts for the kickoff email<input name="client_contacts" value="{{ f.client_contacts or '' }}" placeholder="comma separated; blank skips the draft"></label>
-    <div class="hint">The draft lands in the PM's Drafts folder addressed to these contacts and CC the engagement mailbox. Nothing is sent.</div>
+    <div class="hint">The draft lands in the PM's Drafts folder addressed to these contacts and CC the engagement email address. Nothing is sent.</div>
   </div>
 
   <div class="section-head"><h2>What to set up</h2></div>

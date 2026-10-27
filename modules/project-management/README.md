@@ -61,41 +61,89 @@ budget and billing, and then:
    project rate or each person's rate, or fixed fee), assigns the practice's tasks
    (`KICKOFF_HARVEST_TASKS_IR` / `_PROSERV`, non-billable ones flagged) and the team,
    with the PM as project manager. An existing project id can be linked instead.
-4. Microsoft 365: creates a private Microsoft 365 group named
-   `Incident Response-<codename or client>` (IR) or `Professional Services-<client>`
-   (ProServ), with the PM and `KICKOFF_GROUP_OWNERS` as owners and the team (plus
-   `KICKOFF_IR_ALWAYS_MEMBERS` on IR) as members. That gives the engagement its site,
-   its group mailbox and its Team.
-5. Lays out the folder tree in the site (`KICKOFF_FOLDERS_IR` / `_PROSERV`) and points
-   this engagement's meeting notes at its `Meeting Notes` folder.
-6. Team-enables the group and adds two tabs to General: this engagement's board and
-   Vendetta Time.
-7. Vendetta Time: adds the Projects row (code, practice, client, PM, billing type,
+4. Microsoft 365: each practice has one parent team, `KICKOFF_IR_TEAM_ID` ("Vendetta
+   Incident Response") and `KICKOFF_PROSERV_TEAM_ID` ("Vendetta Professional
+   Services"). The kickoff adds the engagement team to the practice team, then opens a
+   private channel in it named `<code> <codename or client>` (50 characters at most),
+   in the threads layout, with the PM and `KICKOFF_CHANNEL_OWNERS` as owners and the
+   team (plus `KICKOFF_IR_ALWAYS_MEMBERS` or `_PROSERV_ALWAYS_MEMBERS`) as members.
+   Only those people see the channel.
+5. Lays out the folder tree (`KICKOFF_FOLDERS_IR` / `_PROSERV`) in the channel's files
+   folder. A private channel has its own SharePoint site, so each engagement's files
+   stay separate. This engagement's meeting notes save to its `Meeting Notes` folder.
+6. Engagement email: a plus address on the practice's shared mailbox
+   (`KICKOFF_IR_MAILBOX`, `KICKOFF_PROSERV_MAILBOX`), for example
+   `ir+vcd-ir-2026-014@vendettacd.io`. A folder named for the engagement and an inbox
+   rule file everything sent or copied to that address. Mail stays in the shared
+   mailbox and is never copied into Teams or anyone's inbox.
+7. Adds two tabs to the engagement channel: this engagement's board and Vendetta Time.
+8. Makes sure the practice team has its `Time Entry` channel (`KICKOFF_TIME_CHANNEL_NAME`)
+   with a Log Time tab that is not locked to any engagement. Created once, then left alone.
+9. Vendetta Time: adds the Projects row (code, practice, client, PM, billing type,
    Harvest project id) and the TabContexts row (`channel|<teamId>|<channelId>`), so the
-   Vendetta Time tab in the new Team opens locked to the engagement.
-8. Ticket: no ticketing system is wired while the replacement for Jira Service
-   Management is chosen. A ticket reference typed in is recorded. `app/ticketing.py`
-   is where the chosen system plugs in.
-9. Drafts the client kickoff email in the PM's Drafts, CC the group mailbox. Never sends.
-10. Posts the kickoff with every link to the delivery channel (`ALERT_TEAMS_WEBHOOK_URL`).
+   Vendetta Time tab in the engagement channel opens locked to the engagement.
+10. Ticket: no ticketing system is wired while the replacement for Jira Service
+    Management is chosen. A ticket reference typed in is recorded. `app/ticketing.py`
+    is where the chosen system plugs in.
+11. Drafts the client kickoff email in the PM's Drafts, CC the engagement address.
+    Never sends.
+12. Posts the kickoff with every link to the delivery channel (`ALERT_TEAMS_WEBHOOK_URL`).
 
 Each step records what it did and is safe to run again, so a failed step is retried
-from the kickoff page without repeating the work that succeeded. A new group's site and
-team take a few minutes to appear; those steps wait and a background loop retries them
-every `KICKOFF_RETRY_SECONDS`. One step is manual for IR: letting outside senders email
-the case mailbox (`Set-UnifiedGroup -RequireSenderAuthenticationEnabled $false`), which
-Graph cannot set. The page shows the command and a Mark done button.
+from the kickoff page without repeating the work that succeeded. A new private
+channel's site takes a few minutes to appear; that step waits and a background loop
+retries it every `KICKOFF_RETRY_SECONDS`.
+
+### Time entry
+
+Time is logged in one of two places, and both go through the same approval.
+
+- **The engagement channel's Vendetta Time tab.** Locked to that engagement through the
+  TabContexts row, so the project is already filled in.
+- **The practice team's Time Entry channel.** One Log Time tab for the whole practice,
+  for logging a day across several engagements. It has no TabContexts row, so Vendetta
+  Time asks which engagement the hours are for.
+
+Either way the entry goes to the engagement manager as an approval card in Teams, and
+only approved entries post to Harvest. The Time Entry channel is a standard channel,
+so everyone in the practice team can open it; what each person can log against is
+whatever Vendetta Time allows them.
+
+### Practice team capacity
+
+A team holds 1,000 channels in total, standard, private and shared, and a deleted
+channel keeps counting for 30 days. The kickoff warns once the practice team holds
+`KICKOFF_CHANNEL_WARN_AT` channels (900 by default). Before it fills, create the next
+practice team, move the Time Entry channel over, and set the new team id; engagements
+already open stay where they are.
+
+### One-time setup
+
+1. Create the two practice teams (private), put the core staff in them, and set
+   members' permission to create private channels off. Put each team's group id in
+   `KICKOFF_IR_TEAM_ID` and `KICKOFF_PROSERV_TEAM_ID`.
+2. Confirm the tenant has finished Microsoft's private channel migration (the old cap
+   of 30 private channels per team no longer applies once it has).
+3. Create the shared mailboxes for `KICKOFF_IR_MAILBOX` and `KICKOFF_PROSERV_MAILBOX`
+   and give the practice staff Full Access and Send As. Shared mailboxes take mail from
+   outside senders by default, and Exchange Online accepts plus addresses by default.
+4. Restrict the app's mail permissions to those two mailboxes and the PMs with an
+   Exchange application access policy.
 
 From Claude: "kick off an IR engagement for Atlantic Credit Union, ransomware template,
 Dan as lead, 120 hours at 350, CIO is cio@atlanticcu.example". The tools are
 `kickoff_engagement`, `get_kickoff` and `retry_kickoff`. The JSON API is
 `POST /api/kickoffs` (same fields as the form) and `GET /api/kickoffs/{id}`.
 
-Graph application permissions the kickoff needs, with admin consent: Group.ReadWrite.All,
-User.Read.All, Sites.ReadWrite.All (new sites cannot be granted Sites.Selected before they
-exist), Team.Create, TeamsTab.Create, TeamsAppInstallation.ReadWriteForTeam.All (Vendetta
-Time tab) and Mail.ReadWrite (client email draft). Harvest needs the administrator token
-already used for time.
+Graph application permissions the kickoff needs, with admin consent: User.Read.All,
+GroupMember.ReadWrite.All (adds people to the practice team), Channel.Create,
+Channel.ReadBasic.All, ChannelMember.ReadWrite.All, ChannelSettings.ReadWrite.All
+(threads layout), Files.ReadWrite.All (case folders), Sites.ReadWrite.All (Vendetta Time
+lists and meeting notes in new channel sites, which cannot be granted Sites.Selected
+before they exist), TeamsTab.Create, TeamsAppInstallation.ReadWriteForTeam.All
+(Vendetta Time tab), and Mail.ReadWrite plus MailboxSettings.ReadWrite (engagement mail
+folder and rule, client email draft). Group.ReadWrite.All and Team.Create are no longer
+needed. Harvest needs the administrator token already used for time.
 
 ## Connecting Claude
 

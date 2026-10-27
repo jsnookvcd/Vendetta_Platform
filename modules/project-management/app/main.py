@@ -851,15 +851,15 @@ def api_capacity(weeks: int = 4, practice: str = "", user: str = Depends(auth.ap
 
 # ---------------------------------------------------------------- service API
 # ---------------------------------------------------------------- kickoff
-KICKOFF_OPTIONS = [("platform", "Platform record"), ("harvest", "Harvest"), ("m365", "Microsoft 365 group, site and Team"),
+KICKOFF_OPTIONS = [("platform", "Platform record"), ("harvest", "Harvest"), ("m365", "Teams channel, files and engagement email"),
                    ("vendetta_time", "Vendetta Time"), ("client_email", "Client email draft"),
                    ("announce", "Delivery channel post")]
 KICKOFF_STATUS = {"running": "Running", "waiting": "Waiting on Microsoft 365", "done": "Done",
                   "attention": "Needs attention"}
 STEP_STATUS = {"ok": "Done", "pending": "Pending", "waiting": "Waiting", "failed": "Failed", "skipped": "Skipped",
                "manual": "Manual"}
-LINK_NAMES = {"engagement": "Engagement", "sharepoint": "SharePoint site", "teams": "Team",
-              "mailbox": "Engagement mailbox", "harvest_project_id": "Harvest project", "platform_ref": "Platform record",
+LINK_NAMES = {"engagement": "Engagement", "sharepoint": "Channel files", "teams": "Teams channel",
+              "mailbox": "Engagement email", "harvest_project_id": "Harvest project", "platform_ref": "Platform record",
               "ticket": "Ticket"}
 
 

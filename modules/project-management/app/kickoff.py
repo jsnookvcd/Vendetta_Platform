@@ -9,24 +9,28 @@ team, budget and billing. The kickoff then
      client milestones reach the client portal;
   3. finds or creates the Harvest client, creates the Harvest project with its budget
      and billing, assigns the practice's tasks and the team (PM as project manager);
-  4. creates the Microsoft 365 group for the engagement (IR keeps the
-     "Incident Response-<client or codename>" convention) with the team as members,
-     which gives it a SharePoint site, a group mailbox and a Team;
-  5. lays out the folder tree in the site and points this engagement's meeting
-     notes at it;
-  6. team-enables the group and adds tabs to General: this engagement's board and
-     the Vendetta Time tab;
-  7. registers the engagement in Vendetta Time (Projects row with the Harvest
-     project id, TabContexts row that locks the team's tab to it);
-  8. opens the service desk ticket (once a ticketing system is chosen);
-  9. drafts the client kickoff email in the PM's mailbox, CC the group mailbox;
- 10. posts the kickoff, with every link, to the delivery channel.
+  4. adds the engagement team to the practice's parent team ("Vendetta Incident
+     Response" or "Vendetta Professional Services") and opens a private channel for
+     the engagement in it, "<code> <codename or client>", in the threads layout,
+     with the team as members and the PM as owner;
+  5. lays out the folder tree in the channel's own SharePoint site and points this
+     engagement's meeting notes at it;
+  6. gives the engagement its email address, a plus address on the practice's
+     shared mailbox, with a mail folder and an inbox rule that files its mail;
+  7. adds tabs to the case channel: this engagement's board and the Vendetta Time
+     tab, locked to the engagement;
+  8. makes sure the practice team has its Time Entry channel, with an unlocked
+     Vendetta Time tab for logging time across engagements;
+  9. registers the engagement in Vendetta Time (Projects row with the Harvest
+     project id, TabContexts row that locks the case channel's tab to it);
+ 10. opens the service desk ticket (once a ticketing system is chosen);
+ 11. drafts the client kickoff email in the PM's mailbox, CC the engagement address;
+ 12. posts the kickoff, with every link, to the delivery channel.
 
 Every step is idempotent and records what it did. A step that waits on Microsoft
-365 (a new group's site and team take minutes) is retried in the background; a
+365 (a new private channel's site takes minutes) is retried in the background; a
 failed step is retried from the kickoff page without repeating the steps that
-worked. Steps a person must do (allowing outside senders to the IR case mailbox)
-are listed as manual.
+worked.
 """
 from __future__ import annotations
 
@@ -61,14 +65,15 @@ STEPS: list[tuple[str, str, list[str]]] = [
     ("harvest_project", "Harvest project, budget and billing", ["harvest_client"]),
     ("harvest_tasks", "Harvest tasks", ["harvest_project"]),
     ("harvest_team", "Harvest team assignments", ["harvest_project"]),
-    ("m365_group", "Microsoft 365 group and mailbox", ["engagement"]),
-    ("mailbox_external", "Let clients email the group mailbox", ["m365_group"]),
-    ("m365_site", "SharePoint site and folders", ["m365_group"]),
-    ("m365_team", "Teams team", ["m365_group"]),
-    ("teams_tabs", "Teams tabs (engagement board, Vendetta Time)", ["m365_team", "m365_site"]),
-    ("vendetta_time", "Vendetta Time project and tab link", ["engagement", "harvest_project", "m365_team"]),
+    ("m365_team", "Engagement team added to the practice team", ["engagement"]),
+    ("m365_channel", "Private engagement channel", ["m365_team"]),
+    ("m365_site", "Channel files and folders", ["m365_channel"]),
+    ("mailbox", "Engagement email address", ["engagement"]),
+    ("teams_tabs", "Channel tabs (engagement board, Vendetta Time)", ["m365_channel", "m365_site"]),
+    ("time_channel", "Practice Time Entry channel", ["m365_team"]),
+    ("vendetta_time", "Vendetta Time project and tab link", ["engagement", "harvest_project", "m365_channel"]),
     ("ticket", "Service desk ticket", ["engagement"]),
-    ("client_email", "Client kickoff email draft", ["engagement", "m365_group"]),
+    ("client_email", "Client kickoff email draft", ["engagement", "mailbox"]),
     ("announce", "Kickoff posted to the delivery channel", ["*"]),
 ]
 LABELS = {k: label for k, label, _ in STEPS}
@@ -214,13 +219,21 @@ def _plan(req: dict) -> list[dict]:
             skip[k] = "Harvest is not connected (Integrations)"
     if o["harvest"] and harvest_on and req["harvest_project_id"]:
         skip["harvest_client"] = "Linking an existing Harvest project"
-    for k in ("m365_group", "mailbox_external", "m365_site", "m365_team", "teams_tabs"):
+    team_id = cfg.ir_team_id if req["practice"] == "ir" else cfg.proserv_team_id
+    mailbox = cfg.ir_mailbox if req["practice"] == "ir" else cfg.proserv_mailbox
+    for k in ("m365_team", "m365_channel", "m365_site", "mailbox", "teams_tabs", "time_channel"):
         if not o["m365"]:
             skip[k] = "Turned off for this kickoff"
         elif not graph_on:
             skip[k] = "Microsoft Graph is not connected (Integrations)"
-    if req["practice"] != "ir":
-        skip.setdefault("mailbox_external", "Only IR case mailboxes take outside mail")
+        elif k != "mailbox" and not team_id:
+            skip[k] = ("No practice team set (KICKOFF_IR_TEAM_ID)" if req["practice"] == "ir"
+                       else "No practice team set (KICKOFF_PROSERV_TEAM_ID)")
+    if "mailbox" not in skip and not mailbox:
+        skip["mailbox"] = ("No practice mailbox set (KICKOFF_IR_MAILBOX)" if req["practice"] == "ir"
+                           else "No practice mailbox set (KICKOFF_PROSERV_MAILBOX)")
+    if "time_channel" not in skip and not (o["vendetta_time"] and cfg.vtime_teams_app_id and cfg.vtime_tab_content_url):
+        skip["time_channel"] = "Vendetta Time tab is not configured (KICKOFF_VTIME_TEAMS_APP_ID)"
     if not o["vendetta_time"]:
         skip["vendetta_time"] = "Turned off for this kickoff"
     elif not (cfg.vtime_site_url and graph_on):
@@ -438,7 +451,7 @@ def links(db: Session, k: Kickoff) -> dict:
     out = {}
     if k.engagement_id:
         out["engagement"] = _public(f"/engagements/{k.engagement_id}")
-    for key, name in (("site_url", "sharepoint"), ("team_url", "teams"), ("group_mail", "mailbox"),
+    for key, name in (("files_url", "sharepoint"), ("channel_url", "teams"), ("mail_address", "mailbox"),
                       ("harvest_project_id", "harvest_project_id"), ("platform_ref", "platform_ref"),
                       ("ticket_url", "ticket")):
         if st.get(key):
@@ -575,64 +588,87 @@ def s_harvest_team(c: Ctx) -> dict:
             else "Team already assigned", "warn": warn}
 
 
-def _group_label(c: Ctx) -> str:
-    r = c.req
-    prefix = cfg.ir_group_prefix if r["practice"] == "ir" else cfg.proserv_group_prefix
-    e = c.eng
+def _channel_label(c: Ctx) -> str:
+    r, e = c.req, c.eng
     client = e.client.name if e.client else (c.state.get("client_name") or e.client_name or r["client"])
-    return f"{prefix}{r['codename'] or client}"
+    return r["codename"] or client
 
 
-def s_m365_group(c: Ctx) -> dict:
-    e, r = c.eng, c.req
-    http = c.graph
-    owners = list(dict.fromkeys([r["pm_email"]] + _emails(cfg.group_owners)))
-    members = [m["email"] for m in r["team"]]
-    ids, missing = m365.resolve_users(http, list(dict.fromkeys(owners + members)))
-    owner_ids = [ids[x] for x in owners if x in ids]
-    member_ids = [ids[x] for x in members if x in ids]
-    if not owner_ids:
-        raise ServiceError(f"The PM {r['pm_email']} is not in the Microsoft 365 directory")
-    nick = m365.nickname(e.code)
-    name = _group_label(c)
-    if not m365.find_group(http, nick) and m365.display_name_taken(http, name):
-        name = f"{name} {e.code}"
-    g, created = m365.create_group(http, display_name=name, nick=nick, owner_ids=owner_ids, member_ids=member_ids,
-                                   description=f"{e.code} {e.name}. {PRACTICE_NAMES[e.practice]} engagement "
-                                               f"workspace, opened by Vendetta Project Management.")
-    if not created:
-        m365.add_members(http, g["id"], member_ids + owner_ids)
-    c.state.update(group_id=g["id"], group_name=g.get("displayName") or name,
-                   group_mail=g.get("mail") or "", group_nick=g.get("mailNickname") or nick)
-    warn = ("Not in the directory, so not added: " + ", ".join(missing)) if missing else ""
-    return {"detail": f"{'Created' if created else 'Found'} {c.state['group_name']}"
-                      + (f" ({c.state['group_mail']})" if c.state["group_mail"] else ""), "warn": warn}
-
-
-def s_mailbox_external(c: Ctx) -> dict:
-    nick = c.state.get("group_nick") or m365.nickname(c.eng.code)
-    return {"status": "manual",
-            "detail": "Graph cannot change this. In Exchange Online PowerShell run "
-                      f"Set-UnifiedGroup -Identity {nick} -RequireSenderAuthenticationEnabled $false "
-                      "(or the group's Settings tab in the admin center), then mark this done."}
-
-
-def s_m365_site(c: Ctx) -> dict:
-    e = c.eng
-    http = c.graph
-    site = m365.group_site(http, c.state["group_id"])
-    folders = _names(cfg.folders_ir if e.practice == "ir" else cfg.folders_proserv)
-    made = m365.ensure_folders(http, site["id"], folders)
-    service.update_engagement(c.db, c.actor, e, sharepoint_site_url=site["webUrl"], sharepoint_folder="Meeting Notes")
-    c.state.update(site_id=site["id"], site_url=site["webUrl"])
-    return {"detail": f"Site ready; {len(made)} folder(s) created; meeting notes now save here",
-            "link": site["webUrl"]}
+def _team_id(c: Ctx) -> str:
+    return cfg.ir_team_id if c.req["practice"] == "ir" else cfg.proserv_team_id
 
 
 def s_m365_team(c: Ctx) -> dict:
-    t = m365.ensure_team(c.graph, c.state["group_id"])
-    c.state.update(team_id=t["team_id"], channel_id=t["channel_id"], team_url=t["team_url"] or t["channel_url"])
-    return {"detail": "Team ready", "link": c.state["team_url"]}
+    """Everyone on the engagement must be in the practice team before the private
+    channel can take them."""
+    r, http = c.req, c.graph
+    team = m365.practice_team(http, _team_id(c))
+    owners = list(dict.fromkeys([r["pm_email"]] + _emails(cfg.channel_owners)))
+    members = [m["email"] for m in r["team"]]
+    ids, missing = m365.resolve_users(http, list(dict.fromkeys(owners + members)))
+    owner_ids = [ids[x] for x in owners if x in ids]
+    member_ids = [ids[x] for x in members if x in ids and x not in owners]
+    if not owner_ids:
+        raise ServiceError(f"The PM {r['pm_email']} is not in the Microsoft 365 directory")
+    added = m365.add_members(http, team["id"], owner_ids + member_ids)
+    c.state.update(team_id=team["id"], team_name=team["name"], team_url=team["url"],
+                   owner_ids=owner_ids, member_ids=member_ids)
+    warns = []
+    if missing:
+        warns.append("Not in the directory, so not added: " + ", ".join(missing))
+    n = len(team["channels"])
+    if n >= cfg.channel_warn_at:
+        warns.append(f"{team['name'] or 'The practice team'} holds {n} of {m365.CHANNEL_LIMIT} channels. "
+                     "Plan the next practice team.")
+    return {"detail": (f"Added {added} person(s) to {team['name']}" if added
+                       else f"Everyone is already in {team['name']}"), "warn": "; ".join(warns),
+            "link": team["url"]}
+
+
+def s_m365_channel(c: Ctx) -> dict:
+    e, http = c.eng, c.graph
+    tid = c.state["team_id"]
+    name = m365.channel_name(e.code, _channel_label(c))
+    ch, created = m365.ensure_private_channel(
+        http, tid, name=name, owner_ids=c.state["owner_ids"],
+        description=f"{e.code} {e.name}. {PRACTICE_NAMES[e.practice]} engagement, opened by Vendetta "
+                    f"Project Management.")
+    if (ch.get("membershipType") or "private") != "private":
+        raise ServiceError(f"A {ch.get('membershipType')} channel named '{name}' already exists in the practice "
+                           "team. Rename it, or give this kickoff a codename, and retry.")
+    c.state.update(channel_id=ch["id"], channel_name=ch.get("displayName") or name,
+                   channel_url=ch.get("webUrl") or c.state.get("team_url", ""))
+    added = m365.ensure_channel_members(http, tid, ch["id"], owner_ids=c.state["owner_ids"],
+                                        member_ids=c.state["member_ids"])
+    warn = m365.set_threads_layout(http, tid, ch["id"]) if created else ""
+    return {"detail": f"{'Created' if created else 'Found'} private channel {c.state['channel_name']}; "
+                      f"{added} person(s) added", "warn": warn, "link": c.state["channel_url"]}
+
+
+def s_m365_site(c: Ctx) -> dict:
+    e, http = c.eng, c.graph
+    f = m365.channel_files(http, c.state["team_id"], c.state["channel_id"])
+    folders = _names(cfg.folders_ir if e.practice == "ir" else cfg.folders_proserv)
+    made = m365.ensure_folders(http, f["drive_id"], f["folder_id"], folders)
+    notes = f"{f['folder_name']}/Meeting Notes" if f["folder_name"] else "Meeting Notes"
+    if f["site_url"]:
+        service.update_engagement(c.db, c.actor, e, sharepoint_site_url=f["site_url"], sharepoint_folder=notes)
+    c.state.update(drive_id=f["drive_id"], files_folder_id=f["folder_id"], site_url=f["site_url"],
+                   files_url=f["folder_url"] or f["site_url"])
+    return {"detail": f"Channel site ready; {len(made)} folder(s) created; meeting notes now save here",
+            "link": c.state["files_url"]}
+
+
+def s_mailbox(c: Ctx) -> dict:
+    e, http = c.eng, c.graph
+    mailbox = (cfg.ir_mailbox if e.practice == "ir" else cfg.proserv_mailbox).strip().lower()
+    address = m365.plus_address(mailbox, m365.nickname(e.code))
+    c.state.update(mail_address=address, practice_mailbox=mailbox)
+    folder, made_folder = m365.ensure_mail_folder(http, mailbox, m365.channel_name(e.code, _channel_label(c)))
+    made_rule = m365.ensure_mail_rule(http, mailbox, name=f"Engagement {e.code}", address=address,
+                                      folder_id=folder)
+    what = "created" if (made_folder or made_rule) else "already in place"
+    return {"detail": f"{address}: mail to it files into its own folder in {mailbox} ({what})"}
 
 
 def s_teams_tabs(c: Ctx) -> dict:
@@ -647,10 +683,8 @@ def s_teams_tabs(c: Ctx) -> dict:
         notes.append("engagement board tab needs an https PUBLIC_URL")
     if cfg.vtime_teams_app_id and cfg.vtime_tab_content_url:
         m365.install_app(http, team, cfg.vtime_teams_app_id)
-        content = (cfg.vtime_tab_content_url.replace("{teamId}", team).replace("{channelId}", ch)
-                   .replace("{code}", e.code))
         if m365.ensure_tab(http, team, ch, name="Vendetta Time", app_id=cfg.vtime_teams_app_id,
-                           content_url=content, entity_id=f"vtime-{m365.nickname(e.code)}"):
+                           content_url=_vtime_url(team, ch, e.code), entity_id=f"vtime-{m365.nickname(e.code)}"):
             added.append("Vendetta Time")
     else:
         notes.append("Vendetta Time tab needs KICKOFF_VTIME_TEAMS_APP_ID and KICKOFF_VTIME_TAB_CONTENT_URL")
@@ -658,6 +692,27 @@ def s_teams_tabs(c: Ctx) -> dict:
         raise Skip("; ".join(n[0].upper() + n[1:] for n in notes))
     return {"detail": ("Added " + ", ".join(added)) if added else "Tabs already in place",
             "warn": "; ".join(notes)}
+
+
+def _vtime_url(team: str, channel: str, code: str) -> str:
+    return (cfg.vtime_tab_content_url.replace("{teamId}", team).replace("{channelId}", channel)
+            .replace("{code}", code))
+
+
+def s_time_channel(c: Ctx) -> dict:
+    """The practice team's Time Entry channel. Its Vendetta Time tab has no
+    TabContexts row, so it is not locked to one engagement and asks which one."""
+    http, team = c.graph, c.state["team_id"]
+    ch, created = m365.ensure_standard_channel(
+        http, team, name=cfg.time_channel_name,
+        description="Log time against any engagement you are on. Entries go to the engagement manager "
+                    "for approval before they post to Harvest.")
+    m365.install_app(http, team, cfg.vtime_teams_app_id)
+    tab = m365.ensure_tab(http, team, ch["id"], name="Log Time", app_id=cfg.vtime_teams_app_id,
+                          content_url=_vtime_url(team, ch["id"], ""), entity_id="vtime-practice")
+    if created or tab:
+        return {"detail": f"{cfg.time_channel_name} channel ready with the Log Time tab", "link": ch.get("webUrl", "")}
+    return {"detail": f"{cfg.time_channel_name} channel already in place", "link": ch.get("webUrl", "")}
 
 
 def s_vendetta_time(c: Ctx) -> dict:
@@ -688,7 +743,7 @@ def s_vendetta_time(c: Ctx) -> dict:
         key = f"channel|{c.state['team_id']}|{c.state['channel_id']}"
         if m365.list_find(http, site, tlist, "ContextKey", key) is None:
             m365.list_add(http, site, tlist, {"Title": f"{e.code} tab", "ContextKey": key, "ProjectId": int(pid)})
-        detail += "; the team's General channel tab is locked to it"
+        detail += "; the engagement channel's tab is locked to it"
     return {"detail": detail, "link": f"{cfg.vtime_site_url.rstrip('/')}/Lists/{plist}"}
 
 
@@ -709,7 +764,7 @@ def _client_email_html(c: Ctx) -> tuple[str, str]:
     team = [m for m in r["team"] if m["role"] in ("pm", "lead")] or r["team"][:3]
     roles = {"pm": "Project manager", "lead": "Technical lead"}
     rows = "".join(f"<li>{esc(roles.get(m['role'], m['role'].title()))}: {esc(m['email'])}</li>" for m in team)
-    mailbox = st.get("group_mail") or ""
+    mailbox = st.get("mail_address") or ""
     if e.practice == "ir":
         subject = f"{e.code}: incident response kickoff"
         purpose = ("Vendetta Cyber is engaged on this incident. This message confirms the case reference, "
@@ -736,7 +791,7 @@ def s_client_email(c: Ctx) -> dict:
     e = c.eng
     subject, body = _client_email_html(c)
     m = m365.draft_mail(c.graph, e.pm_email, subject=subject, html=body, to=c.req["client_contacts"],
-                        cc=[c.state.get("group_mail", "")])
+                        cc=[c.state.get("mail_address", "")])
     return {"detail": f"Draft saved in {e.pm_email}'s Drafts; review and send", "link": m.get("webLink", "")}
 
 
@@ -754,12 +809,14 @@ def s_announce(c: Ctx) -> dict:
         facts.append({"title": "Budget", "value": f"{e.budget_hours:g} hours, {BILLING_TYPE_NAMES[r['billing_type']]}"})
     if e.platform_ref:
         facts.append({"title": "Platform", "value": e.platform_ref})
-    if st.get("group_mail"):
-        facts.append({"title": "Mailbox", "value": st["group_mail"]})
+    if st.get("channel_name"):
+        facts.append({"title": "Channel", "value": f"{st['channel_name']} in {st.get('team_name') or 'the practice team'}"})
+    if st.get("mail_address"):
+        facts.append({"title": "Email", "value": st["mail_address"]})
     actions = []
     if settings.public_url:
         actions.append({"type": "Action.OpenUrl", "title": "Engagement", "url": _public(f"/engagements/{e.id}")})
-    for key, title in (("team_url", "Team"), ("site_url", "Files"), ("ticket_url", "Ticket")):
+    for key, title in (("channel_url", "Channel"), ("files_url", "Files"), ("ticket_url", "Ticket")):
         if st.get(key):
             actions.append({"type": "Action.OpenUrl", "title": title, "url": st[key]})
     card = {"type": "message", "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": {
@@ -775,8 +832,9 @@ def s_announce(c: Ctx) -> dict:
 
 STEP_FNS = {"engagement": s_engagement, "platform": s_platform, "harvest_client": s_harvest_client,
             "harvest_project": s_harvest_project, "harvest_tasks": s_harvest_tasks, "harvest_team": s_harvest_team,
-            "m365_group": s_m365_group, "mailbox_external": s_mailbox_external, "m365_site": s_m365_site,
-            "m365_team": s_m365_team, "teams_tabs": s_teams_tabs, "vendetta_time": s_vendetta_time,
+            "m365_team": s_m365_team, "m365_channel": s_m365_channel, "m365_site": s_m365_site,
+            "mailbox": s_mailbox, "teams_tabs": s_teams_tabs, "time_channel": s_time_channel,
+            "vendetta_time": s_vendetta_time,
             "ticket": s_ticket, "client_email": s_client_email, "announce": s_announce}
 
 
@@ -814,6 +872,8 @@ def start_loop() -> None:
 def readiness() -> dict:
     st = integrations.status()
     return {"harvest": st["harvest"], "graph": st["graph"], "vendetta_time": bool(cfg.vtime_site_url),
+            "ir_team": bool(cfg.ir_team_id), "proserv_team": bool(cfg.proserv_team_id),
+            "ir_mailbox": bool(cfg.ir_mailbox), "proserv_mailbox": bool(cfg.proserv_mailbox),
             "vendetta_time_tab": bool(cfg.vtime_teams_app_id and cfg.vtime_tab_content_url),
             "ir_hub": bool(settings.platform_hub_url), "announce": bool(alerts_mod.cfg.teams_webhook_url),
             "ticketing": ticketing.provider(), "public_url": settings.public_url.startswith("https://")}

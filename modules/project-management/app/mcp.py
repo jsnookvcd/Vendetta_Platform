@@ -45,7 +45,8 @@ INSTRUCTIONS = (
     "(list_templates). Anything that changes sold hours or the end date goes through request_change, "
     "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first. "
     "To stand a new engagement up everywhere at once (engagement and boards, platform record, Harvest client, "
-    "project, tasks and team, Microsoft 365 group with site, mailbox and Team, Vendetta Time, client email draft, "
+    "project, tasks and team, private Teams channel in the practice team with its files and engagement email, "
+    "Vendetta Time, client email draft, "
     "delivery channel post), use kickoff_engagement rather than create_engagement; confirm the client, team, "
     "budget and billing with the PM first."
 )
@@ -650,14 +651,14 @@ TEAM = {"type": "array", "description": "Team members besides the PM and lead, e
 
 @tool("kickoff_engagement", "Kick off a new engagement across every tool in one go: opens it here (practice board "
       "card, task board from the template), links or opens the IR hub case, creates the Harvest client and project "
-      "with budget, billing, practice tasks and the team (PM as project manager), creates the Microsoft 365 group "
-      "(site, mailbox, Team) with the team as members and its folder tree, adds the engagement board and Vendetta "
-      "Time tabs, registers it in Vendetta Time, drafts the client kickoff email in the PM's Drafts (never sends) "
+      "with budget, billing, practice tasks and the team (PM as project manager), opens a private channel for the "
+      "engagement in the practice team with the team as members, lays out its folder tree, gives it an email "
+      "address on the practice mailbox, adds the engagement board and Vendetta Time tabs, registers it in Vendetta Time, drafts the client kickoff email in the PM's Drafts (never sends) "
       "and posts it to the delivery channel. Steps that wait on Microsoft 365 finish in the background; check "
       "with get_kickoff. Confirm the details with the PM before calling.",
       S(**{"practice!": PRACTICE, "name!": STR, "client!": {"type": "string", "description":
             "Client name; matched to the platform roster and to Harvest, created in Harvest if new"}},
-        codename={"type": "string", "description": "IR only: names the case site instead of the client"},
+        codename={"type": "string", "description": "Names the engagement channel instead of the client"},
         template={"type": "string", "description": "Template key (list_templates)"},
         pm=WHO, lead=WHO, team=TEAM, budget_hours=NUM,
         billing_type={"type": "string", "enum": ["hourly", "fixed_fee", "retainer", "carrier_panel"]},
