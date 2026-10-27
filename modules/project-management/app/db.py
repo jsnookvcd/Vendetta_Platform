@@ -397,6 +397,42 @@ class Invoice(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class KickoffRun(Base):
+    """One engagement kickoff: the request as given, the ordered steps with their
+    status, and every external reference a step created (group id, team id, site,
+    Harvest project, SuperOps ticket, Slack channel). A retry reads these refs back,
+    so no step ever creates the same thing twice."""
+    __tablename__ = "kickoff_runs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    engagement_id: Mapped[str | None] = mapped_column(ForeignKey("engagements.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(60), default="", index=True)
+    practice: Mapped[str] = mapped_column(String(16), default="")
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running|waiting|complete|partial|failed
+    spec: Mapped[dict] = mapped_column(JSON, default=dict)
+    steps: Mapped[list] = mapped_column(JSON, default=list)
+    refs: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(320), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MailboxJob(Base):
+    """Exchange Online settings Graph cannot make (external senders, Send As,
+    subscription). The host worker (worker/Invoke-MailboxJobs.ps1) claims pending
+    jobs over the API, runs them with Exchange Online app-only auth, and reports."""
+    __tablename__ = "mailbox_jobs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("kickoff_runs.id"), index=True)
+    group_id: Mapped[str] = mapped_column(String(64))
+    address: Mapped[str] = mapped_column(String(320))
+    members: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(12), default="pending")  # pending|claimed|done|failed
+    detail: Mapped[str] = mapped_column(String(800), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 # ---------------------------------------------------------------- MCP / OAuth
 class OAuthClient(Base):
     """A client registered through dynamic client registration (RFC 7591): the

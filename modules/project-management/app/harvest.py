@@ -282,3 +282,70 @@ def create_draft_invoice(*, client_id: str, project_id: str, start: dt.date, end
     return {"id": str(inv["id"]), "number": inv.get("number") or "", "amount": inv.get("amount"),
             "state": inv.get("state") or "draft", "currency": inv.get("currency") or "USD",
             "line_items": len(inv.get("line_items") or [])}
+
+
+# ---------------------------------------------------------------- kickoff
+def ensure_client(name: str) -> str:
+    """The Harvest client id for a client name, created when Harvest has none."""
+    name = (name or "").strip()
+    if not name:
+        raise HarvestError("A Harvest project needs a client name")
+    for c in _paged("clients", "clients", {"is_active": "true"}):
+        if (c.get("name") or "").strip().lower() == name.lower():
+            return str(c["id"])
+    return str(_request("POST", "clients", json={"name": name, "is_active": True})["id"])
+
+
+def ensure_project(refs: dict, *, client: str, name: str, code: str, budget_hours: float | None,
+                   starts_on: dt.date | None, ends_on: dt.date | None, task_names: list[str],
+                   team_emails: list[str], fixed_fee: float | None = None) -> dict:
+    """Create the engagement's Harvest project (once), assign the practice's tasks
+    and the engagement team, and return the refs. Safe to call again."""
+    if not refs.get("harvest_project_id"):
+        existing = [p for p in _paged("projects", "projects", {"is_active": "true"})
+                    if (p.get("code") or "").lower() == code.lower()]
+        if existing:
+            p = existing[0]
+        else:
+            body = {"client_id": int(ensure_client(client)), "name": name[:250], "code": code,
+                    "is_billable": True, "bill_by": "People", "budget_by": "project" if budget_hours else "none",
+                    "notes": f"Opened by the Vendetta engagement kickoff for {code}"}
+            if budget_hours:
+                body["budget"] = float(budget_hours)
+            if fixed_fee:
+                body.update(is_fixed_fee=True, fee=float(fixed_fee))
+            if starts_on:
+                body["starts_on"] = starts_on.isoformat()
+            if ends_on:
+                body["ends_on"] = ends_on.isoformat()
+            p = _request("POST", "projects", json=body)
+        refs.update(harvest_project_id=str(p["id"]), harvest_project_name=p.get("name") or name)
+    pid = refs["harvest_project_id"]
+    assigned = {(t.get("task") or {}).get("name", "").lower()
+                for t in _paged(f"projects/{pid}/task_assignments", "task_assignments")}
+    catalog = {(t.get("name") or "").lower(): t["id"] for t in _paged("tasks", "tasks", {"is_active": "true"})}
+    missing = []
+    for tname in task_names:
+        key = tname.strip().lower()
+        if not key or key in assigned:
+            continue
+        if key not in catalog:
+            missing.append(tname.strip())
+            continue
+        _request("POST", f"projects/{pid}/task_assignments", json={"task_id": catalog[key], "is_active": True})
+    users_on = {str((u.get("user") or {}).get("id")) for u in _paged(f"projects/{pid}/user_assignments",
+                                                                      "user_assignments")}
+    unmatched = []
+    for email in dict.fromkeys(e.strip().lower() for e in team_emails if e.strip()):
+        try:
+            uid = user_id_for(email)
+        except HarvestError:
+            unmatched.append(email)
+            continue
+        if uid not in users_on:
+            _request("POST", f"projects/{pid}/user_assignments", json={"user_id": int(uid)})
+            users_on.add(uid)
+    refs["harvest_notes"] = "; ".join(filter(None, [
+        f"tasks not in the Harvest catalog: {', '.join(missing)}" if missing else "",
+        f"no Harvest user for: {', '.join(unmatched)}" if unmatched else ""]))
+    return refs

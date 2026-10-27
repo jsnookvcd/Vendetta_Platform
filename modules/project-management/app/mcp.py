@@ -43,7 +43,11 @@ INSTRUCTIONS = (
     "list_harvest_tasks when unsure). Confirm hours, date and task with the PM before logging time "
     "for someone else or deleting anything. Open new engagements from a template when one fits "
     "(list_templates). Anything that changes sold hours or the end date goes through request_change, "
-    "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first."
+    "never a direct budget edit. Invoices are only ever drafted; confirm the period with the PM first. "
+    "To open a new IR case or ProServ engagement across every system (IR hub or OSP, boards, Harvest, Teams, "
+    "SharePoint, engagement mailbox, SuperOps, Slack), read kickoff_options, confirm the details, then call "
+    "kickoff_engagement and follow kickoff_status; finish any follow_ups_for_claude with your own connectors "
+    "and record them with record_kickoff_link."
 )
 
 
@@ -64,7 +68,8 @@ TOOLS: dict[str, Tool] = {}
 _OPEN_WORLD = {"log_time", "update_time_entry", "delete_time_entry", "list_time_entries", "list_harvest_projects",
                "list_harvest_tasks", "engagement_burn", "log_meeting_notes", "update_meeting_note",
                "retry_sharepoint_mirror", "draft_invoice", "uninvoiced_time", "manage_milestone",
-               "apply_template", "team_capacity", "portfolio_metrics"}
+               "apply_template", "team_capacity", "portfolio_metrics", "kickoff_engagement", "retry_kickoff",
+               "kickoff_options"}
 
 
 def S(**props) -> dict:
@@ -432,6 +437,125 @@ def t_update_time(db, ident, entry_id, hours=None, notes=None, date=None, task=N
       "deleted.", S(**{"entry_id!": STR}), write=True, destructive=True)
 def t_delete_time(db, ident, entry_id):
     return service.delete_time(db, ident.email, ident.role, entry_id)
+
+
+# ---------------------------------------------------------------- kickoff
+@tool("kickoff_options", "What a kickoff can set up: the templates per practice, default and optional Teams "
+      "channels, tags, the client toolset, the core team added to every engagement, and which integrations "
+      "(IR hub, OSP, Harvest, Microsoft 365, SuperOps, Slack, Teams announce) are live. Read this before "
+      "kickoff_engagement.", S(practice=PRACTICE))
+def t_kickoff_options(db, ident, practice=None):
+    from . import m365, slack, superops
+    from .config import alert_settings, settings as cfg
+    pr = [practice] if practice else ["ir", "proserv"]
+    return {
+        "practices": {p: {"templates": t_list_templates(db, ident, practice=p)["templates"],
+                          "default_channels": [c["name"] + (" (private)" if c.get("private") else "")
+                                               for c in m365.CHANNELS[p]],
+                          "optional_channels": m365.OPTIONAL_CHANNELS[p], "tags": m365.TAGS[p],
+                          "folders": m365.FOLDERS[p]} for p in pr},
+        "client_tools": m365.tool_library(),
+        "core_team": [e.strip() for e in cfg.kickoff_core_team.split(",") if e.strip()],
+        "slack_modes": ["none", "announce", "channel"],
+        "integrations": {"ir_hub": bool(cfg.platform_hub_url), "osp": bool(cfg.osp_url),
+                         "harvest": harvest.configured(), "microsoft_365": m365.configured(),
+                         "superops": superops.configured(), "slack": slack.configured(),
+                         "teams_announce": bool(alert_settings.teams_webhook_url)},
+    }
+
+
+@tool("kickoff_engagement", "Open a new IR case or Professional Services engagement everywhere at once: the IR hub "
+      "case (firm-wide case number) or OSP engagement, the delivery engagement with its template, the Harvest "
+      "project, a private Microsoft 365 group with the engagement mailbox, a Team with threads channels and tags, "
+      "the SharePoint folders, Client Uploads shared to the client contacts, the client toolset, a SuperOps "
+      "ticket, an optional Slack channel, and the kickoff announcement. Returns the code at once; the Microsoft "
+      "365 steps finish in the background (kickoff_status). Confirm client, practice, type, PM, lead, team and "
+      "client contacts with the person first.",
+      S(**{"practice!": PRACTICE, "client!": STR},
+        name={"type": "string", "description": "Engagement title; defaults to '<client> <type>'"},
+        engagement_type={"type": "string", "description": "Template key from kickoff_options (bec, ransomware, "
+                         "malware-analysis, ir-general, tabletop, vciso-onboarding, pentest, pre-ransomware, ...)"},
+        codename={"type": "string", "description": "IR codename used in the Team name instead of the client name"},
+        summary={"type": "string", "description": "What happened or what was sold, two or three sentences"},
+        severity={"type": "string", "enum": ["low", "medium", "high", "critical"]},
+        pm=WHO, lead=WHO,
+        team={"type": "array", "description": "Staff on the engagement. Core team, PM and lead are added "
+              "automatically.", "items": {"type": "object", "properties": {
+                  "email": STR, "tags": {"type": "array", "items": STR,
+                                         "description": "Tags from kickoff_options, like Forensics or Delivery"}},
+                  "required": ["email"]}},
+        client_contacts={"type": "array", "items": STR, "description": "Client emails that get Client Uploads, "
+                         "the Slack Connect invite and the welcome email"},
+        requester={"type": "string", "description": "Client requester for the SuperOps ticket; defaults to the "
+                   "first client contact"},
+        budget_hours=NUM, fixed_fee=NUM, starts_on=DATE, ends_on=DATE,
+        channels={"type": "array", "items": STR, "description": "Replace the default channel set"},
+        extra_channels={"type": "array", "items": STR, "description": "Add channels to the default set"},
+        client_tools={"type": "array", "items": STR, "description": "Tool keys from kickoff_options"},
+        slack={"type": "string", "enum": ["none", "announce", "channel"],
+               "description": "channel also makes a private Slack channel with Slack Connect for the client"},
+        superops={"type": "boolean", "description": "Open a SuperOps ticket (default true)"},
+        page_oncall={"type": "boolean", "description": "IR only: page the on-call responder"},
+        code={"type": "string", "description": "Use an existing case number instead of opening a new one"},
+        platform_client_id=STR), write=True)
+def t_kickoff(db, ident, practice, client, pm=None, lead=None, team=None, **f):
+    from . import kickoff
+    team = [{"email": _who(ident, m.get("email") if isinstance(m, dict) else m),
+             "tags": (m.get("tags") if isinstance(m, dict) else None) or []} for m in (team or [])]
+    run = kickoff.start(db, ident.email, {"practice": practice, "client": client, "pm": _who(ident, pm) or ident.email,
+                                          "lead": _who(ident, lead), "team": team, **f})
+    db.flush()
+    return kickoff.run_dict(db, run)
+
+
+@tool("kickoff_status", "Progress of a kickoff: each step with its status (ok, waiting, skipped, failed, blocked) "
+      "and detail, every link it created, and follow-ups Claude can finish through its own connectors. Give "
+      "the kickoff id or the engagement code; with neither, lists the 10 most recent kickoffs.",
+      S(kickoff={"type": "string", "description": "Kickoff id or engagement code"}))
+def t_kickoff_status(db, ident, kickoff=None):
+    from . import kickoff as k
+    from sqlalchemy import select as _select
+
+    from .db import KickoffRun
+    if kickoff:
+        return k.run_dict(db, k.find(db, kickoff))
+    rows = db.execute(_select(KickoffRun).order_by(KickoffRun.created_at.desc()).limit(10)).scalars().all()
+    return {"kickoffs": [{"kickoff_id": r.id, "code": r.code, "client": r.spec.get("client"),
+                          "status": r.status, "created_at": r.created_at.isoformat()} for r in rows]}
+
+
+@tool("retry_kickoff", "Run a kickoff's failed, skipped or blocked steps again (or only the named ones), for "
+      "example after an integration is configured or client contacts are added. Finished work is never "
+      "repeated.",
+      S(**{"kickoff!": {"type": "string", "description": "Kickoff id or engagement code"}},
+        steps={"type": "array", "items": STR, "description": "Step keys from kickoff_status"},
+        client_contacts={"type": "array", "items": STR, "description": "Add client contacts before retrying"},
+        client_tools={"type": "array", "items": STR, "description": "Add client tools before retrying"}),
+      write=True)
+def t_retry_kickoff(db, ident, kickoff, steps=None, client_contacts=None, client_tools=None):
+    from . import kickoff as k
+    run = k.find(db, kickoff)
+    spec = dict(run.spec)
+    if client_contacts:
+        spec["client_contacts"] = list(dict.fromkeys(spec["client_contacts"] + [c.strip().lower()
+                                                                             for c in client_contacts]))
+    if client_tools:
+        spec["client_tools"] = list(dict.fromkeys(spec["client_tools"] + list(client_tools)))
+    run.spec = spec
+    k.retry(db, run, steps)
+    return k.run_dict(db, run)
+
+
+@tool("record_kickoff_link", "Record something made through Claude's own connectors for a kickoff (a SuperOps "
+      "ticket, a Slack channel, a Teams chat, a SharePoint folder) so the engagement and the kickoff carry it.",
+      S(**{"kickoff!": STR, "system!": {"type": "string", "enum": ["superops", "slack", "teams", "sharepoint",
+                                                                   "calendar", "email", "other"]},
+           "ref!": STR}, url=STR), write=True)
+def t_record_link(db, ident, kickoff, system, ref, url=""):
+    from . import kickoff as k
+    run = k.find(db, kickoff)
+    k.record_link(db, run, system, ref, url)
+    return k.run_dict(db, run)
 
 
 # ---------------------------------------------------------------- templates

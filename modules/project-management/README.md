@@ -119,6 +119,71 @@ Run alone: `docker network create vendetta` once, copy `.env.example` to `.env`,
 `docker compose up`. Tests: create role and database `pmtool`/`pmtool_test` in a local
 Postgres and run `pytest` here. Harvest and Graph are replaced by in-memory fakes.
 
+## Engagement kickoff
+
+One request opens an IR case or a ProServ engagement in every system it lives in and
+links them together. From Claude: "kick off a BEC case for IFB, Dan leads, Craig on
+forensics, Hugo is the client contact, CrowdStrike sensor in the toolset". The
+`new-engagement` Claude skill walks the intake and calls `kickoff_engagement`.
+
+| Step | What it makes | Needs |
+|---|---|---|
+| platform_record | IR hub case with the firm-wide case number, or OSP engagement | `PLATFORM_HUB_URL` / `OSP_URL` |
+| engagement | practice card, task board, template tasks, milestones, closeout | always |
+| harvest | Harvest project under the case code, practice tasks, team assigned | Harvest on Integrations |
+| superops | SuperOps ticket on the client's account, practice tech group | `SUPEROPS_API_TOKEN`, or Claude's SuperOps connector |
+| m365_workspace | private Microsoft 365 group (engagement mailbox `ir-781@` / `ps-012@`), Team, threads-layout channels, private admin channel, tags, SharePoint folder tree | Graph application permissions below |
+| mailbox | external senders allowed, no inbox copies, Send As for the team | the mailbox worker |
+| client_uploads | Client Uploads shared to named client contacts, sign-in required | client contacts |
+| client_tools | selected tools copied from the tools library into Client Uploads | `KICKOFF_TOOLS_*` |
+| slack_channel | private Slack channel, staff invited, Slack Connect invite to the client | `SLACK_BOT_TOKEN`, `slack: channel` |
+| announce | kickoff card in the delivery channel (Teams) and Slack | `ALERT_TEAMS_WEBHOOK_URL`, `SLACK_ANNOUNCE_CHANNEL` |
+
+The engagement code comes back immediately; the Microsoft 365 steps finish in the
+background (`kickoff_status`). A run stores every external id it creates, so
+`retry_kickoff` finishes failed or skipped steps without creating anything twice. A
+step whose integration is not configured is recorded as skipped and listed in
+`follow_ups_for_claude`, which the skill finishes through Claude's own connectors and
+records with `record_kickoff_link`. IR engagements will not open here if the IR hub is
+configured but unreachable, so case numbers never fork from the firm-wide sequence.
+
+MCP tools: `kickoff_options`, `kickoff_engagement`, `kickoff_status`, `retry_kickoff`,
+`record_kickoff_link`. Service API: `POST /api/kickoff`, `GET /api/kickoff/{id or code}`,
+`POST /api/kickoff/{id or code}/retry`.
+
+### Microsoft Graph application permissions
+
+Group.ReadWrite.All, User.Read.All, Team.Create, TeamMember.ReadWrite.All,
+Channel.Create, ChannelMember.ReadWrite.All, TeamworkTag.ReadWrite.All,
+Sites.ReadWrite.All (or Files.ReadWrite.All with Sites.Selected on the tools library).
+External sharing must allow existing or new guests on group sites for Client Uploads.
+
+### Mailbox worker
+
+Graph cannot set Exchange group options, so `worker/Invoke-MailboxJobs.ps1` does them
+with Exchange Online app-only certificate auth (an app registration with
+Exchange.ManageAsApp and the Exchange Administrator role). On the platform host:
+
+```
+# /etc/systemd/system/vendetta-mailbox-worker.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vendetta/mailbox-worker.env   # PM_API_URL, PM_API_TOKEN, EXO_*
+ExecStart=/usr/bin/pwsh -NoProfile -File /opt/vendetta/modules/project-management/worker/Invoke-MailboxJobs.ps1 -Once
+
+# /etc/systemd/system/vendetta-mailbox-worker.timer
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+[Install]
+WantedBy=timers.target
+```
+
+### Slack app
+
+Bot scopes: chat:write, channels:manage, groups:write, users:read, users:read.email,
+conversations.connect:write. Invite the bot to the announce channel.
+
 ## Toward the platform
 
 The service layer (`app/service.py`) holds every operation; the web console, the JSON
