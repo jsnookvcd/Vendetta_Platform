@@ -83,6 +83,43 @@ class Settings(BaseSettings):
     oauth_access_ttl_seconds: int = 3600
     oauth_refresh_ttl_days: int = 30
 
+    # ------------------------------------------------------------ engagement kickoff
+    # One call opens an engagement everywhere it lives (see kickoff.py). Every
+    # integration below is optional; a step with no settings is recorded as skipped
+    # and can be retried once it is configured.
+    #
+    # People added to every engagement team (comma separated staff emails).
+    kickoff_core_team: str = ""
+    # Mail domain for engagement mailboxes: ir-781@<domain>, ps-012@<domain>.
+    kickoff_mail_domain: str = "vendettacd.io"
+    # Microsoft 365 workspace: a private Microsoft 365 group with a Team, channels in
+    # the threads layout, tags, the SharePoint folder tree and the client uploads
+    # share. Needs the Graph application permissions listed in the README.
+    kickoff_m365_enabled: bool = True
+    kickoff_channel_layout: str = "chat"   # Graph channelLayoutType for the threads layout; blank = default
+    kickoff_team_poll_seconds: float = 5.0
+    kickoff_team_poll_attempts: int = 36
+    # Client toolset: a SharePoint library folder with one subfolder per tool (for
+    # example crowdstrike-sensor, cyber-triage-collector). The kickoff copies the
+    # selected ones into the engagement's Client Uploads/Vendetta Tools folder.
+    kickoff_tools_site_url: str = ""
+    kickoff_tools_folder: str = ""
+    kickoff_client_tools: str = "crowdstrike-sensor,cyber-triage-collector"
+    # Harvest tasks assigned to each new project, by name, per practice.
+    kickoff_harvest_tasks_ir: str = "Incident Response,Forensic Analysis,Project Management,Report Writing"
+    kickoff_harvest_tasks_proserv: str = "Consulting,Project Management,Report Writing"
+    # SuperOps PSA (GraphQL). Blank token leaves the ticket to Claude's SuperOps connector.
+    superops_api_url: str = "https://api.superops.ai/msp"
+    superops_api_token: str = ""
+    superops_subdomain: str = ""
+    superops_tech_group_ir: str = "Incident Response"
+    superops_tech_group_proserv: str = "Professional Services"
+    # Slack (bot token). Internal announcements go to the channel below; a per-
+    # engagement channel is made only when the kickoff asks for one.
+    slack_bot_token: str = ""
+    slack_announce_channel: str = ""
+    slack_api_url: str = "https://slack.com/api"
+
 
 settings = Settings()
 

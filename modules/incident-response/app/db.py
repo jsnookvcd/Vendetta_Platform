@@ -110,7 +110,7 @@ class Case(Base):
     lead: Mapped[str] = mapped_column(String(200), default="")
     privileged: Mapped[bool] = mapped_column(Boolean, default=False)  # counsel-directed
     counsel: Mapped[str] = mapped_column(String(200), default="")
-    origin: Mapped[str] = mapped_column(String(40), default="manual")  # manual | declared | escalated
+    origin: Mapped[str] = mapped_column(String(40), default="manual")  # manual | declared | escalated | kickoff
     source_module: Mapped[str] = mapped_column(String(60), default="")
     # Client milestones published by Project Management (project-management module):
     # [{"key","title","workstream","status","due_on","completed_on"}]. Replaced whole

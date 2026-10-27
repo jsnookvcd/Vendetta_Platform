@@ -801,6 +801,39 @@ async def api_declare(request: Request, user: str = Depends(auth.api_user), db: 
     return {"case_id": case.number, "id": case.id}
 
 
+@app.post("/api/ir-cases/open")
+async def api_open_case(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Open a case for an engagement kickoff (Project Management). Unlike an
+    escalation this adds no finding or review card; the case starts on the
+    five-workstream template with its playbook. Idempotent per client, title and
+    source module over 24 hours, so a retried kickoff never opens a second case.
+    Body: {client, platform_client_id, title, severity, incident_type, lead,
+    source_module, page}. Returns {case_id, id, existing}."""
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    title = str(payload.get("title") or "").strip()[:300]
+    if not title:
+        raise HTTPException(400, "title required")
+    client = hub.resolve_client(db, "", str(payload.get("client") or ""), str(payload.get("platform_client_id") or ""))
+    module = str(payload.get("source_module") or "project-management")[:60]
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+    existing = db.execute(select(Case).where(Case.client_id == client.id, Case.title == title,
+                                             Case.source_module == module, Case.opened_at >= since)
+                          ).scalars().first()
+    if existing:
+        return {"case_id": existing.number, "id": existing.id, "existing": True}
+    sev = str(payload.get("severity") or "high")
+    case = open_case(db, client, title, severity=sev if sev in hub.VALID_SEV else "high", origin="kickoff",
+                     actor=f"api:{user}", incident_type=str(payload.get("incident_type") or "")[:60],
+                     lead=str(payload.get("lead") or hub.retainer_lead(client)), source_module=module)
+    _audit(db, user, "case.open", f"{case.number} {client.name} via {module}")
+    if payload.get("page"):
+        notify.page_new_case(case)
+    return {"case_id": case.number, "id": case.id, "existing": False}
+
+
 _MS_STATUSES = {"planned", "in_progress", "at_risk", "done"}
 
 

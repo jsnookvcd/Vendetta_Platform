@@ -889,6 +889,57 @@ async def api_engagement_create(request: Request, user: str = Depends(auth.api_u
     return JSONResponse(service.engagement_dict(db, e, detail=True), status_code=201)
 
 
+@app.post("/api/kickoff")
+async def api_kickoff(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Kick off an engagement across every system (see kickoff.py). Same body as the
+    kickoff_engagement MCP tool. Returns the run; Microsoft 365 steps finish in the
+    background."""
+    from . import kickoff
+    body = await request.json()
+    actor = body.pop("actor", "") or (user if "@" in user else (body.get("pm") or "api"))
+    run = kickoff.start(db, actor, body)
+    db.commit()
+    return JSONResponse(kickoff.run_dict(db, run), status_code=201 if run.status != "failed" else 400)
+
+
+@app.get("/api/kickoff/{ref}")
+def api_kickoff_status(ref: str, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    from . import kickoff
+    return kickoff.run_dict(db, kickoff.find(db, ref))
+
+
+@app.post("/api/kickoff/{ref}/retry")
+async def api_kickoff_retry(ref: str, request: Request, user: str = Depends(auth.api_user),
+                            db: Session = Depends(get_db)):
+    from . import kickoff
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    run = kickoff.retry(db, kickoff.find(db, ref), body.get("steps"))
+    db.commit()
+    return kickoff.run_dict(db, run)
+
+
+@app.post("/api/kickoff-worker/mailbox/claim")
+def api_mailbox_claim(user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """The host mailbox worker claims pending Exchange jobs (service token only)."""
+    if user != "api":
+        raise HTTPException(403, "service token required")
+    from . import kickoff
+    return {"jobs": kickoff.claim_mailbox_jobs(db)}
+
+
+@app.post("/api/kickoff-worker/mailbox/{job_id}")
+async def api_mailbox_report(job_id: str, request: Request, user: str = Depends(auth.api_user),
+                             db: Session = Depends(get_db)):
+    if user != "api":
+        raise HTTPException(403, "service token required")
+    from . import kickoff
+    body = await request.json()
+    return kickoff.report_mailbox_job(db, job_id, str(body.get("status") or ""), str(body.get("detail") or ""))
+
+
 @app.get("/api/tasks")
 def api_tasks(engagement: str = "", assignee: str = "", overdue: bool = False, include_done: bool = False,
               user: str = Depends(auth.api_user), db: Session = Depends(get_db)):

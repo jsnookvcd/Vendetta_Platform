@@ -636,6 +636,52 @@ async def api_engagement_milestones(eid: str, request: Request, user: str = Depe
     return {"ok": True, "engagement": e.id, "milestones": len(clean), "new_completions": len(reached)}
 
 
+@app.post("/api/engagements")
+async def api_engagement_open(request: Request, user: str = Depends(auth.api_user), db: Session = Depends(get_db)):
+    """Open an engagement for a Project Management kickoff. The client is matched
+    by the shared platform id, then by exact name, and created when neither matches
+    (the next roster pull links it). Idempotent on client and name while the
+    engagement is open. Body: {client, platform_client_id, name, kind, cadence,
+    scope, lead, sponsor, starts_on, ends_on}. Returns the engagement."""
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "JSON body required")
+    name = str(body.get("name") or "").strip()[:200]
+    if not name:
+        raise HTTPException(400, "name required")
+    pcid = str(body.get("platform_client_id") or "")
+    cname = str(body.get("client") or "").strip()
+    c = db.execute(select(Client).where(Client.platform_client_id == pcid)).scalar_one_or_none() if pcid else None
+    if c is None and cname:
+        c = db.execute(select(Client).where(func.lower(Client.name) == cname.lower())).scalar_one_or_none()
+    if c is None:
+        if not cname:
+            raise HTTPException(400, "client or platform_client_id required")
+        c = Client(name=cname[:200], platform_client_id=pcid)
+        db.add(c)
+        db.flush()
+    existing = db.execute(select(Engagement).where(Engagement.client_id == c.id, Engagement.name == name,
+                                                   Engagement.status.in_(tuple(OPEN_STATES)))).scalars().first()
+    if existing:
+        return JSONResponse(engagement_dict(existing), status_code=200)
+    kind = str(body.get("kind") or "advisory")
+    cadence = str(body.get("cadence") or "one-time")
+    e = Engagement(client_id=c.id, name=name, kind=kind if kind in ENGAGEMENT_TYPES else "advisory",
+                   cadence=cadence if cadence in CADENCES else "one-time", scope=str(body.get("scope") or ""),
+                   lead=str(body.get("lead") or ""), sponsor=str(body.get("sponsor") or ""), status="scoping",
+                   starts_on=_parse_date(str(body.get("starts_on") or "")),
+                   ends_on=_parse_date(str(body.get("ends_on") or "")))
+    db.add(e)
+    db.flush()
+    record_event(db, c.id, e.id, None, "engagement_opened", f"api:{user}",
+                 f"{ENGAGEMENT_TYPE_NAMES.get(e.kind, e.kind)}: {e.name}")
+    db.commit()
+    _audit(db, user, "engagement.add", f"{c.name}: {name} (api)")
+    db.refresh(e)
+    return JSONResponse(engagement_dict(e), status_code=201)
+
+
 @app.get("/api/engagements")
 def api_engagements(status: str = Query("open"), platform_client_id: str = Query(""), client: str = Query(""),
                     user: str = Depends(auth.api_user), db: Session = Depends(get_db)):

@@ -29,6 +29,11 @@ delivery_model:
   change_control: baseline kept; change requests approved by a second person move budget and end date
   closeout: checklist gates closing; draft Harvest invoices only, never sent
   alerts: recomputed every 15 minutes; Teams for new high, morning email digest, read by SABINE
+  kickoff: >-
+    one call opens the IR hub case or OSP engagement, the delivery engagement, the Harvest project, the
+    SuperOps ticket, a private Microsoft 365 group (engagement mailbox, Team with threads channels and
+    tags, SharePoint tree, Client Uploads shared to client contacts, client toolset), an optional Slack
+    channel with Slack Connect, and the kickoff announcement; idempotent and retryable per step
 
 roles:
   admin: full; integrations; may log or change anyone's Harvest time
@@ -47,6 +52,8 @@ api:
   provision_sync: POST /api/provision/sync
   deep_link: GET /clients/platform/{platform_client_id}
   mcp: POST /mcp                                # remote MCP server (Streamable HTTP), OAuth 2.1 + PKCE
+  kickoff: POST /api/kickoff                    # open an engagement in every system; GET /api/kickoff/{ref}, POST .../retry
+  mailbox_worker: [POST /api/kickoff-worker/mailbox/claim, POST /api/kickoff-worker/mailbox/{job}]  # service token only
   oauth: [/.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server,
           /oauth/register, /oauth/authorize, /oauth/token, /oauth/revoke]
 
