@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     # and can be retried once it is configured.
     #
     # People added to every engagement team (comma separated staff emails).
-    kickoff_core_team: str = ""
+    kickoff_core_team: str = "jordan@vendettacd.io,dan@vendettacd.io,kenedi@vendettacd.io"
     # Mail domain for engagement mailboxes: ir-781@<domain>, ps-012@<domain>.
     kickoff_mail_domain: str = "vendettacd.io"
     # Microsoft 365 workspace: a private Microsoft 365 group with a Team, channels in
@@ -102,8 +102,8 @@ class Settings(BaseSettings):
     # Client toolset: a SharePoint library folder with one subfolder per tool (for
     # example crowdstrike-sensor, cyber-triage-collector). The kickoff copies the
     # selected ones into the engagement's Client Uploads/Vendetta Tools folder.
-    kickoff_tools_site_url: str = ""
-    kickoff_tools_folder: str = ""
+    kickoff_tools_site_url: str = "https://vendettacd.sharepoint.com/sites/IncidentResponse"
+    kickoff_tools_folder: str = "Tools and Scripts/Client Toolset"
     kickoff_client_tools: str = "crowdstrike-sensor,cyber-triage-collector"
     # Harvest tasks assigned to each new project, by name, per practice.
     kickoff_harvest_tasks_ir: str = "Incident Response,Forensic Analysis,Project Management,Report Writing"
