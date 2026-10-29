@@ -96,6 +96,35 @@ jobs:
         working-directory: modules/${{ matrix.module }}
         run: pytest -q
 
+  forensic-workstation:
+    name: forensic workstation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: modules/forensic-workstation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: MCP server tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./mcp pytest
+          pytest -q tests
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: terraform fmt and validate
+        run: |
+          terraform -chdir=infra/terraform fmt -check -diff
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+      - name: shellcheck provisioning scripts
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+          shellcheck -S warning scripts/provision.sh scripts/verify-tools.sh scripts/fw-anthropic-key
+
   images:
     name: docker build ${{ matrix.module }}
     runs-on: ubuntu-latest

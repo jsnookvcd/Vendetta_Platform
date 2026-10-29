@@ -1,0 +1,9 @@
+region          = "us-east-1"
+instance_type   = "m7i.2xlarge" # r7i.2xlarge for large memory images
+cases_volume_gb = 1000
+claude_backend  = "bedrock"     # or "anthropic"
+claude_model    = ""            # empty uses Claude Code's default Bedrock model
+bedrock_region  = "us-east-1"
+enable_desktop  = true
+idle_stop_hours = 3
+# subnet_id     = "subnet-..."  # private subnet with NAT; default VPC if unset
