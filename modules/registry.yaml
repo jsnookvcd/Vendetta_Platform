@@ -169,3 +169,16 @@ modules:
     service_lines: [managed-it, managed-security]
     status: planned
     enablement: MODULE_ENABLED
+
+  - name: forensic-workstation
+    display_name: Forensic Workstation
+    role: internal-tool
+    service_lines: [incident-response, litigation-support]
+    status: in-progress
+    notes: >-
+      AWS EC2 analyst workstation with a free DFIR toolset (TSK, libewf, Volatility 3,
+      EZ Tools, Chainsaw, Hayabusa, Plaso, Dissect, capa, FLOSS, YARA, Velociraptor)
+      and Claude Code on Amazon Bedrock driving it through a 16-tool forensic MCP
+      server. SSM-only access, read-only evidence enforced by the OS, hash-chained
+      custody and audit logs shipped to CloudWatch, Object Lock evidence bucket.
+      Terraform in infra/terraform; built and tested, first apply pending.

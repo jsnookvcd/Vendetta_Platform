@@ -1,0 +1,32 @@
+#!/opt/forensics/mcp-venv/bin/python -I
+"""Claude Code PostToolUse hook. Records every Bash command and file edit Claude
+makes into the case audit chain (when it can tell the case) and the central log
+shipped to CloudWatch. Never blocks the tool: always exits 0."""
+import json
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, "/opt/forensics/mcp")
+try:
+    from fw_forensics import custody
+
+    event = json.load(sys.stdin)
+    tool_input = event.get("tool_input") or {}
+    blob = json.dumps(tool_input) + " " + (event.get("cwd") or "")
+    m = re.search(r"/cases/([A-Za-z0-9][A-Za-z0-9._-]{0,63})", blob)
+    case_id = m.group(1) if m and (Path("/cases") / m.group(1) / "audit.jsonl").exists() else ""
+    details = {
+        "tool": event.get("tool_name"),
+        "input": {k: (v[:4000] if isinstance(v, str) else v) for k, v in tool_input.items() if k != "content"},
+        "content_sha256": __import__("hashlib").sha256(tool_input["content"].encode()).hexdigest() if isinstance(tool_input.get("content"), str) else None,
+        "cwd": event.get("cwd"),
+        "session_id": event.get("session_id"),
+    }
+    if case_id:
+        custody.append(Path("/cases") / case_id / "audit.jsonl", "claude_tool_use", case_id, details, actor="claude-code:analyst")
+    else:
+        custody.append(Path("/var/log/forensic-audit/no-case.jsonl"), "claude_tool_use", "", details, actor="claude-code:analyst")
+except Exception:
+    pass
+sys.exit(0)

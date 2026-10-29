@@ -1,0 +1,5 @@
+#!/bin/sh
+# Claude Code apiKeyHelper for the "anthropic" backend: reads the key from SSM at
+# use time so it is never written to disk.
+. /etc/forensic-workstation.env
+exec aws ssm get-parameter --region "$AWS_REGION" --name "$SSM_PREFIX/ANTHROPIC_API_KEY" --with-decryption --query Parameter.Value --output text

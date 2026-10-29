@@ -1,0 +1,335 @@
+#!/usr/bin/python3 -I
+"""fw-helper: the only privileged path on the forensic workstation.
+
+Runs as root through a single sudoers rule. Everything that touches evidence
+custody happens here so the analyst account (and Claude acting as it) can read
+evidence but never write, replace or delete it.
+
+  fw-helper case-init  <case_id>
+  fw-helper pull       <case_id> <s3_key_or_prefix>
+  fw-helper mount      <case_id> <evidence_name>
+  fw-helper umount     <case_id> <evidence_name>
+  fw-helper mounts     <case_id>
+  fw-helper rdp-password
+
+Output is one JSON object on stdout.
+"""
+
+import glob
+import json
+import os
+import pwd
+import grp
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.environ.get("FW_LIB", "/opt/forensics/mcp"))
+from fw_forensics import custody  # noqa: E402
+
+CASES = Path(os.environ.get("FW_CASES_ROOT", "/cases"))
+MNT = Path(os.environ.get("FW_MOUNT_ROOT", "/mnt/fw"))
+STATE = Path(os.environ.get("FW_STATE_DIR", "/run/fw/mounts"))
+CONF = Path("/etc/forensic-workstation.env")
+ANALYST = os.environ.get("FW_ANALYST_USER", "analyst")
+GROUP = os.environ.get("FW_GROUP", "forensics")
+
+EWF_EXT = {".e01", ".ex01", ".s01", ".l01"}
+RAW_EXT = {".raw", ".dd", ".img", ".001", ".bin", ".dmg"}
+VM_EXT = {".vmdk", ".vhd", ".vhdx", ".qcow2", ".vdi"}
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ ()+-]{0,200}$")
+
+
+def out(obj, code=0):
+    print(json.dumps(obj, indent=2, default=str))
+    sys.exit(code)
+
+
+def fail(msg, **extra):
+    out({"ok": False, "error": msg, **extra}, 1)
+
+
+def conf():
+    vals = {}
+    if CONF.exists():
+        for line in CONF.read_text().splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                vals[k.strip()] = v.strip().strip('"')
+    return vals
+
+
+def run(cmd, check=True, **kw):
+    p = subprocess.run(cmd, capture_output=True, text=True, **kw)
+    if check and p.returncode != 0:
+        fail(f"command failed: {' '.join(cmd)}", stderr=p.stderr.strip()[-2000:])
+    return p
+
+
+def case_dir(case_id, must_exist=True):
+    if not custody.valid_case_id(case_id):
+        fail("invalid case id; use letters, digits, dot, dash, underscore")
+    d = CASES / case_id
+    if must_exist and not (d / "evidence").is_dir():
+        fail(f"case {case_id} is not initialised; run case_open first")
+    return d
+
+
+def chown(path, uid, gid):
+    try:
+        os.chown(path, uid, gid)
+    except PermissionError:
+        if not os.environ.get("FW_TEST"):  # tests run unprivileged; production must not
+            raise
+
+
+def actor():
+    return os.environ.get("SUDO_USER") or ANALYST
+
+
+# ------------------------------------------------------------------ case-init
+def case_init(case_id):
+    d = case_dir(case_id, must_exist=False)
+    uid = pwd.getpwnam(ANALYST).pw_uid
+    gid = grp.getgrnam(GROUP).gr_gid
+    created = not d.exists()
+    d.mkdir(parents=True, exist_ok=True)
+    chown(d, 0, gid)
+    os.chmod(d, 0o2775)
+    ev = d / "evidence"
+    ev.mkdir(exist_ok=True)
+    chown(ev, 0, gid)
+    os.chmod(ev, 0o2750)  # analyst reads, only root writes
+    for sub in ("work", "reports", "notes"):
+        p = d / sub
+        p.mkdir(exist_ok=True)
+        chown(p, uid, gid)
+        os.chmod(p, 0o2770)
+    cust = d / "custody.jsonl"
+    if not cust.exists():
+        cust.touch()
+    chown(cust, 0, gid)
+    os.chmod(cust, 0o640)
+    aud = d / "audit.jsonl"
+    if not aud.exists():
+        aud.touch()
+        chown(aud, uid, gid)
+        os.chmod(aud, 0o660)
+    if created:
+        custody.append(cust, "case_created", case_id, {"path": str(d)}, actor=actor())
+    out({"ok": True, "case_id": case_id, "path": str(d), "created": created})
+
+
+# ------------------------------------------------------------------ pull
+def _s3_objects(bucket, key):
+    if key.endswith("/"):
+        p = run(["aws", "s3api", "list-objects-v2", "--bucket", bucket, "--prefix", key, "--output", "json"])
+        data = json.loads(p.stdout or "{}")
+        return [o["Key"] for o in data.get("Contents", []) if not o["Key"].endswith("/")]
+    return [key]
+
+
+def pull(case_id, key):
+    d = case_dir(case_id)
+    c = conf()
+    bucket = c.get("EVIDENCE_BUCKET")
+    if not bucket:
+        fail("EVIDENCE_BUCKET not configured")
+    prefix = f"intake/{case_id}/"
+    if not key.startswith(prefix) or ".." in key:
+        fail(f"key must sit under {prefix}")
+    gid = grp.getgrnam(GROUP).gr_gid
+    results = []
+    for obj in _s3_objects(bucket, key):
+        rel = obj[len(prefix):]
+        if not rel or any(not NAME_RE.match(part) for part in rel.split("/")):
+            results.append({"key": obj, "ok": False, "error": "unsupported characters in object name"})
+            continue
+        dest = d / "evidence" / rel
+        if dest.exists():
+            results.append({"key": obj, "ok": False, "error": "already present; evidence is never overwritten", "path": str(dest)})
+            continue
+        head = json.loads(run(["aws", "s3api", "head-object", "--bucket", bucket, "--key", obj, "--output", "json"]).stdout)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        for parent in dest.parents:
+            if parent == d / "evidence":
+                break
+            chown(parent, 0, gid)
+            os.chmod(parent, 0o2750)
+        partial = dest.with_name(dest.name + ".partial")
+        cmd = ["aws", "s3api", "get-object", "--bucket", bucket, "--key", obj, str(partial)]
+        if head.get("VersionId"):
+            cmd[3:3] = ["--version-id", head["VersionId"]]
+        started = custody.utc_now()
+        run(cmd)
+        hashes = custody.hash_file(partial)
+        if hashes["size"] != head.get("ContentLength"):
+            partial.unlink(missing_ok=True)
+            results.append({"key": obj, "ok": False, "error": "size mismatch against S3; download discarded"})
+            continue
+        partial.rename(dest)
+        chown(dest, 0, gid)
+        os.chmod(dest, 0o440)
+        record = {
+            "source": f"s3://{bucket}/{obj}",
+            "s3_version_id": head.get("VersionId"),
+            "s3_etag": head.get("ETag", "").strip('"'),
+            "s3_last_modified": head.get("LastModified"),
+            "s3_object_lock": {"mode": head.get("ObjectLockMode"), "until": head.get("ObjectLockRetainUntilDate")},
+            "path": str(dest),
+            "transfer_started": started,
+            **hashes,
+        }
+        custody.append(d / "custody.jsonl", "evidence_acquired", case_id, record, actor=actor())
+        results.append({"key": obj, "ok": True, **record})
+    if not results:
+        fail(f"nothing found at s3://{bucket}/{key}")
+    out({"ok": all(r["ok"] for r in results), "items": results})
+
+
+# ------------------------------------------------------------------ mount
+def _state_file(case_id, name):
+    return STATE / f"{case_id}__{re.sub(r'[^A-Za-z0-9._-]', '_', name)}.json"
+
+
+def _fstype(dev):
+    p = run(["blkid", "-o", "value", "-s", "TYPE", dev], check=False)
+    return p.stdout.strip()
+
+
+def _mount_opts(fstype):
+    base = "ro,nodev,nosuid,noexec"
+    if fstype == "ntfs":
+        return ["-t", "ntfs-3g", "-o", base + ",show_sys_files,streams_interface=windows,umask=0222"]
+    if fstype in ("ext2", "ext3", "ext4"):
+        return ["-t", fstype, "-o", base + ",noload"]
+    if fstype == "xfs":
+        return ["-t", "xfs", "-o", base + ",norecovery"]
+    if fstype in ("vfat", "exfat"):
+        return ["-t", fstype, "-o", base + ",umask=0222"]
+    return ["-o", base]
+
+
+def _free_nbd():
+    run(["modprobe", "nbd", "max_part=16"], check=False)
+    for dev in sorted(glob.glob("/sys/block/nbd*")):
+        if Path(dev, "size").read_text().strip() == "0":
+            return "/dev/" + Path(dev).name
+    fail("no free nbd device")
+
+
+def mount(case_id, name):
+    d = case_dir(case_id)
+    src = (d / "evidence" / name).resolve()
+    if not str(src).startswith(str((d / "evidence").resolve()) + "/") or not src.is_file():
+        fail(f"evidence {name} not found in case {case_id}")
+    sf = _state_file(case_id, name)
+    if sf.exists():
+        out({"ok": True, "already_mounted": True, **json.loads(sf.read_text())})
+    base = MNT / case_id / re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    base.mkdir(parents=True, exist_ok=True)
+    state = {"case_id": case_id, "evidence": name, "base": str(base), "mounts": [], "skipped": []}
+    ext = src.suffix.lower()
+    if ext in EWF_EXT:
+        ewf_dir = base / "ewf"
+        ewf_dir.mkdir(exist_ok=True)
+        run(["ewfmount", "-X", "allow_other", str(src), str(ewf_dir)])
+        state["ewf_dir"] = str(ewf_dir)
+        raw = str(ewf_dir / "ewf1")
+        state["raw_image"] = raw
+        disk = run(["losetup", "--find", "--show", "--read-only", "--partscan", raw]).stdout.strip()
+        state["loop"] = disk
+    elif ext in VM_EXT:
+        disk = _free_nbd()
+        run(["qemu-nbd", "--read-only", f"--connect={disk}", str(src)])
+        state["nbd"] = disk
+        time.sleep(1)
+        run(["partprobe", disk], check=False)
+    elif ext in RAW_EXT or ext == "":
+        disk = run(["losetup", "--find", "--show", "--read-only", "--partscan", str(src)]).stdout.strip()
+        state["loop"] = disk
+        state["raw_image"] = str(src)
+    else:
+        fail(f"{ext} is not a disk image type this helper mounts; analyse it directly with run_tool")
+    time.sleep(1)
+    parts = sorted(glob.glob(disk + "p[0-9]*"), key=lambda s: int(re.sub(r".*p", "", s)))
+    targets = parts or [disk]
+    state["disk_device"] = disk
+    for dev in targets:
+        fstype = _fstype(dev)
+        label = "p" + re.sub(r".*p", "", dev) if dev != disk else "fs"
+        if fstype in ("", "swap", "LVM2_member", "linux_raid_member"):
+            state["skipped"].append({"device": dev, "type": fstype or "unknown"})
+            continue
+        if fstype == "BitLocker":
+            state["skipped"].append({"device": dev, "type": "BitLocker", "note": "decrypt with dislocker and the recovery key"})
+            continue
+        mp = base / label
+        mp.mkdir(exist_ok=True)
+        p = run(["mount", *_mount_opts(fstype), dev, str(mp)], check=False)
+        if p.returncode == 0:
+            state["mounts"].append({"device": dev, "type": fstype, "mountpoint": str(mp)})
+        else:
+            state["skipped"].append({"device": dev, "type": fstype, "error": p.stderr.strip()[-300:]})
+    STATE.mkdir(parents=True, exist_ok=True)
+    sf.write_text(json.dumps(state))
+    custody.append(d / "custody.jsonl", "evidence_mounted_ro", case_id, state, actor=actor())
+    out({"ok": True, **state})
+
+
+def umount(case_id, name):
+    d = case_dir(case_id)
+    sf = _state_file(case_id, name)
+    if not sf.exists():
+        out({"ok": True, "note": "not mounted"})
+    state = json.loads(sf.read_text())
+    errors = []
+    for m in reversed(state["mounts"]):
+        p = run(["umount", m["mountpoint"]], check=False)
+        if p.returncode:
+            errors.append(p.stderr.strip())
+    if state.get("loop"):
+        run(["losetup", "-d", state["loop"]], check=False)
+    if state.get("nbd"):
+        run(["qemu-nbd", "--disconnect", state["nbd"]], check=False)
+    if state.get("ewf_dir"):
+        run(["fusermount", "-u", state["ewf_dir"]], check=False)
+    if errors:
+        fail("some mounts are busy; close shells or tools using them and retry", details=errors)
+    sf.unlink()
+    shutil.rmtree(state["base"], ignore_errors=True)
+    custody.append(d / "custody.jsonl", "evidence_unmounted", case_id, {"evidence": name}, actor=actor())
+    out({"ok": True, "evidence": name})
+
+
+def mounts(case_id):
+    case_dir(case_id)
+    items = [json.loads(p.read_text()) for p in STATE.glob(f"{case_id}__*.json")] if STATE.exists() else []
+    out({"ok": True, "mounts": items})
+
+
+def main(argv):
+    if os.geteuid() != 0 and not os.environ.get("FW_TEST"):
+        fail("run through sudo")
+    if not argv:
+        fail(__doc__.strip())
+    cmd, args = argv[0], argv[1:]
+    table = {
+        "case-init": (case_init, 1),
+        "pull": (pull, 2),
+        "mount": (mount, 2),
+        "umount": (umount, 2),
+        "mounts": (mounts, 1),
+    }
+    if cmd == "rdp-password":
+        os.execvp("passwd", ["passwd", ANALYST])
+    if cmd not in table or len(args) != table[cmd][1]:
+        fail(f"usage: {__doc__.strip()}")
+    table[cmd][0](*args)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

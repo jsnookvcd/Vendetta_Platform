@@ -1,0 +1,5 @@
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+infra/terraform/terraform.tfvars
+__pycache__/
+*.egg-info/

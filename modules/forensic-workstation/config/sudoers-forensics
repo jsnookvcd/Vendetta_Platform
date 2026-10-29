@@ -1,0 +1,4 @@
+# Analysts (and Claude acting as them) get exactly one privileged command: the
+# custody helper. env_reset keeps callers from steering it with environment.
+Defaults!/usr/local/sbin/fw-helper env_reset
+%forensics ALL=(root) NOPASSWD: /usr/local/sbin/fw-helper

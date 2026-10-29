@@ -1,0 +1,31 @@
+# Vendetta Platform module descriptor.
+#
+# The Forensic Workstation is an analyst tool, not a client-facing service. It is
+# an AWS EC2 workstation with a free DFIR toolset and Claude Code (on Amazon
+# Bedrock) driving it through the forensic MCP server in mcp/. Cases opened here
+# use the same case numbers as the incident-response hub, and case_export writes
+# a sealed package (SHA-256 manifest plus hash-chained custody and audit logs)
+# that evidence-export can wrap for court.
+
+module:
+  name: forensic-workstation
+  display_name: Forensic Workstation
+  platform: Vendetta Platform
+  owner: Vendetta Cloud Team
+  role: internal-tool
+  service_lines: [incident-response, litigation-support]
+
+runtime:
+  host: aws-ec2
+  access: ssm-session-manager      # no inbound ports
+  claude: claude-code               # managed settings in config/claude
+  claude_backend: bedrock           # or anthropic (API key in SSM)
+  mcp: mcp/fw_forensics             # stdio server, 16 tools
+
+evidence_model:
+  intake: s3://<evidence bucket>/intake/<case_id>/
+  work_product: s3://<evidence bucket>/cases/<case_id>/exports/
+  read_only: true                   # root-owned 0440 files, ro mounts
+  custody_log: /cases/<case_id>/custody.jsonl
+  audit_log: /cases/<case_id>/audit.jsonl
+  log_shipping: cloudwatch:/forensic-workstation/audit

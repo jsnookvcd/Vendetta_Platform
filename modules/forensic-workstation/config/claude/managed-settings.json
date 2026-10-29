@@ -1,0 +1,32 @@
+{
+  "env": {},
+  "permissions": {
+    "allow": [
+      "mcp__forensics",
+      "Read(//cases/**)",
+      "Read(//mnt/fw/**)",
+      "Read(//opt/forensics/**)",
+      "Grep",
+      "Glob"
+    ],
+    "deny": [
+      "Edit(//cases/*/evidence/**)",
+      "Edit(//cases/*/custody.jsonl)",
+      "Edit(//cases/*/audit.jsonl)",
+      "Edit(//mnt/fw/**)",
+      "Bash(sudo:*)",
+      "Bash(rm -rf:*)",
+      "Bash(shred:*)",
+      "Bash(wipefs:*)",
+      "Bash(mkfs:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "/usr/local/bin/fw-audit-hook", "timeout": 10 }]
+      }
+    ]
+  }
+}
